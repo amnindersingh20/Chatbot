@@ -1,29 +1,86 @@
-PS D:\Users\A1053499\Downloads\Chatbot-main> python main.py
-D:\Users\A1053499\Downloads\Chatbot-main\main.py:23: DeprecationWarning: 
-        on_event is deprecated, use lifespan event handlers instead.
+import json
+import os
+import asyncio
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from uvicorn import Config, Server
+from sentence_transformers import SentenceTransformer, util
+import numpy as np
+import boto3
 
-        Read more about it in the
-        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
-        
-  @app.on_event("startup")
-D:\Users\A1053499\Downloads\Chatbot-main\main.py:82: DeprecationWarning: There is no current event loop
-  asyncio.get_event_loop().run_until_complete(server.serve())
-INFO:     Started server process [17580]
-INFO:     Waiting for application startup.
-Fetching knowledge base from S3 bucket...
-Error loading knowledge base from S3: Unable to locate credentials
-No sentence-transformers model found with name sentence-transformers/all-MiniLM-L6-v2. Creating a new one with mean pooling.
-Error loading model or computing embeddings: (MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /sentence-transformers/all-MiniLM-L6-v2/resolve/main/adapter_config.json (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1028)')))"), '(Request ID: a140fcfa-0680-4926-b7cd-036058bd38bd)')
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     127.0.0.1:58603 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58603 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-Received chat request with query: living well
-Returning response: Knowledge base is empty or not loaded.
-INFO:     127.0.0.1:58604 - "GET /chat?query=living%20well HTTP/1.1" 200 OK
-Received chat request with query: living well
-Returning response: Knowledge base is empty or not loaded.
-INFO:     127.0.0.1:58681 - "GET /chat?query=living%20well HTTP/1.1" 200 OK
-Received chat request with query: living well
-Returning response: Knowledge base is empty or not loaded.
-INFO:     127.0.0.1:58900 - "GET /chat?query=living%20well HTTP/1.1" 200 OK
+# S3 Configuration – update these with your actual S3 details
+S3_BUCKET_NAME = "your-bucket-name"
+S3_OBJECT_KEY = "your-file.json"
+AWS_REGION = "your-region"
+
+app = FastAPI()
+
+# Global variables for the knowledge base, embeddings, and the NLP model
+knowledge_base = []
+kb_embeddings = None
+model = None
+
+@app.on_event("startup")
+def load_knowledge():
+    global knowledge_base, kb_embeddings, model
+    try:
+        print("Fetching knowledge base from S3 bucket...")
+        s3_client = boto3.client("s3", region_name=AWS_REGION)
+        response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=S3_OBJECT_KEY)
+        data = response["Body"].read().decode("utf-8")
+        knowledge_base = json.loads(data)
+        print("Knowledge base loaded from S3:", knowledge_base)
+    except Exception as e:
+        knowledge_base = []
+        print("Error loading knowledge base from S3:", e)
+        if "Unable to locate credentials" in str(e):
+            print("AWS credentials not found. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.")
+    
+    try:
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        print("NLP model loaded.")
+        questions = [item.get("question", "") for item in knowledge_base]
+        if questions:
+            kb_embeddings = model.encode(questions, convert_to_tensor=True)
+            print("Knowledge base embeddings computed.")
+        else:
+            kb_embeddings = None
+            print("No questions found in the knowledge base.")
+    except Exception as e:
+        print("Error loading model or computing embeddings:", e)
+        kb_embeddings = None
+        if "certificate verify failed" in str(e):
+            print("SSL certificate verification error encountered. Please ensure your system has the correct CA certificates installed.")
+
+def search_knowledge(query: str, threshold: float = 0.5):
+    global kb_embeddings, model
+    if not knowledge_base or kb_embeddings is None:
+        return "Knowledge base is empty or not loaded."
+    query_embedding = model.encode(query, convert_to_tensor=True)
+    cosine_scores = util.cos_sim(query_embedding, kb_embeddings)[0]
+    best_score = float(cosine_scores.max())
+    best_idx = int(cosine_scores.argmax())
+    print(f"Best similarity score: {best_score}")
+    if best_score >= threshold:
+        return knowledge_base[best_idx].get("answer", "No answer found.")
+    else:
+        return "I don't have an answer for that."
+
+@app.get("/chat")
+def chat(query: str):
+    print(f"Received chat request with query: {query}")
+    answer = search_knowledge(query)
+    print(f"Returning response: {answer}")
+    return {"response": answer}
+
+@app.get("/", response_class=FileResponse)
+def get_ui():
+    if os.path.exists("frontend.html"):
+        return FileResponse("frontend.html")
+    else:
+        raise HTTPException(status_code=404, detail="Frontend file not found")
+
+if __name__ == "__main__":
+    config = Config(app=app, host="0.0.0.0", port=8000, loop="asyncio")
+    server = Server(config)
+    asyncio.get_event_loop().run_until_complete(server.serve())
