@@ -7,27 +7,25 @@ from uvicorn import Config, Server
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 import boto3
-import requests
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # S3 Configuration – update these with your actual S3 details
 S3_BUCKET_NAME = "your-bucket-name"
 S3_OBJECT_KEY = "your-file.json"
 AWS_REGION = "your-region"
 
-# Generative model API configuration (example uses OpenAI's Chat API)
-OPENAI_API_KEY = "your-openai-api-key"
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-
 app = FastAPI()
 
-# Global variables for the knowledge base, embeddings, and retrieval model
+# Global variables for the knowledge base, embeddings, retrieval model, and generative model
 knowledge_base = []
 kb_embeddings = None
 retrieval_model = None
+gen_model = None
+gen_tokenizer = None
 
 @app.on_event("startup")
 def load_knowledge():
-    global knowledge_base, kb_embeddings, retrieval_model
+    global knowledge_base, kb_embeddings, retrieval_model, gen_model, gen_tokenizer
     try:
         print("Fetching knowledge base from S3 bucket...")
         s3_client = boto3.client("s3", region_name=AWS_REGION)
@@ -38,6 +36,8 @@ def load_knowledge():
     except Exception as e:
         knowledge_base = []
         print("Error loading knowledge base from S3:", e)
+        if "Unable to locate credentials" in str(e):
+            print("AWS credentials not found. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.")
     
     try:
         retrieval_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -52,6 +52,16 @@ def load_knowledge():
     except Exception as e:
         print("Error loading retrieval model or computing embeddings:", e)
         kb_embeddings = None
+
+    try:
+        print("Loading generative model (DistilGPT-2)...")
+        gen_tokenizer = AutoTokenizer.from_pretrained("distilgpt2")
+        gen_model = AutoModelForCausalLM.from_pretrained("distilgpt2")
+        print("Generative model loaded.")
+    except Exception as e:
+        print("Error loading generative model:", e)
+        gen_model = None
+        gen_tokenizer = None
 
 def search_knowledge(query: str, threshold: float = 0.5):
     global kb_embeddings, retrieval_model
@@ -69,36 +79,26 @@ def search_knowledge(query: str, threshold: float = 0.5):
 
 def generate_response(query: str, context: str = "") -> str:
     """
-    This function calls the OpenAI Chat API to generate a response.
-    It builds a prompt that includes any retrieved context along with the query.
+    Generates a response using the local generative model (DistilGPT-2).
+    The prompt is built by combining any retrieved context with the query.
     """
     if context:
-        prompt = f"Based on the following context, answer the question in a detailed manner.\n\nContext: {context}\n\nQuestion: {query}\n\nAnswer:"
+        prompt = f"Context: {context}\nQuestion: {query}\nAnswer:"
     else:
-        prompt = f"Answer the question: {query}"
+        prompt = f"Question: {query}\nAnswer:"
     
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {OPENAI_API_KEY}"
-    }
-    
-    data = {
-        "model": "gpt-3.5-turbo",
-        "messages": [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7
-    }
+    if gen_model is None or gen_tokenizer is None:
+        return "I'm sorry, the generative model is not available."
     
     try:
-        response = requests.post(OPENAI_API_URL, headers=headers, json=data)
-        response.raise_for_status()
-        result = response.json()
-        generated_text = result["choices"][0]["message"]["content"].strip()
+        input_ids = gen_tokenizer.encode(prompt, return_tensors="pt")
+        output = gen_model.generate(input_ids, max_length=150, num_return_sequences=1, no_repeat_ngram_size=2)
+        generated_text = gen_tokenizer.decode(output[0], skip_special_tokens=True)
+        if generated_text.startswith(prompt):
+            generated_text = generated_text[len(prompt):].strip()
         return generated_text
     except Exception as e:
-        print(f"Error generating response: {e}")
+        print(f"Error during generation: {e}")
         return "I'm sorry, I couldn't generate an answer at this time."
 
 @app.get("/chat")
@@ -106,7 +106,6 @@ def chat(query: str):
     print(f"Received chat request with query: {query}")
     retrieved_context = search_knowledge(query)
     print(f"Retrieved context: {retrieved_context}")
-    # Use the generative model to produce a final answer, combining query and retrieved context
     final_answer = generate_response(query, retrieved_context)
     print(f"Returning generated response: {final_answer}")
     return {"response": final_answer}
