@@ -1,20 +1,28 @@
 import json
 import os
-import asyncio
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-from uvicorn import Config, Server
+from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 import boto3
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from mangum import Mangum  # For AWS Lambda
 
-# S3 Configuration – update these with your actual S3 details
-S3_BUCKET_NAME = "your-bucket-name"
-S3_OBJECT_KEY = "your-file.json"
-AWS_REGION = "your-region"
+# S3 Configuration – update these with your actual S3 details or environment variables
+S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "your-bucket-name")
+S3_OBJECT_KEY = os.environ.get("S3_OBJECT_KEY", "your-file.json")
+AWS_REGION = os.environ.get("AWS_REGION", "your-region")
 
 app = FastAPI()
+
+# Add CORS middleware to allow calls from your local frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, restrict this to your local dev domain (e.g., http://localhost:3000)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Global variables for the knowledge base, embeddings, retrieval model, and generative model
 knowledge_base = []
@@ -36,8 +44,6 @@ def load_knowledge():
     except Exception as e:
         knowledge_base = []
         print("Error loading knowledge base from S3:", e)
-        if "Unable to locate credentials" in str(e):
-            print("AWS credentials not found. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.")
     
     try:
         retrieval_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -78,10 +84,6 @@ def search_knowledge(query: str, threshold: float = 0.5):
         return ""
 
 def generate_response(query: str, context: str = "") -> str:
-    """
-    Generates a response using the local generative model (DistilGPT-2).
-    The prompt is built by combining any retrieved context with the query.
-    """
     if context:
         prompt = f"Context: {context}\nQuestion: {query}\nAnswer:"
     else:
@@ -110,14 +112,5 @@ def chat(query: str):
     print(f"Returning generated response: {final_answer}")
     return {"response": final_answer}
 
-@app.get("/", response_class=FileResponse)
-def get_ui():
-    if os.path.exists("frontend.html"):
-        return FileResponse("frontend.html")
-    else:
-        raise HTTPException(status_code=404, detail="Frontend file not found")
-
-if __name__ == "__main__":
-    config = Config(app=app, host="0.0.0.0", port=8000, loop="asyncio")
-    server = Server(config)
-    asyncio.get_event_loop().run_until_complete(server.serve())
+# Create a Mangum handler for AWS Lambda
+handler = Mangum(app)
