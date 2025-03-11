@@ -1,0 +1,6 @@
+curl -X POST https://your-api-id.execute-api.us-east-1.amazonaws.com/prod \
+-H "Content-Type: application/json" \
+-d '{
+    "language": "english",
+    "question": "Explain quantum computing in simple terms"
+}'
