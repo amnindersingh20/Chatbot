@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bedrock Chat</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #chatbox { border: 1px solid #ccc; padding: 20px; height: 400px; overflow-y: auto; margin-bottom: 20px; }
+        .message { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .user { background: #e3f2fd; text-align: right; }
+        .bot { background: #f5f5f5; }
+    </style>
+</head>
+<body>
+    <h1>AWS Bedrock Chat</h1>
+    <div id="chatbox"></div>
+    <div>
+        <select id="language">
+            <option value="english">English</option>
+            <option value="spanish">Spanish</option>
+        </select>
+        <input type="text" id="question" placeholder="Type your question..." style="width: 70%">
+        <button onclick="sendQuestion()">Send</button>
+    </div>
+
+    <script>
+        const API_URL = 'YOUR_API_GATEWAY_URL'; // Replace with your API URL
+
+        async function sendQuestion() {
+            const language = document.getElementById('language').value;
+            const question = document.getElementById('question').value;
+            
+            if (!question) return;
+
+            // Add user message
+            const chatbox = document.getElementById('chatbox');
+            chatbox.innerHTML += `<div class="message user">${question}</div>`;
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ language, question })
+                });
+
+                if (!response.ok) throw new Error('API request failed');
+                
+                const data = await response.json();
+                chatbox.innerHTML += `<div class="message bot">${data.response}</div>`;
+                chatbox.scrollTop = chatbox.scrollHeight;
+                
+            } catch (error) {
+                chatbox.innerHTML += `<div class="message bot error">Error: ${error.message}</div>`;
+            }
+            
+            document.getElementById('question').value = '';
+        }
+    </script>
+</body>
+</html>
