@@ -1,58 +1,80 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Bedrock Chat</title>
+    <title>Bedrock API Tester</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        #chatbox { border: 1px solid #ccc; padding: 20px; height: 400px; overflow-y: auto; margin-bottom: 20px; }
-        .message { margin: 10px 0; padding: 10px; border-radius: 5px; }
-        .user { background: #e3f2fd; text-align: right; }
-        .bot { background: #f5f5f5; }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        #response {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-height: 100px;
+            white-space: pre-wrap;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px 0;
+        }
+        input {
+            width: 70%;
+        }
     </style>
 </head>
 <body>
-    <h1>AWS Bedrock Chat</h1>
-    <div id="chatbox"></div>
-    <div>
-        <select id="language">
-            <option value="english">English</option>
-            <option value="spanish">Spanish</option>
-        </select>
-        <input type="text" id="question" placeholder="Type your question..." style="width: 70%">
-        <button onclick="sendQuestion()">Send</button>
+    <div id="container">
+        <h1>API Tester</h1>
+        <input type="text" id="promptInput" placeholder="Enter your prompt...">
+        <button onclick="sendRequest()">Send</button>
+        <div id="response">Response will appear here...</div>
     </div>
 
     <script>
-        const API_URL = 'YOUR_API_GATEWAY_URL'; // Replace with your API URL
+        // Replace with your actual API Gateway URL
+        const API_URL = 'YOUR_API_GATEWAY_URL';
 
-        async function sendQuestion() {
-            const language = document.getElementById('language').value;
-            const question = document.getElementById('question').value;
+        async function sendRequest() {
+            const prompt = document.getElementById('promptInput').value;
+            const responseDiv = document.getElementById('response');
             
-            if (!question) return;
+            if (!prompt) {
+                alert('Please enter a prompt');
+                return;
+            }
 
-            // Add user message
-            const chatbox = document.getElementById('chatbox');
-            chatbox.innerHTML += `<div class="message user">${question}</div>`;
-            
             try {
+                responseDiv.textContent = 'Loading...';
+                
                 const response = await fetch(API_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ language, question })
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt
+                    })
                 });
 
-                if (!response.ok) throw new Error('API request failed');
-                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
                 const data = await response.json();
-                chatbox.innerHTML += `<div class="message bot">${data.response}</div>`;
-                chatbox.scrollTop = chatbox.scrollHeight;
+                responseDiv.textContent = data.response;
                 
             } catch (error) {
-                chatbox.innerHTML += `<div class="message bot error">Error: ${error.message}</div>`;
+                responseDiv.textContent = `Error: ${error.message}`;
             }
-            
-            document.getElementById('question').value = '';
         }
     </script>
 </body>
