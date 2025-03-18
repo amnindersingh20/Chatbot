@@ -98,20 +98,8 @@
             text-align: center;
         }
         .message-bubble ol {
-            list-style-type: none;
-            counter-reset: list-counter;
             padding-left: 1.5em;
             margin: 8px 0;
-        }
-        .message-bubble ol li {
-            counter-increment: list-counter;
-            margin: 4px 0;
-        }
-        .message-bubble ol li::before {
-            content: counter(list-counter) ". ";
-            color: #2ecc71;
-            font-weight: bold;
-            margin-right: 8px;
         }
         .message-bubble ul {
             list-style-type: none;
