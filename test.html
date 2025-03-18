@@ -1,53 +1,58 @@
 function formatResponse(text) {
-            // Split into paragraphs preserving natural line breaks
-            const paragraphs = text.split('\n').filter(p => p.trim() !== '');
+            // Convert response text to formatted HTML
+            const wrapper = document.createElement('div');
             
-            // Clear previous content
-            responseContent.innerHTML = '';
+            // Split into paragraphs while preserving list structure
+            const blocks = text.split('\n\n');
             
-            let currentList = null;
-            
-            paragraphs.forEach(paragraph => {
-                const trimmed = paragraph.trim();
-                const wrapper = document.createElement('div');
-                wrapper.classList.add('fade-in');
-
-                // Check for numbered list item
-                if (/^\d+\.\s/.test(trimmed)) {
-                    if (!currentList) {
-                        currentList = document.createElement('ol');
-                        currentList.className = 'numbered-list';
-                        wrapper.appendChild(currentList);
-                    }
-                    
-                    const li = document.createElement('li');
-                    li.textContent = trimmed.replace(/^\d+\.\s*/, '');
-                    currentList.appendChild(li);
+            blocks.forEach(block => {
+                // Detect numbered lists
+                if (/^\d+\.\s/.test(block)) {
+                    const ol = document.createElement('ol');
+                    block.split('\n').forEach(item => {
+                        const li = document.createElement('li');
+                        li.textContent = item.replace(/^\d+\.\s/, '');
+                        ol.appendChild(li);
+                    });
+                    wrapper.appendChild(ol);
                 }
-                // Check for bullet points
-                else if (/^[-*•]\s/.test(trimmed)) {
-                    if (currentList) {
-                        currentList = null;
-                    }
+                // Detect bulleted lists
+                else if (/^[-*•]\s/.test(block)) {
                     const ul = document.createElement('ul');
-                    ul.className = 'bullet-list';
-                    const li = document.createElement('li');
-                    li.textContent = trimmed.replace(/^[-*•]\s*/, '');
-                    ul.appendChild(li);
+                    block.split('\n').forEach(item => {
+                        const li = document.createElement('li');
+                        li.textContent = item.replace(/^[-*•]\s/, '');
+                        ul.appendChild(li);
+                    });
                     wrapper.appendChild(ul);
                 }
                 // Regular paragraph
                 else {
-                    if (currentList) {
-                        currentList = null;
-                    }
                     const p = document.createElement('p');
-                    p.textContent = trimmed;
+                    p.textContent = block;
                     wrapper.appendChild(p);
                 }
-                
-                if (!currentList || wrapper.children.length > 0) {
-                    responseContent.appendChild(wrapper);
-                }
             });
+
+            return wrapper.innerHTML;
+        }
+
+        function appendMessage(message, isUser) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            
+            if (isUser) {
+                bubble.textContent = message;
+            } else {
+                bubble.innerHTML = formatResponse(message);
+            }
+            
+            messageDiv.appendChild(bubble);
+            chatHistory.appendChild(messageDiv);
+            
+            // Scroll to bottom
+            chatHistory.scrollTop = chatHistory.scrollHeight;
         }
