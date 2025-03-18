@@ -1,104 +1,53 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NLP Chatbot Interface</title>
-  <link href="https://fonts.googleapis.com/css?family=Roboto:400,700&display=swap" rel="stylesheet">
-  <style>
-    body {
-      background-color: #f4f6f9;
-      font-family: 'Roboto', sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 20px;
-    }
-    .container {
-      width: 100%;
-      max-width: 600px;
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      overflow: hidden;
-    }
-    .header {
-      background: #4a90e2;
-      color: #fff;
-      padding: 20px;
-      text-align: center;
-    }
-    .chat-box {
-      height: 300px;
-      padding: 20px;
-      overflow-y: auto;
-      border-bottom: 1px solid #ddd;
-    }
-    .input-area {
-      display: flex;
-      padding: 20px;
-    }
-    input[type="text"] {
-      flex: 1;
-      padding: 10px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      margin-right: 10px;
-    }
-    button {
-      padding: 10px 20px;
-      background: #4a90e2;
-      border: none;
-      border-radius: 4px;
-      color: #fff;
-      cursor: pointer;
-    }
-    button:hover {
-      background: #3a78c2;
-    }
-    .message {
-      margin-bottom: 15px;
-    }
-    .message strong {
-      display: block;
-      margin-bottom: 5px;
-    }
-    .user-message {
-      text-align: right;
-    }
-    .bot-message {
-      text-align: left;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>NLP Chatbot</h1>
-    </div>
-    <div id="chat-box" class="chat-box"></div>
-    <div class="input-area">
-      <input type="text" id="query" placeholder="Type your message here...">
-      <button onclick="sendQuery()">Send</button>
-    </div>
-  </div>
-  <script>
-    async function sendQuery() {
-      var queryInput = document.getElementById('query');
-      var query = queryInput.value.trim();
-      if(query === '') return;
-      var chatBox = document.getElementById('chat-box');
-      chatBox.innerHTML += '<div class="message user-message"><strong>You:</strong><span>' + query + '</span></div>';
-      queryInput.value = '';
-      
-      // Update the API endpoint URL to point to your deployed Lambda API Gateway
-      const apiUrl = 'https://<YOUR-API-ID>.execute-api.<YOUR-REGION>.amazonaws.com/Prod/chat';
-      
-      const response = await fetch(apiUrl + '?query=' + encodeURIComponent(query));
-      const data = await response.json();
-      chatBox.innerHTML += '<div class="message bot-message"><strong>Bot:</strong><span>' + data.response + '</span></div>';
-      chatBox.scrollTop = chatBox.scrollHeight;
-    }
-  </script>
-</body>
-</html>
+function formatResponse(text) {
+            // Split into paragraphs preserving natural line breaks
+            const paragraphs = text.split('\n').filter(p => p.trim() !== '');
+            
+            // Clear previous content
+            responseContent.innerHTML = '';
+            
+            let currentList = null;
+            
+            paragraphs.forEach(paragraph => {
+                const trimmed = paragraph.trim();
+                const wrapper = document.createElement('div');
+                wrapper.classList.add('fade-in');
+
+                // Check for numbered list item
+                if (/^\d+\.\s/.test(trimmed)) {
+                    if (!currentList) {
+                        currentList = document.createElement('ol');
+                        currentList.className = 'numbered-list';
+                        wrapper.appendChild(currentList);
+                    }
+                    
+                    const li = document.createElement('li');
+                    li.textContent = trimmed.replace(/^\d+\.\s*/, '');
+                    currentList.appendChild(li);
+                }
+                // Check for bullet points
+                else if (/^[-*•]\s/.test(trimmed)) {
+                    if (currentList) {
+                        currentList = null;
+                    }
+                    const ul = document.createElement('ul');
+                    ul.className = 'bullet-list';
+                    const li = document.createElement('li');
+                    li.textContent = trimmed.replace(/^[-*•]\s*/, '');
+                    ul.appendChild(li);
+                    wrapper.appendChild(ul);
+                }
+                // Regular paragraph
+                else {
+                    if (currentList) {
+                        currentList = null;
+                    }
+                    const p = document.createElement('p');
+                    p.textContent = trimmed;
+                    wrapper.appendChild(p);
+                }
+                
+                if (!currentList || wrapper.children.length > 0) {
+                    responseContent.appendChild(wrapper);
+                }
+            });
+        }
