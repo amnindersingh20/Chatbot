@@ -4,65 +4,144 @@
     <title>Bedrock API Tester</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Arial, sans-serif;
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
         }
         #container {
-            border: 1px solid #ccc;
-            padding: 20px;
-            border-radius: 5px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            margin-top: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        #promptInput {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #3498db;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        #promptInput:focus {
+            outline: none;
+            border-color: #2980b9;
+            box-shadow: 0 0 8px rgba(52, 152, 219, 0.3);
+        }
+        button {
+            padding: 15px 30px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        button:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
         }
         #response {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
             margin-top: 20px;
-            padding: 15px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
             min-height: 100px;
             white-space: pre-wrap;
+            border: 2px solid #e9ecef;
+            font-family: 'Courier New', Courier, monospace;
+            position: relative;
         }
-        input, button {
-            padding: 10px;
-            margin: 5px 0;
+        .loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
         }
-        input {
-            width: 70%;
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
     </style>
 </head>
 <body>
     <div id="container">
-        <h1>API Tester</h1>
-        <input type="text" id="promptInput" placeholder="Enter your prompt...">
-        <button onclick="sendRequest()">Send</button>
-        <div id="response">Response will appear here...</div>
+        <h1>🤖 Bedrock API Tester</h1>
+        <div class="input-group">
+            <input type="text" id="promptInput" placeholder="Ask me anything..." 
+                   onkeypress="handleKeyPress(event)">
+            <button onclick="sendRequest()">Send</button>
+        </div>
+        <div id="response">
+            <div class="loading">
+                <div class="spinner"></div>
+            </div>
+            <div class="content">Response will appear here...</div>
+        </div>
     </div>
 
     <script>
-        // Replace with your actual API Gateway URL
         const API_URL = 'YOUR_API_GATEWAY_URL';
+        const promptInput = document.getElementById('promptInput');
+        const responseContent = document.querySelector('#response .content');
+        const loadingIndicator = document.querySelector('.loading');
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendRequest();
+            }
+        }
 
         async function sendRequest() {
-            const prompt = document.getElementById('promptInput').value;
-            const responseDiv = document.getElementById('response');
+            const prompt = promptInput.value.trim();
             
             if (!prompt) {
-                alert('Please enter a prompt');
+                alert('Please enter a question');
                 return;
             }
 
             try {
-                responseDiv.textContent = 'Loading...';
+                // Show loading state
+                loadingIndicator.style.display = 'block';
+                responseContent.textContent = '';
                 
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        prompt: prompt
-                    })
+                    body: JSON.stringify({ prompt })
                 });
 
                 if (!response.ok) {
@@ -70,10 +149,17 @@
                 }
 
                 const data = await response.json();
-                responseDiv.textContent = data.response;
+                responseContent.textContent = JSON.stringify(data.response, null, 2);
+                responseContent.classList.add('fade-in');
                 
             } catch (error) {
-                responseDiv.textContent = `Error: ${error.message}`;
+                responseContent.textContent = `Error: ${error.message}`;
+                responseContent.style.color = '#e74c3c';
+            } finally {
+                // Clear input and hide loading
+                promptInput.value = '';
+                loadingIndicator.style.display = 'none';
+                responseContent.style.color = '#2c3e50';
             }
         }
     </script>
