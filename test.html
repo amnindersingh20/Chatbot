@@ -1,265 +1,100 @@
 <!DOCTYPE html>
 <html>
 <head>
-    
     <title>Chatbot Interface</title>
     <style>
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            background: #f0f2f5;
-        }
-        #chat-container {
-            flex: 1;
-            max-width: 800px;
-            margin: 0 auto;
-            width: 100%;
-            padding: 20px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-        }
-        #chat-history {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            background: white;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        .message {
-            margin-bottom: 15px;
-            display: flex;
-        }
-        .user-message {
-            justify-content: flex-end;
-        }
-        .bot-message {
-            justify-content: flex-start;
-        }
-        .message-bubble {
-            max-width: 70%;
-            padding: 12px 16px;
-            border-radius: 15px;
-            word-break: break-word;
-            white-space: pre-wrap;
-        }
-        .user-message .message-bubble {
-            background: #007bff;
-            color: white;
-            border-bottom-right-radius: 5px;
-        }
-        .bot-message .message-bubble {
-            background: #e9ecef;
-            color: #212529;
-            border-bottom-left-radius: 5px;
-        }
-        #input-container {
-            display: flex;
+        /* Add these new styles */
+        .suggestive-prompts {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
             gap: 10px;
-            padding: 20px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            animation: fadeIn 0.5s ease-in;
         }
-        #message-input {
-            flex: 1;
-            padding: 15px;
-            border: 2px solid #007bff;
-            border-radius: 8px;
-            font-size: 16px;
-            outline: none;
-        }
-        #send-button {
-            padding: 15px 30px;
-            background: #007bff;
-            color: white;
-            border: none;
+
+        .prompt-button {
+            padding: 12px;
+            background: #f0f2f5;
+            border: 1px solid #007bff;
             border-radius: 8px;
             cursor: pointer;
-            transition: background 0.3s ease;
+            text-align: left;
+            transition: all 0.2s ease;
+            color: #007bff;
         }
-        #send-button:hover {
-            background: #0056b3;
+
+        .prompt-button:hover {
+            background: #007bff;
+            color: white;
+            transform: translateY(-2px);
         }
-        .typing-indicator {
+
+        .hidden {
             display: none;
-            padding: 10px;
-            font-style: italic;
-            color: #6c757d;
-        }
-        .error-message {
-            color: #dc3545;
-            padding: 10px;
-            text-align: center;
-        }
-        .message-bubble ol {
-            list-style: none;
-            counter-increment: list-counter;
-            
-            padding-left: 1.5em;
-            margin: 8px 0;
-        }
-        .message-bubble ol li {
-            /* counter-reset: list-counter; */
-            margin: 4px 0;
-            position: relative;
-        }
-        .message-bubble ol li::before {
-            content: counter(list-counter) ".";
-            position: absolute;
-            left: -1.5em;
-            width: 1.5em;
-            text-align: right;
-            color: #2ecc71;
-            font-weight: bold;
-        }
-        .message-bubble ul {
-            list-style: none;
-            padding-left: 1.5em;
-            margin: 8px 0;
-        }
-        .message-bubble li {
-            /* counter-reset: list-counter; */
-            list-style: none;
-            counter-increment: item;
-            margin: 4px 0;
-            position: relative;
-        }
-        .message-bubble ul li::before {
-            content: "•";
-            color: #3498db;
-            margin-right: 8px;
-        }
-        .message-bubble p {
-            margin: 8px 0;
         }
     </style>
 </head>
 <body>
     <div id="chat-container">
-        <h1>Bedrock Chatbot</h1>
-        <div id="chat-history"></div>
-        <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
-        <div class="error-message" id="error-message"></div>
-        <div id="input-container">
-            <input type="text" id="message-input" placeholder="Type your message..." 
-                   onkeypress="handleEnterKey(event)">
-            <button id="send-button" onclick="sendMessage()">Send</button>
+        <div id="chat-history">
+            <!-- Add suggestive prompts container -->
+            <div class="suggestive-prompts" id="suggestive-prompts">
+                <button class="prompt-button" data-prompt="What are the key features of your service?">
+                    What are the key features?
+                </button>
+                <button class="prompt-button" data-prompt="How do I get started?">
+                    How to get started
+                </button>
+                <button class="prompt-button" data-prompt="Can you explain your pricing model?">
+                    Pricing information
+                </button>
+                <button class="prompt-button" data-prompt="What support options are available?">
+                    Support options
+                </button>
+            </div>
         </div>
+        <!-- ... rest of your existing HTML ... -->
     </div>
 
     <script>
-        const API_URL = 'https://0ho0tvkvph.execute-api.us-east-1.amazonaws.com/Dev/chat';
-        const chatHistory = document.getElementById('chat-history');
-        const messageInput = document.getElementById('message-input');
-        const typingIndicator = document.getElementById('typing-indicator');
-        const errorMessage = document.getElementById('error-message');
+        // Add these JavaScript modifications
+        const suggestivePrompts = document.getElementById('suggestive-prompts');
+        let hasInteracted = false;
 
-        function handleEnterKey(event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
+        function showSuggestivePrompts() {
+            if (!hasInteracted && chatHistory.children.length === 1) { // Only show if no messages
+                suggestivePrompts.classList.remove('hidden');
+            }
+        }
+
+        function hideSuggestivePrompts() {
+            suggestivePrompts.classList.add('hidden');
+            hasInteracted = true;
+        }
+
+        // Event delegation for prompt buttons
+        document.getElementById('chat-history').addEventListener('click', (e) => {
+            if (e.target.classList.contains('prompt-button')) {
+                const prompt = e.target.dataset.prompt;
+                messageInput.value = prompt;
                 sendMessage();
+                hideSuggestivePrompts();
             }
-        }
+        });
 
-        function formatResponse(text) {
-            const wrapper = document.createElement('div');
-            const blocks = text.split('\n\n');
-            
-            blocks.forEach(block => {
-                const lines = block.split('\n').filter(l => l.trim() !== '');
-                
-                // Check for numbered list pattern in the entire block
-                if (lines.length > 0 && lines.every(line => /^\s*\d+\.\s/.test(line.trim()))) {
-                    const ol = document.createElement('ol');
-                    lines.forEach(line => {
-                        const li = document.createElement('li');
-                        li.textContent = line.replace(/^\s*\d+\.\s*/, '').trim();
-                        ol.appendChild(li);
-                    });
-                    wrapper.appendChild(ol);
-                }
-                // Check for bulleted list pattern
-                else if (lines.length > 0 && lines.every(line => /^\s*[-*•]\s/.test(line.trim()))) {
-                    const ul = document.createElement('ul');
-                    lines.forEach(line => {
-                        const li = document.createElement('li');
-                        li.textContent = line.replace(/^\s*[-*•]\s*/, '').trim();
-                        ul.appendChild(li);
-                    });
-                    wrapper.appendChild(ul);
-                }
-                // Regular text
-                else {
-                    const p = document.createElement('p');
-                    p.textContent = block.trim();
-                    wrapper.appendChild(p);
-                }
-            });
+        // Show prompts when page loads
+        window.addEventListener('load', showSuggestivePrompts);
 
-            return wrapper.innerHTML;
-        }
-
+        // Modify appendMessage to hide prompts on user interaction
         function appendMessage(message, isUser) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-            
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            
-            if (isUser) {
-                bubble.textContent = message;
-            } else {
-                bubble.innerHTML = formatResponse(message);
-            }
-            
-            messageDiv.appendChild(bubble);
-            chatHistory.appendChild(messageDiv);
-            
-            chatHistory.scrollTop = chatHistory.scrollHeight;
+            hideSuggestivePrompts();
+            // ... rest of your existing appendMessage code ...
         }
 
+        // Add to sendMessage function
         async function sendMessage() {
-            const message = messageInput.value.trim();
-            if (!message) return;
-
-            messageInput.value = '';
-            errorMessage.textContent = '';
-            
-            appendMessage(message, true);
-            
-            typingIndicator.style.display = 'block';
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        prompt: message
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const data = await response.json();
-                appendMessage(data.response, false);
-
-            } catch (error) {
-                errorMessage.textContent = `Error: ${error.message}`;
-            } finally {
-                typingIndicator.style.display = 'none';
-            }
+            hasInteracted = true;
+            // ... rest of your existing sendMessage code ...
         }
     </script>
 </body>
