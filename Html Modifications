@@ -1,0 +1,55 @@
+<script>
+const API_URL = 'YOUR_API_GATEWAY_URL';
+let sessionId = Date.now().toString(); // Unique session ID
+
+async function sendMessage() {
+    const message = messageInput.value.trim();
+    if (!message) return;
+
+    // Display user message
+    appendMessage(message, true);
+    
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message,
+                sessionId: sessionId
+            })
+        });
+
+        const data = await response.json();
+        
+        // Display agent response
+        appendMessage(data.message, false);
+        
+        // Display citations if available
+        if (data.citations && data.citations.length > 0) {
+            appendCitations(data.citations);
+        }
+
+    } catch (error) {
+        console.error('Error:', error);
+        appendMessage('Error communicating with the agent', false);
+    }
+}
+
+function appendCitations(citations) {
+    const citationsHTML = citations.map(c => `
+        <div class="citation">
+            <strong>Source:</strong> ${c.source}<br>
+            ${c.text}
+        </div>
+    `).join('');
+
+    const citationDiv = document.createElement('div');
+    citationDiv.className = 'citations';
+    citationDiv.innerHTML = `<h4>References:</h4>${citationsHTML}`;
+    
+    chatHistory.appendChild(citationDiv);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+</script>
