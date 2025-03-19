@@ -1,0 +1,21 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:InvokeAgent",
+                "bedrock:Retrieve"
+            ],
+            "Resource": [
+                "arn:aws:bedrock:us-east-1::agent/YOUR_AGENT_ID",
+                "arn:aws:bedrock:us-east-1::agent-alias/YOUR_AGENT_ID/YOUR_ALIAS_ID"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": "bedrock:ListKnowledgeBases",
+            "Resource": "*"
+        }
+    ]
+}
