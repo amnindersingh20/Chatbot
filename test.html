@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    
     <title>Chatbot Interface</title>
     <style>
         body {
@@ -99,12 +100,13 @@
         }
         .message-bubble ol {
             list-style: none;
-            counter-reset: list-counter;
+            counter-increment: list-counter;
+            
             padding-left: 1.5em;
             margin: 8px 0;
         }
         .message-bubble ol li {
-            counter-increment: list-counter;
+            /* counter-reset: list-counter; */
             margin: 4px 0;
             position: relative;
         }
@@ -122,6 +124,13 @@
             padding-left: 1.5em;
             margin: 8px 0;
         }
+        .message-bubble li {
+            /* counter-reset: list-counter; */
+            list-style: none;
+            counter-increment: item;
+            margin: 4px 0;
+            position: relative;
+        }
         .message-bubble ul li::before {
             content: "•";
             color: #3498db;
@@ -134,6 +143,7 @@
 </head>
 <body>
     <div id="chat-container">
+        <h1>Bedrock Chatbot</h1>
         <div id="chat-history"></div>
         <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
         <div class="error-message" id="error-message"></div>
@@ -145,7 +155,7 @@
     </div>
 
     <script>
-        const API_URL = 'YOUR_API_GATEWAY_URL';
+        const API_URL = 'https://0ho0tvkvph.execute-api.us-east-1.amazonaws.com/Dev/chat';
         const chatHistory = document.getElementById('chat-history');
         const messageInput = document.getElementById('message-input');
         const typingIndicator = document.getElementById('typing-indicator');
