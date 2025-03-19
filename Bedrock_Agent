@@ -1,0 +1,55 @@
+import json
+import boto3
+from botocore.config import Config
+
+bedrock_agent = boto3.client(
+    'bedrock-agent-runtime',
+    region_name='us-east-1',
+    config=Config(read_timeout=30)
+)
+
+def lambda_handler(event, context):
+    try:
+        body = json.loads(event['body'])
+        user_input = body['message']
+        session_id = body.get('sessionId', 'default-session')
+
+        response = bedrock_agent.invoke_agent(
+            agentId='YOUR_AGENT_ID',
+            agentAliasId='YOUR_ALIAS_ID',
+            sessionId=session_id,
+            inputText=user_input
+        )
+
+        completion = ""
+        citations = []
+        
+        for event in response['completion']:
+            chunk = event['chunk']
+            completion += chunk['bytes'].decode('utf-8')
+            
+            if 'citations' in chunk:
+                for citation in chunk['citations']:
+                    citations.append({
+                        'source': citation['retrievedReferences'][0]['location']['s3Location']['uri'],
+                        'text': citation['retrievedReferences'][0]['content']['text']
+                    })
+
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'message': completion,
+                'citations': citations,
+                'sessionId': session_id
+            })
+        }
+
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
