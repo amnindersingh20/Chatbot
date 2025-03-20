@@ -1,3 +1,4 @@
-{
-"body": "{\"prompt\": \"Tell me a joke\"}"
-}
+[ERROR] Runtime.UserCodeSyntaxError: Syntax error in module 'lambda_function': '(' was never closed (lambda_function.py, line 6)
+Traceback (most recent call last):
+  File "/var/task/lambda_function.py" Line 6
+    bedrock_agent = boto3.client(
