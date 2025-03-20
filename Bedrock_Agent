@@ -1,22 +1,31 @@
 import json
 import boto3
 from botocore.config import Config
+import traceback
 
 bedrock_agent = boto3.client(
     'bedrock-agent-runtime',
     region_name='us-east-1',
-    config=Config(read_timeout=30)
-)
-
+    config=Config(read_timeout=45)
+    
 def lambda_handler(event, context):
     try:
-        body = json.loads(event['body'])
-        user_input = body['message']
-        session_id = body.get('sessionId', 'default-session')
+        # Parse input with error checking
+        body = json.loads(event.get('body', '{}'))
+        user_input = body.get('message') or body.get('prompt')  # Handle both keys
+        
+        if not user_input:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing message/prompt in request body'})
+            }
+
+        # Generate session ID if not provided
+        session_id = body.get('sessionId', context.aws_request_id)
 
         response = bedrock_agent.invoke_agent(
-            agentId='YOUR_AGENT_ID',
-            agentAliasId='YOUR_ALIAS_ID',
+            agentId='YOUR_AGENT_ID',  # Replace with actual ID
+            agentAliasId='YOUR_ALIAS_ID',  # Replace with actual alias
             sessionId=session_id,
             inputText=user_input
         )
@@ -49,7 +58,14 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
+        # Log full error details
+        print(f"Error: {str(e)}")
+        traceback.print_exc()
+        
         return {
             'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+            'body': json.dumps({
+                'error': str(e),
+                'stackTrace': traceback.format_exc()
+            })
         }
