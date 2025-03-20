@@ -1,7 +1,3 @@
-Fetching knowledge base from S3 bucket...
-Error loading knowledge base from S3: Unable to locate credentials
-AWS credentials not found. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.
-No sentence-transformers model found with name sentence-transformers/all-MiniLM-L6-v2. Creating a new one with mean pooling.
-Error loading retrieval model or computing embeddings: (MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /sentence-transformers/all-MiniLM-L6-v2/resolve/main/adapter_config.json (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1028)')))"), '(Request ID: 3a49e701-ec94-45c0-b8e0-364769643a87)')
-Loading generative model (DistilGPT-2)...
-Error loading generative model: (MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /distilgpt2/resolve/main/tokenizer_config.json (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1028)')))"), '(Request ID: 35a089de-7967-4bf3-b1ba-1be5bc0013e9)')
+{
+"body": "{\"prompt\": \"Tell me a joke\"}"
+}
