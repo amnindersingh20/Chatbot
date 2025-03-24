@@ -1,72 +1,46 @@
-import json
-import boto3
-from botocore.config import Config
-import traceback
+// 1. Retrieve and parse the ssoData from sessionStorage
+const ssoDataRaw = sessionStorage.getItem('ssoData');
+if (!ssoDataRaw) {
+  console.error('No ssoData found in sessionStorage');
+} else {
+  const ssoData = JSON.parse(ssoDataRaw);
 
-bedrock_agent = boto3.client(
-    'bedrock-agent-runtime',
-    region_name='us-east-1',
-    config=Config(read_timeout=45)
-)  # <-- Added closing parenthesis here
+  // 2. Filter or extract the particular element you need.
+  // For example, if ssoData is an object with multiple keys and you need a specific key:
+  const desiredElement = ssoData.yourDesiredKey; // Replace with your actual key
 
-def lambda_handler(event, context):
-    try:
-        # Parse input with error checking
-        body = json.loads(event.get('body', '{}'))
-        user_input = body.get('message') or body.get('prompt')  # Handle both keys
-        
-        if not user_input:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing message/prompt in request body'})
-            }
+  // Or if ssoData is an array and you need to filter based on a condition:
+  // const desiredElement = ssoData.filter(item => item.id === 'yourId')[0];
 
-        # Generate session ID if not provided
-        session_id = body.get('sessionId', context.aws_request_id)
+  // Check if the desired element was found
+  if (!desiredElement) {
+    console.error('Desired element not found in ssoData');
+  } else {
+    // 3. Prepare the payload for the API Gateway
+    const payload = {
+      element: desiredElement,
+      // add any additional parameters if needed
+    };
 
-        response = bedrock_agent.invoke_agent(
-            agentId='YOUR_AGENT_ID',  # Replace with actual ID
-            agentAliasId='YOUR_ALIAS_ID',  # Replace with actual alias
-            sessionId=session_id,
-            inputText=user_input
-        )
-
-        completion = ""
-        citations = []
-        
-        for event in response['completion']:
-            chunk = event['chunk']
-            completion += chunk['bytes'].decode('utf-8')
-            
-            if 'citations' in chunk:
-                for citation in chunk['citations']:
-                    citations.append({
-                        'source': citation['retrievedReferences'][0]['location']['s3Location']['uri'],
-                        'text': citation['retrievedReferences'][0]['content']['text']
-                    })
-
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'message': completion,
-                'citations': citations,
-                'sessionId': session_id
-            })
-        }
-
-    except Exception as e:
-        # Log full error details
-        print(f"Error: {str(e)}")
-        traceback.print_exc()
-        
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': str(e),
-                'stackTrace': traceback.format_exc()
-            })
-        }
+    // 4. Invoke the Lambda function via API Gateway using fetch
+    fetch('https://your-api-gateway-endpoint.amazonaws.com/your-stage/your-resource', {
+      method: 'POST', // or 'GET' if your endpoint expects query parameters
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`API call failed: ${response.statusText}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Lambda response:', data);
+    })
+    .catch(error => {
+      console.error('Error calling API Gateway:', error);
+    });
+  }
+}
