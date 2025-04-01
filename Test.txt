@@ -59,3 +59,46 @@ async function askQuestion(question) {
     console.log(decoder.decode(value));
   }
 }
+//HTML
+<!DOCTYPE html>
+<html>
+<body>
+    <input type="text" id="questionInput" placeholder="Ask something...">
+    <button onclick="askQuestion()">Ask</button>
+    <div id="responseArea" style="white-space: pre-wrap;"></div>
+
+<script>
+async function askQuestion() {
+    const question = document.getElementById('questionInput').value;
+    const responseArea = document.getElementById('responseArea');
+    responseArea.textContent = ''; // Clear previous response
+    
+    try {
+        const response = await fetch('YOUR_LAMBDA_FUNCTION_URL', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ message: question })
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        while(true) {
+            const { done, value } = await reader.read();
+            if(done) break;
+            
+            // Append each chunk to the display
+            responseArea.textContent += decoder.decode(value);
+            
+            // Optional: Auto-scroll to bottom
+            responseArea.scrollTop = responseArea.scrollHeight;
+        }
+    } catch (error) {
+        responseArea.textContent += '\nError: ' + error.message;
+    }
+}
+</script>
+</body>
+</html>
