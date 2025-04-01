@@ -1,3 +1,42 @@
-Use both your training data and the provided knowledge base to answer questions. 
-When relevant, combine general knowledge with specific information from documents. 
-Always cite sources when using the knowledge base.
+import json
+import boto3
+from botocore.config import Config
+import traceback
+
+bedrock_agent = boto3.client(
+    'bedrock-agent-runtime',
+    region_name='us-east-1',
+    config=Config(read_timeout=45)
+ 
+def lambda_handler(event, context):
+    try:
+        # Original input parsing (unchanged)
+        body = json.loads(event.get('body', '{}'))
+        user_input = body.get('message') or body.get('prompt')
+        session_id = body.get('sessionId', context.aws_request_id)
+
+        # 1. Changed: Yield initial headers instead of return
+        yield {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'text/plain',  # 2. Changed from JSON
+                'Access-Control-Allow-Origin': '*'
+            }
+        }
+
+        response = bedrock_agent.invoke_agent(
+            agentId='YOUR_ID',
+            agentAliasId='YOUR_ALIAS',
+            sessionId=session_id,
+            inputText=user_input
+        )
+
+        # 3. Changed: Stream raw chunks instead of building completion
+        for event in response['completion']:
+            chunk = event['chunk']['bytes'].decode('utf-8')
+            # 4. Changed: Yield raw text chunks
+            yield {'body': chunk}
+
+    except Exception as e:
+        # 5. Changed: Stream error instead of returning JSON
+        yield {'body': f"\nERROR: {str(e)}"}
