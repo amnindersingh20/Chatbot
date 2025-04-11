@@ -1,45 +1,44 @@
 import json
 import boto3
+import traceback  # Missing import
 from botocore.config import Config
 
 bedrock_agent = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
 
 def lambda_handler(event, context):
-    def generate_stream():
-        try:
-            # Your existing Bedrock invocation logic
-            response = bedrock_agent.invoke_agent(
-                agentId='YOUR_AGENT_ID',
-                agentAliasId='YOUR_ALIAS_ID',
-                sessionId='session123',
-                inputText=json.loads(event['body'])['message']
-            )
-            
-            for event in response['completion']:
-                chunk = event['chunk']
-                yield json.dumps({
-                    'message': chunk['bytes'].decode('utf-8'),
-                    'citations': chunk.get('citations', [])
-                }) + "\n"  # NDJSON format requires newline separator
+    try:  # Main try block moved here
+        def generate_stream():
+            try:
+                response = bedrock_agent.invoke_agent(
+                    agentId='YOUR_AGENT_ID',
+                    agentAliasId='YOUR_ALIAS_ID',
+                    sessionId='session123',
+                    inputText=json.loads(event['body'])['message']
+                )
                 
-        except Exception as e:
-            yield json.dumps({
-                'error': str(e),
-                'stackTrace': traceback.format_exc()
-            }) + "\n"
+                for event in response['completion']:
+                    chunk = event['chunk']
+                    yield json.dumps({
+                        'message': chunk['bytes'].decode('utf-8'),
+                        'citations': chunk.get('citations', [])
+                    }) + "\n"
+                    
+            except Exception as e:
+                yield json.dumps({
+                    'error': str(e),
+                    'stackTrace': traceback.format_exc()
+                }) + "\n"
 
-    return {
-        'statusCode': 200,
-        'headers': {
-            'Content-Type': 'application/x-ndjson',
-            'Access-Control-Allow-Origin': '*'
-        },
-        'body': generate_stream()
-    }
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/x-ndjson',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': generate_stream()
+        }
 
-
-    except Exception as e:
-        # Handle errors that occur before streaming starts
+    except Exception as e:  # Properly aligned except
         return {
             'statusCode': 500,
             'headers': {
