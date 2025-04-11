@@ -10,9 +10,9 @@ bedrock_agent = boto3.client(
     
 def lambda_handler(event, context):
     try:
-        # Parse input with error checking
+        # Parse input
         body = json.loads(event.get('body', '{}'))
-        user_input = body.get('message') or body.get('prompt')  # Handle both keys
+        user_input = body.get('message') or body.get('prompt')
         
         if not user_input:
             return {
@@ -23,47 +23,62 @@ def lambda_handler(event, context):
         # Generate session ID if not provided
         session_id = body.get('sessionId', context.aws_request_id)
 
+        # Invoke Bedrock Agent
         response = bedrock_agent.invoke_agent(
-            agentId='YOUR_AGENT_ID',  # Replace with actual ID
-            agentAliasId='YOUR_ALIAS_ID',  # Replace with actual alias
+            agentId='YOUR_AGENT_ID',      # Replace with your agent ID
+            agentAliasId='YOUR_ALIAS_ID', # Replace with your alias ID
             sessionId=session_id,
             inputText=user_input
         )
 
-        completion = ""
-        citations = []
-        
-        for event in response['completion']:
-            chunk = event['chunk']
-            completion += chunk['bytes'].decode('utf-8')
-            
-            if 'citations' in chunk:
-                for citation in chunk['citations']:
-                    citations.append({
-                        'source': citation['retrievedReferences'][0]['location']['s3Location']['uri'],
-                        'text': citation['retrievedReferences'][0]['content']['text']
-                    })
+        def generate_stream():
+            try:
+                for event in response['completion']:
+                    chunk = event['chunk']
+                    # Process text chunk
+                    text = chunk['bytes'].decode('utf-8')
+                    
+                    # Process citations
+                    citations = []
+                    if 'citations' in chunk:
+                        for citation in chunk['citations']:
+                            ref = citation['retrievedReferences'][0]
+                            citations.append({
+                                'source': ref['location']['s3Location']['uri'],
+                                'text': ref['content']['text']
+                            })
+                    
+                    # Stream response chunk
+                    yield json.dumps({
+                        'message': text,
+                        'citations': citations,
+                        'sessionId': session_id
+                    }) + "\n"
+            except Exception as e:
+                # Stream error message
+                yield json.dumps({
+                    'error': str(e),
+                    'stackTrace': traceback.format_exc()
+                }) + "\n"
 
+        # Return streaming response
         return {
             'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/x-ndjson',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': generate_stream()
+        }
+
+    except Exception as e:
+        # Handle errors that occur before streaming starts
+        return {
+            'statusCode': 500,
             'headers': {
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*'
             },
-            'body': json.dumps({
-                'message': completion,
-                'citations': citations,
-                'sessionId': session_id
-            })
-        }
-
-    except Exception as e:
-        # Log full error details
-        print(f"Error: {str(e)}")
-        traceback.print_exc()
-        
-        return {
-            'statusCode': 500,
             'body': json.dumps({
                 'error': str(e),
                 'stackTrace': traceback.format_exc()
