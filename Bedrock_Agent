@@ -36,3 +36,18 @@ def lambda_handler(event, context):
         },
         'body': generate_stream()
     }
+
+
+    except Exception as e:
+        # Handle errors that occur before streaming starts
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'error': str(e),
+                'stackTrace': traceback.format_exc()
+            })
+        }
