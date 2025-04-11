@@ -1,86 +1,38 @@
 import json
 import boto3
 from botocore.config import Config
-import traceback
 
-bedrock_agent = boto3.client(
-    'bedrock-agent-runtime',
-    region_name='us-east-1',
-    config=Config(read_timeout=45)
-    
+bedrock_agent = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+
 def lambda_handler(event, context):
-    try:
-        # Parse input
-        body = json.loads(event.get('body', '{}'))
-        user_input = body.get('message') or body.get('prompt')
-        
-        if not user_input:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing message/prompt in request body'})
-            }
-
-        # Generate session ID if not provided
-        session_id = body.get('sessionId', context.aws_request_id)
-
-        # Invoke Bedrock Agent
-        response = bedrock_agent.invoke_agent(
-            agentId='YOUR_AGENT_ID',      # Replace with your agent ID
-            agentAliasId='YOUR_ALIAS_ID', # Replace with your alias ID
-            sessionId=session_id,
-            inputText=user_input
-        )
-
-        def generate_stream():
-            try:
-                for event in response['completion']:
-                    chunk = event['chunk']
-                    # Process text chunk
-                    text = chunk['bytes'].decode('utf-8')
-                    
-                    # Process citations
-                    citations = []
-                    if 'citations' in chunk:
-                        for citation in chunk['citations']:
-                            ref = citation['retrievedReferences'][0]
-                            citations.append({
-                                'source': ref['location']['s3Location']['uri'],
-                                'text': ref['content']['text']
-                            })
-                    
-                    # Stream response chunk
-                    yield json.dumps({
-                        'message': text,
-                        'citations': citations,
-                        'sessionId': session_id
-                    }) + "\n"
-            except Exception as e:
-                # Stream error message
+    def generate_stream():
+        try:
+            # Your existing Bedrock invocation logic
+            response = bedrock_agent.invoke_agent(
+                agentId='YOUR_AGENT_ID',
+                agentAliasId='YOUR_ALIAS_ID',
+                sessionId='session123',
+                inputText=json.loads(event['body'])['message']
+            )
+            
+            for event in response['completion']:
+                chunk = event['chunk']
                 yield json.dumps({
-                    'error': str(e),
-                    'stackTrace': traceback.format_exc()
-                }) + "\n"
-
-        # Return streaming response
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/x-ndjson',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': generate_stream()
-        }
-
-    except Exception as e:
-        # Handle errors that occur before streaming starts
-        return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
+                    'message': chunk['bytes'].decode('utf-8'),
+                    'citations': chunk.get('citations', [])
+                }) + "\n"  # NDJSON format requires newline separator
+                
+        except Exception as e:
+            yield json.dumps({
                 'error': str(e),
                 'stackTrace': traceback.format_exc()
-            })
-        }
+            }) + "\n"
+
+    return {
+        'statusCode': 200,
+        'headers': {
+            'Content-Type': 'application/x-ndjson',
+            'Access-Control-Allow-Origin': '*'
+        },
+        'body': generate_stream()
+    }
