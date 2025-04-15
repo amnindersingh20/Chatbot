@@ -1,0 +1,68 @@
+import json
+import boto3
+import traceback
+from botocore.config import Config
+
+bedrock_agent = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+
+def lambda_handler(event, context):
+    try:
+        # Parse request body
+        request_body = json.loads(event['body'])
+        message = request_body.get('message')
+        session_id = request_body.get('sessionId')
+
+        # Validate required parameters
+        if not message or not session_id:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'error': 'Missing message or sessionId in request'})
+            }
+
+        def generate_stream():
+            try:
+                response = bedrock_agent.invoke_agent(
+                    agentId='YOUR_AGENT_ID',
+                    agentAliasId='YOUR_ALIAS_ID',
+                    sessionId=session_id,  # Use client-provided session ID
+                    inputText=message
+                )
+                
+                for event_item in response['completion']:
+                    chunk = event_item['chunk']
+                    yield json.dumps({
+                        'message': chunk['bytes'].decode('utf-8'),
+                        'citations': chunk.get('citations', [])
+                    }) + "\n"
+                    
+            except Exception as e:
+                yield json.dumps({
+                    'error': str(e),
+                    'stackTrace': traceback.format_exc()
+                }) + "\n"
+
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/x-ndjson',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': generate_stream()
+        }
+
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'error': str(e),
+                'stackTrace': traceback.format_exc()
+            })
+        }
