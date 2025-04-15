@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Agent</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+
+        #chat-container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+
+        #chat-messages {
+            height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+            margin-right: 5px;
+        }
+
+        .bot-message {
+            background-color: #f5f5f5;
+            margin-right: 20%;
+            margin-left: 5px;
+        }
+
+        #input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .citation {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <div id="chat-messages"></div>
+        <div id="input-container">
+            <input type="text" id="message-input" placeholder="Type your message...">
+            <button onclick="sendMessage()">Send</button>
+            <button onclick="resetSession()" style="background-color: #dc3545;">Reset Session</button>
+        </div>
+    </div>
+
+    <script>
+        // Session management
+        let sessionId = localStorage.getItem('sessionId');
+        if (!sessionId) {
+            sessionId = crypto.randomUUID();
+            localStorage.setItem('sessionId', sessionId);
+        }
+
+        // Elements
+        const chatMessages = document.getElementById('chat-messages');
+        const messageInput = document.getElementById('message-input');
+
+        // Handle Enter key
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            // Add user message
+            appendMessage('user', message);
+            messageInput.value = '';
+            
+            try {
+                const response = await fetch('YOUR_API_GATEWAY_URL', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        sessionId: sessionId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Create bot message container
+                const botMessageId = appendMessage('bot', '', true);
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    
+                    // Process complete lines
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                    for (const line of lines) {
+                        if (line.trim()) {
+                            const data = JSON.parse(line);
+                            if (data.error) {
+                                updateMessage(botMessageId, `Error: ${data.error}`, true);
+                            } else {
+                                updateMessage(botMessageId, data.message, false);
+                                if (data.citations && data.citations.length > 0) {
+                                    addCitations(botMessageId, data.citations);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                appendMessage('bot', `Error: ${error.message}`, true);
+            }
+        }
+
+        function appendMessage(sender, text, isPlaceholder = false) {
+            const messageDiv = document.createElement('div');
+            const messageId = Date.now().toString();
+            messageDiv.id = messageId;
+            messageDiv.className = `message ${sender}-message`;
+            messageDiv.textContent = isPlaceholder ? '...' : text;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return messageId;
+        }
+
+        function updateMessage(id, newText, isError) {
+            const messageDiv = document.getElementById(id);
+            messageDiv.textContent += newText;
+            if (isError) {
+                messageDiv.style.color = 'red';
+            }
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function addCitations(id, citations) {
+            const messageDiv = document.getElementById(id);
+            citations.forEach(citation => {
+                const citationDiv = document.createElement('div');
+                citationDiv.className = 'citation';
+                citationDiv.textContent = `Source: ${citation.uri}`;
+                messageDiv.appendChild(citationDiv);
+            });
+        }
+
+        function resetSession() {
+            localStorage.removeItem('sessionId');
+            sessionId = crypto.randomUUID();
+            localStorage.setItem('sessionId', sessionId);
+            chatMessages.innerHTML = '';
+        }
+    </script>
+</body>
+</html>
