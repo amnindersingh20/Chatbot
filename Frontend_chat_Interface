@@ -1,38 +1,39 @@
- // Keep track of added content
-    const messageRegistry = {
-        lastSuggested: null,
-        questions: new Set()
-    };
+// Keep track of added content
+const messageRegistry = {
+    suggested: new Set(),
+    questions: new Set()
+};
 
-    window.addEventListener('message', function(event) {
-        const { questions, suggested_message } = event.data;
-        const chatHistory = document.getElementById('chat-history');
-        
-        // Clean and normalize input
-        const cleanSuggested = suggested_message.trim();
-        const cleanQuestions = questions.map(q => q.trim());
+window.addEventListener('message', function(event) {
+    const { questions, suggested_message } = event.data;
+    const chatHistory = document.getElementById('chat-history');
+    
+    // Clean and normalize input
+    const cleanSuggested = suggested_message.trim();
+    const cleanQuestions = questions.map(q => q.trim());
 
-        // Handle suggested message
-        if (cleanSuggested && cleanSuggested !== messageRegistry.lastSuggested) {
-            const suggestedDiv = document.createElement('div');
-            suggestedDiv.className = 'suggested_messagep';
-            suggestedDiv.textContent = cleanSuggested;
-            chatHistory.appendChild(suggestedDiv);
-            messageRegistry.lastSuggested = cleanSuggested;
+    // Handle suggested message with duplicate prevention using a set
+    if (cleanSuggested && !messageRegistry.suggested.has(cleanSuggested)) {
+        const suggestedDiv = document.createElement('div');
+        suggestedDiv.className = 'suggested_messagep';
+        suggestedDiv.textContent = cleanSuggested;
+        chatHistory.appendChild(suggestedDiv);
+        // Store the suggested message to prevent duplicates in future events
+        messageRegistry.suggested.add(cleanSuggested);
+    }
+
+    // Handle question tiles with duplicate prevention
+    cleanQuestions.forEach(question => {
+        if (!messageRegistry.questions.has(question)) {
+            const questionTile = document.createElement('div');
+            questionTile.className = 'question-tile';
+            questionTile.textContent = question;
+            questionTile.onclick = () => sendQuestion(question);
+            chatHistory.appendChild(questionTile);
+            messageRegistry.questions.add(question);
         }
-
-        // Handle question tiles with duplicate prevention
-        cleanQuestions.forEach(question => {
-            if (!messageRegistry.questions.has(question)) {
-                const questionTile = document.createElement('div');
-                questionTile.className = 'question-tile';
-                questionTile.textContent = question;
-                questionTile.onclick = () => sendQuestion(question);
-                chatHistory.appendChild(questionTile);
-                messageRegistry.questions.add(question);
-            }
-        });
-
-        // Force reflow and scroll to bottom
-        chatHistory.scrollTop = chatHistory.scrollHeight;
     });
+
+    // Force reflow and scroll to bottom
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+});
