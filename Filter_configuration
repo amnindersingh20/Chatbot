@@ -24,25 +24,29 @@ def lambda_handler(event, context):
 
         # Generate session ID if not provided
         session_id = body.get('sessionId', context.aws_request_id)
-        knowledgeBaseConfiguration = [{
-            "knowledgeBaseId":"",
-            "retrievalConfiguration":{
-                "vectorSearchConfiguration":{
-                    "overrideSearchType":"HYBRID", "numberOfResults":10},
-                    "filter": {
-                        "<equal>": {
-                            "key": "type",
-                            "value": "comprehensive" 
-                        }
-            }}
-        }]
         
-
         response = bedrock_agent.invoke_agent(
             agentId='',  
             agentAliasId='',
             sessionId=session_id,
-            inputText=user_input
+            inputText=user_input,
+            "sessionState": {
+                "promptSessionAttributes" :{
+                    "retrievalConfiguration":{
+                        "vectorSearchConfiguration":{
+                            "overrideSearchType":"HYBRID", 
+                            "numberOfResults":10
+                            },
+                            "filter": {
+                                "equals": {
+                                    "key": "type",
+                                    "value": "comprehensive"
+                                }
+
+                        }
+                    }
+                }
+            }
         )
 
         completion = ""
