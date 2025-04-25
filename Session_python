@@ -1,5 +1,102 @@
-Filter_config.html:1  Access to fetch at 'https://gkaqexr7c1.execute-api.us-east-1.amazonaws.com/Dev/chat' from origin 'http://127.0.0.1:5500' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource. If an opaque response serves your needs, set the request's mode to 'no-cors' to fetch the resource with CORS disabled.
-gkaqexr7c1.execute-api.us-east-1.amazonaws.com/Dev/chat:1 
-            
-            
-            Failed to load resource: net::ERR_FAILED
+import json
+import boto3
+from botocore.config import Config
+import traceback
+
+# Initialize your Bedrock Agent Runtime client
+bedrock_agent = boto3.client(
+    'bedrock-agent-runtime',
+    region_name='us-east-1',
+    config=Config(read_timeout=45)
+)
+
+def lambda_handler(event, context):
+    try:
+        # --- 1) Parse and validate incoming request ---
+        body = json.loads(event.get('body', '{}'))
+        user_input = body.get('message') or body.get('prompt')
+        if not user_input:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type',
+                    'Access-Control-Allow-Methods': 'POST,OPTIONS'
+                },
+                'body': json.dumps({'error': 'Missing message/prompt in request body'})
+            }
+
+        session_id = body.get('sessionId', context.aws_request_id)
+
+        # Extract dynamic filter values (with defaults)
+        filter_payload = body.get('filter', {})
+        filter_key   = filter_payload.get('key', 'type')
+        filter_value = filter_payload.get('value', 'comprehensive')
+
+        # --- 2) Kick off Bedrock Agent with your KB + filter config ---
+        resp = bedrock_agent.invoke_agent(
+            agentId='YOUR_AGENT_ID',           # ← replace
+            agentAliasId='YOUR_AGENT_ALIAS_ID',# ← replace
+            sessionId=session_id,
+            inputText=user_input,
+            sessionState={
+                'knowledgeBaseConfigurations': [
+                    {
+                        'knowledgeBaseId': 'YOUR_KB_ID',  # ← replace
+                        'retrievalConfiguration': {
+                            'vectorSearchConfiguration': {
+                                'overrideSearchType': 'HYBRID',
+                                'numberOfResults': 10,
+                                'filter': {
+                                    'equals': {
+                                        'key':   filter_key,
+                                        'value': filter_value
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        )
+
+        # --- 3) Grab the streaming completion iterator ---
+        stream = resp.get('completion', [])
+
+        # --- 4) Generator that yields each chunk’s raw bytes ---
+        def generate():
+            for ev in stream:
+                chunk = ev.get('chunk', {})
+                if 'bytes' in chunk:
+                    yield chunk['bytes']
+
+        # --- 5) Return an HTTP response with chunked transfer + CORS ---
+        return {
+            'statusCode': 200,
+            'isBase64Encoded': True,   # because we’re sending raw bytes
+            'headers': {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Transfer-Encoding': 'chunked',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Methods': 'POST,OPTIONS'
+            },
+            'body': generate()
+        }
+
+    except Exception as e:
+        # Log the traceback for debugging
+        print(f"Error: {e}")
+        traceback.print_exc()
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Methods': 'POST,OPTIONS'
+            },
+            'body': json.dumps({
+                'error': str(e),
+                'stackTrace': traceback.format_exc()
+            })
+        }
