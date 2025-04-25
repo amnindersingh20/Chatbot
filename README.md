@@ -1,10 +1,9 @@
 {
-    "errorType": "Runtime.UserCodeSyntaxError",
-    "errorMessage": "SyntaxError: The requested module 'node:stream/web' does not provide an export named 'streamifyResponse'",
+    "errorType": "TypeError",
+    "errorMessage": "Cannot read properties of undefined (reading 'requestId')",
     "stack": [
-        "Runtime.UserCodeSyntaxError: SyntaxError: The requested module 'node:stream/web' does not provide an export named 'streamifyResponse'",
-        "    at _loadUserApp (file:///var/runtime/index.mjs:1084:17)",
-        "    at async UserFunction.js.module.exports.load (file:///var/runtime/index.mjs:1119:21)",
-        "    at async start (file:///var/runtime/index.mjs:1282:23)",
-        "    at async file:///var/runtime/index.mjs:1288:1"
+        "TypeError: Cannot read properties of undefined (reading 'requestId')",
+        "    at Runtime.handler (file:///var/task/index.mjs:20:51)",
+        "    at Runtime.handleOnceStreaming (file:///var/runtime/index.mjs:1199:38)"
     ]
+}
