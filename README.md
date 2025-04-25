@@ -1,63 +1,77 @@
-import { Readable } from 'stream';
-import crypto from 'crypto';
-import {
-  BedrockAgentRuntimeClient,
-  InvokeAgentCommand
-} from '@aws-sdk/client-bedrock-agent-runtime';
-
-export const handler = awslambda.streamifyResponse(
-  async (event, responseStream) => {
-    let body = {};
-    try {
-      body = JSON.parse(event.body || '{}');
-    } catch (e) {
-      console.error('Invalid JSON body:', e);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lambda Streaming Test</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 2rem;
     }
+    #output {
+      white-space: pre-wrap;
+      border: 1px solid #ccc;
+      padding: 1rem;
+      margin-top: 1rem;
+      height: 200px;
+      overflow-y: auto;
+      background: #f9f9f9;
+    }
+    #loading {
+      font-size: 1.2rem;
+      color: gray;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <h2>Stream Lambda Response</h2>
+  <input type="text" id="prompt" placeholder="Enter prompt..." style="width: 60%;" />
+  <button onclick="startStream()">Send</button>
+  
+  <div id="loading" style="display: none;">Streaming...</div>
+  <div id="output"></div>
 
-    const userInput = body.message || body.prompt || '';
-    const sessionId = body.sessionId || crypto.randomUUID();
-    const filterKey = body.filter?.key || 'type';
-    const filterValue = body.filter?.value || 'comprehensive';
+  <script>
+    async function startStream() {
+      const prompt = document.getElementById('prompt').value;
+      const output = document.getElementById('output');
+      const loading = document.getElementById('loading');
+      output.textContent = '';
+      loading.style.display = 'block';
 
-    const client = new BedrockAgentRuntimeClient({ region: 'us-east-1' });
+      const response = await fetch('https://YOUR_FUNCTION_URL_HERE', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: prompt,
+          filter: { key: "type", value: "comprehensive" }
+        })
+      });
 
-    const command = new InvokeAgentCommand({
-      agentId: 'YOUR_AGENT_ID',
-      agentAliasId: 'YOUR_AGENT_ALIAS_ID',
-      sessionId: sessionId,
-      inputText: userInput,
-      sessionState: {
-        knowledgeBaseConfigurations: [
-          {
-            knowledgeBaseId: 'YOUR_KB_ID',
-            retrievalConfiguration: {
-              vectorSearchConfiguration: {
-                overrideSearchType: 'HYBRID',
-                numberOfResults: 10,
-                filter: {
-                  equals: {
-                    key: filterKey,
-                    value: filterValue
-                  }
-                }
-              }
-            }
-          }
-        ]
+      if (!response.body) {
+        output.textContent = 'No response stream found.';
+        loading.style.display = 'none';
+        return;
       }
-    });
 
-    const result = await client.send(command);
-
-    // ✅ Proper stream handling:
-    const readable = Readable.from((async function* () {
-      for await (const chunk of result.completion || []) {
-        if (chunk.chunk?.bytes) {
-          yield chunk.chunk.bytes;
-        }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      let result = '';
+      
+      while (!done) {
+        const { done: isDone, value } = await reader.read();
+        done = isDone;
+        result += decoder.decode(value, { stream: true });
+        
+        output.textContent = result; // Display progressively
       }
-    })());
 
-    readable.pipe(responseStream);
-  }
-);
+      loading.style.display = 'none';  // Hide loading when done
+    }
+  </script>
+</body>
+</html>
