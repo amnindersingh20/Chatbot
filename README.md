@@ -1,84 +1,19 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Lambda Streaming Test</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      margin: 2rem;
-    }
-    #output {
-      white-space: pre-wrap;
-      border: 1px solid #ccc;
-      padding: 1rem;
-      margin-top: 1rem;
-      height: 200px;
-      overflow-y: auto;
-      background: #f9f9f9;
-    }
-    #loading {
-      font-size: 1.2rem;
-      color: gray;
-      font-style: italic;
-    }
-  </style>
-</head>
-<body>
-  <h2>Stream Lambda Response</h2>
-  <input type="text" id="prompt" placeholder="Enter prompt..." style="width: 60%;" />
-  <button onclick="startStream()">Send</button>
-  
-  <div id="loading" style="display: none;">Streaming...</div>
-  <div id="output"></div>
-
-  <script>
-    async function startStream() {
-      const prompt = document.getElementById('prompt').value;
-      const output = document.getElementById('output');
-      const loading = document.getElementById('loading');
-      output.textContent = '';
-      loading.style.display = 'block';
-
-      try {
-        const response = await fetch('https://YOUR_FUNCTION_URL_HERE', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            message: prompt,
-            filter: { key: "type", value: "comprehensive" }
-          })
-        });
-
-        if (!response.body) {
-          output.textContent = 'No response stream found.';
-          loading.style.display = 'none';
-          return;
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let done = false;
-        let result = '';
-
-        while (!done) {
-          const { done: isDone, value } = await reader.read();
-          done = isDone;
-          result += decoder.decode(value, { stream: true });
-
-          output.textContent = result;  // Update output progressively
-        }
-
-        loading.style.display = 'none';  // Hide loading spinner when done
-
-      } catch (error) {
-        console.error('Error in streaming response:', error);
-        output.textContent = 'Error occurred while streaming.';
-        loading.style.display = 'none';
-      }
-    }
-  </script>
-</body>
-</html>
+2025-04-25T14:07:36.608Z	5790087c-1e08-4a7d-ba6d-0c8ec92c1572	ERROR	ValidationException: Either of inputText or invocationResult with invocationId must be non-empty
+    at de_ValidationExceptionRes (/var/task/node_modules/@aws-sdk/client-bedrock-agent-runtime/dist-cjs/index.js:3192:21)
+    at de_CommandError (/var/task/node_modules/@aws-sdk/client-bedrock-agent-runtime/dist-cjs/index.js:3045:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async /var/task/node_modules/@smithy/middleware-serde/dist-cjs/index.js:35:20
+    at async /var/task/node_modules/@smithy/core/dist-cjs/index.js:167:18
+    at async /var/task/node_modules/@smithy/middleware-retry/dist-cjs/index.js:320:38
+    at async /var/task/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at async Runtime.handler (file:///var/task/index.mjs:40:20) {
+  '$fault': 'client',
+  '$metadata': {
+    httpStatusCode: 400,
+    requestId: '72b0d229-ab5d-4b03-8a6e-bae88ec6dcc3',
+    extendedRequestId: undefined,
+    cfId: undefined,
+    attempts: 1,
+    totalRetryDelay: 0
+  }
+}
