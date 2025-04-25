@@ -1,9 +1,10 @@
 {
-    "errorType": "TypeError",
-    "errorMessage": "Cannot read properties of undefined (reading 'requestId')",
+    "errorType": "Error",
+    "errorMessage": "No value provided for input HTTP label: sessionId.",
     "stack": [
-        "TypeError: Cannot read properties of undefined (reading 'requestId')",
-        "    at Runtime.handler (file:///var/task/index.mjs:20:51)",
-        "    at Runtime.handleOnceStreaming (file:///var/runtime/index.mjs:1199:38)"
+        "Error: No value provided for input HTTP label: sessionId.",
+        "    at resolvedPath (/var/task/node_modules/@smithy/core/dist-cjs/submodules/protocols/index.js:65:11)",
+        "    at /var/task/node_modules/@smithy/core/dist-cjs/submodules/protocols/index.js:124:19",
+        "    at RequestBuilder.build (/var/task/node_modules/@smithy/core/dist-cjs/submodules/protocols/index.js:90:7)"
     ]
 }
