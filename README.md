@@ -1,9 +1,16 @@
-npm error code 128
-npm error An unknown git error occurred
-npm error command git --no-replace-objects ls-remote ssh://git@github.com/aws-sdk/client-bedrock-agent-runtime.git
-npm error Warning: Permanently added 'github.com' (ED25519) to the list of known hosts.
-npm error git@github.com: Permission denied (publickey).
-npm error fatal: Could not read from remote repository.
-npm error
-npm error Please make sure you have the correct access rights
-npm error and the repository exists.
+2025-04-25T12:08:11.278Z	undefined	ERROR	Uncaught Exception 	{
+    "errorType": "TypeError",
+    "errorMessage": "awslambda.streamifyResponse is not a function",
+    "stack": [
+        "TypeError: awslambda.streamifyResponse is not a function",
+        "    at file:///var/task/index.mjs:13:34",
+        "    at ModuleJob.run (node:internal/modules/esm/module_job:271:25)",
+        "    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:578:26)",
+        "    at async _tryAwaitImport (file:///var/runtime/index.mjs:1008:16)",
+        "    at async _tryRequire (file:///var/runtime/index.mjs:1057:86)",
+        "    at async _loadUserApp (file:///var/runtime/index.mjs:1081:16)",
+        "    at async UserFunction.js.module.exports.load (file:///var/runtime/index.mjs:1119:21)",
+        "    at async start (file:///var/runtime/index.mjs:1282:23)",
+        "    at async file:///var/runtime/index.mjs:1288:1"
+    ]
+}
