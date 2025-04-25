@@ -1,4 +1,16 @@
-{
-  "statusCode": 500,
-  "body": "{\"error\": \"Parameter validation failed:\\nUnknown parameter in sessionState.knowledgeBaseConfigurations[0].retrievalConfiguration: \\\"filter\\\", must be one of: vectorSearchConfiguration\", \"stackTrace\": \"Traceback (most recent call last):\\n  File \\\"/var/task/lambda_function.py\\\", line 30, in lambda_handler\\n    response = bedrock_agent.invoke_agent(\\n        agentId='HPJTUOMEEN',               # \\u2190 fill in your Agent ARN or ID\\n    ...<21 lines>...\\n        }\\n    )\\n  File \\\"/var/lang/lib/python3.13/site-packages/botocore/client.py\\\", line 569, in _api_call\\n    return self._make_api_call(operation_name, kwargs)\\n           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^\\n  File \\\"/var/lang/lib/python3.13/site-packages/botocore/client.py\\\", line 980, in _make_api_call\\n    request_dict = self._convert_to_request_dict(\\n        api_params=api_params,\\n    ...<3 lines>...\\n        headers=additional_headers,\\n    )\\n  File \\\"/var/lang/lib/python3.13/site-packages/botocore/client.py\\\", line 1047, in _convert_to_request_dict\\n    request_dict = self._serializer.serialize_to_request(\\n        api_params, operation_model\\n    )\\n  File \\\"/var/lang/lib/python3.13/site-packages/botocore/validate.py\\\", line 381, in serialize_to_request\\n    raise ParamValidationError(report=report.generate_report())\\nbotocore.exceptions.ParamValidationError: Parameter validation failed:\\nUnknown parameter in sessionState.knowledgeBaseConfigurations[0].retrievalConfiguration: \\\"filter\\\", must be one of: vectorSearchConfiguration\\n\"}"
-}
+def generate():
+        for ev in stream:
+            chunk = ev.get("chunk", {})
+            if "bytes" in chunk:
+                yield chunk["bytes"]
+
+    return {
+        "statusCode": 200,
+        "isBase64Encoded": True,
+        "headers": {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Transfer-Encoding": "chunked",
+            "Access-Control-Allow-Origin": "*"  # if you need CORS
+        },
+        "body": generate()
+    }
