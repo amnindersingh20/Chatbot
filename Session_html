@@ -88,4 +88,22 @@
         let done = false;
 
         while (!done) {
-          const { value, done: doneReading } = await reader
+          const { value, done: doneReading } = await reader.read();
+          done = doneReading;
+          if (value) {
+            const chunk = decoder.decode(value, { stream: true });
+            chatDiv.textContent += chunk;
+            // auto-scroll to bottom
+            chatDiv.scrollTop = chatDiv.scrollHeight;
+          }
+        }
+      } catch (err) {
+        chatDiv.textContent = 'Fetch error: ' + err.message;
+      } finally {
+        sendBtn.disabled = false;
+      }
+    });
+  </script>
+
+</body>
+</html>
