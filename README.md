@@ -5,7 +5,6 @@ import {
   InvokeAgentCommand
 } from '@aws-sdk/client-bedrock-agent-runtime';
 
-// ✅ No need for NPM install of streamifyResponse — it's injected by Lambda
 export const handler = awslambda.streamifyResponse(
   async (event, responseStream) => {
     let body = {};
@@ -50,11 +49,7 @@ export const handler = awslambda.streamifyResponse(
 
     const result = await client.send(command);
 
-    responseStream.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    responseStream.setHeader('Access-Control-Allow-Origin', '*');
-    responseStream.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    responseStream.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
+    // ✅ Stream the result directly
     const readable = Readable.from((async function* () {
       for await (const chunk of result.completion || []) {
         if (chunk.chunk?.bytes) {
@@ -63,6 +58,6 @@ export const handler = awslambda.streamifyResponse(
       }
     })());
 
-    return readable.pipe(responseStream);
+    readable.pipe(responseStream);
   }
 );
