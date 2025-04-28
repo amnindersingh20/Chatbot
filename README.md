@@ -1,21 +1,25 @@
-import { BedrockAgentRuntimeClient, InvokeAgentCommand } from '@aws-sdk/client-bedrock-agent-runtime';
+import { streamifyResponse } from '@aws-sdk/streaming-response-handler-node';
+import { BedrockAgentRuntimeClient, InvokeAgentWithResponseStreamCommand } from '@aws-sdk/client-bedrock-agent-runtime';
 import crypto from 'crypto';
 
-export const handler = async (event, context) => {
+export const handler = streamifyResponse(async (event, responseStream) => {
+  // Parse input from API Gateway
   const { message, filter } = JSON.parse(event.body || '{}');
   const sessionId = crypto.randomUUID();
-  
+
+  // Initialize Bedrock client
   const client = new BedrockAgentRuntimeClient({ region: 'us-east-1' });
 
-  const command = new InvokeAgentCommand({
-    agentId: 'YOUR_AGENT_ID',
-    agentAliasId: 'YOUR_AGENT_ALIAS_ID',
+  // Configure Bedrock streaming command
+  const command = new InvokeAgentWithResponseStreamCommand({
+    agentId: 'YOUR_AGENT_ID', // Replace with your agent ID
+    agentAliasId: 'YOUR_AGENT_ALIAS_ID', // Replace with your alias ID
     sessionId: sessionId,
     inputText: message,
     sessionState: {
       knowledgeBaseConfigurations: [
         {
-          knowledgeBaseId: 'YOUR_KB_ID',
+          knowledgeBaseId: 'YOUR_KB_ID', // Replace with your KB ID
           retrievalConfiguration: {
             vectorSearchConfiguration: {
               overrideSearchType: 'HYBRID',
@@ -34,28 +38,23 @@ export const handler = async (event, context) => {
   });
 
   try {
-    const result = await client.send(command);
-    let responseBody = '';
+    // Get streaming response from Bedrock
+    const response = await client.send(command);
 
-    // Process each chunk from the completion
-    const completion = result.completion || [];
-    for (const chunk of completion) {
-      if (chunk?.chunk?.bytes) {
-        responseBody += Buffer.from(chunk.chunk.bytes).toString('utf-8');
+    // Stream chunks to client
+    if (response.completion) {
+      for await (const chunk of response.completion) {
+        if (chunk.chunk?.bytes) {
+          const chunkData = Buffer.from(chunk.chunk.bytes).toString('utf-8');
+          responseStream.write(chunkData); // Send chunk to client
+        }
       }
     }
 
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'text/plain' }, // Adjust content type if needed
-      body: responseBody
-    };
-    
-  } catch (err) {
-    console.error(err);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Internal Server Error' })
-    };
+    responseStream.end();
+
+  } catch (error) {
+    responseStream.write(`Error: ${error.message}`);
+    responseStream.end();
   }
-};
+});
