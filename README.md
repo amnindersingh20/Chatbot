@@ -1,63 +1,119 @@
-import { BedrockAgentRuntimeClient, InvokeAgentCommand } from "@aws-sdk/client-bedrock-agent-runtime";
-import { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
-import { StreamingTextResponse } from 'node-stream-api';
+import { useState } from "react";
+import "./App.css";
+import {
+    BedrockRuntimeClient,
+    InvokeModelWithResponseStreamCommand,
+    InvokeModelWithResponseStreamCommandOutput,
+} from "@aws-sdk/client-bedrock-runtime";
+import { ChatInput } from "./components/ChatInput/ChatInput";
+import { ChatMessage } from "./components/ChatMessage/ChatMessage";
 
-const bedrockAgentClient = new BedrockAgentRuntimeClient({ region: "us-east-1" });
-const bedrockRuntimeClient = new BedrockRuntimeClient({ region: "us-east-1" });
+const AWS_REGION = "us-east-1";
+const MODEL_ID = "anthropic.claude-3-haiku-20240307-v1:0";
+const MODEL_NAME = "Claude";
+const USER_NAME = "User";
 
-export const handler = async (event) => {
-    const prompt = JSON.parse(event.body).prompt;
-    
-    // Retrieve relevant context from Knowledge Base
-    const agentResponse = await bedrockAgentClient.send(new InvokeAgentCommand({
-        agentId: process.env.AGENT_ID,
-        agentAliasId: process.env.AGENT_ALIAS_ID,
-        sessionId: event.requestContext.requestId,
-        inputText: prompt
-    }));
-    
-    // Get the retrieved context from the Knowledge Base
-    const context = agentResponse.completion.map(c => c.text).join('\n');
+const client = new BedrockRuntimeClient({
+    region: AWS_REGION,
+    credentials: {
+        accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY,
+        secretAccessKey: import.meta.env.VITE_AWS_SECRET_KEY,
+    },
+});
 
-    // Create the final prompt with context
-    const fullPrompt = `Context: ${context}\n\nQuestion: ${prompt}\n\nAnswer:`;
+function App() {
+    const [history, setHistory] = useState<{ author: string; text: string }[]>([
+        { author: USER_NAME, text: "Hello!" },
+        { author: MODEL_NAME, text: "How can I help you?" },
+    ]);
 
-    // Invoke the Bedrock model with response streaming
-    const command = new InvokeModelWithResponseStreamCommand({
-        modelId: "anthropic.claude-v2",
-        contentType: "application/json",
-        accept: "application/json",
-        body: JSON.stringify({
-            prompt: fullPrompt,
-            max_tokens_to_sample: 3000,
-            temperature: 0.5,
-        })
-    });
+    const [stream, setStream] = useState<string | null>(null);
 
-    const response = await bedrockRuntimeClient.send(command);
-    
-    // Create a ReadableStream from the Bedrock response
-    const stream = new ReadableStream({
-        async start(controller) {
-            try {
-                for await (const chunk of response.body) {
-                    const bytes = new TextDecoder().decode(chunk.chunk.bytes);
-                    const data = JSON.parse(bytes);
-                    controller.enqueue(data.completion);
-                }
-                controller.close();
-            } catch (error) {
-                controller.error(error);
+    const sendResponse = async (prompt: string) => {
+        const payload = {
+            anthropic_version: "bedrock-2023-05-31",
+            max_tokens: 1000,
+            messages: [
+                { role: "user", content: [{ type: "text", text: prompt }] },
+            ],
+        };
+
+        const apiResponse = await client.send(
+            new InvokeModelWithResponseStreamCommand({
+                contentType: "application/json",
+                body: JSON.stringify(payload),
+                modelId: MODEL_ID,
+            })
+        );
+
+        return apiResponse;
+    };
+
+    const parseResponse = async (
+        apiResponse: InvokeModelWithResponseStreamCommandOutput
+    ) => {
+        if (!apiResponse.body) return "";
+
+        let completeMessage = "";
+
+        // Decode and process the response stream
+        for await (const item of apiResponse.body) {
+            /** @type Chunk */
+            const chunk = JSON.parse(
+                new TextDecoder().decode(item.chunk?.bytes)
+            );
+            const chunk_type = chunk.type;
+
+            if (chunk_type === "content_block_delta") {
+                const text = chunk.delta.text;
+                setStream(completeMessage + text);
+                completeMessage = completeMessage + text;
             }
         }
-    });
 
-    return {
-        statusCode: 200,
-        headers: {
-            'Content-Type': 'text/plain',
-            'Transfer-Encoding': 'chunked'
-        },
-        body: stream
+        // Return the final response
+        setStream(null);
+        return completeMessage;
     };
-};
+
+    const addToHistory = (text: string, author: string) => {
+        setHistory((prev) => [...prev, { text, author }]);
+    };
+
+    const onSubmit = async (prompt: string) => {
+        addToHistory(prompt, USER_NAME);
+        const response = await sendResponse(prompt);
+        const parsedResponse = await parseResponse(response);
+        addToHistory(parsedResponse, MODEL_NAME);
+    };
+
+    return (
+        <div className="flex flex-col h-screen p-4">
+            <div className="overflow-y-scroll flex-1">
+                {history.map(({ author, text }) => (
+                    <ChatMessage
+                        key={text}
+                        author={author}
+                        reverse={author === USER_NAME}
+                        text={text}
+                    />
+                ))}
+
+                {stream && (
+                    <ChatMessage
+                        key={stream}
+                        author={MODEL_NAME}
+                        reverse={false}
+                        text={stream}
+                    />
+                )}
+            </div>
+
+            <div className="flex items-center justify-between mt-auto h-20 sticky bottom-0 left-0 right-0">
+                <ChatInput onSubmit={onSubmit} />
+            </div>
+        </div>
+    );
+}
+
+export default App;
