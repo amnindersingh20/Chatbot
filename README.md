@@ -1,9 +1,9 @@
-import awsLambda from 'aws-lambda-ric';
-import pkg from '@aws-sdk/client-bedrock-agent-runtime';
-const { BedrockAgentRuntimeClient, InvokeAgentWithResponseStreamCommand } = pkg;
+// Updated Lambda Code (Node.js 20.x)
+import { BedrockAgentRuntimeClient, InvokeAgentWithResponseStreamCommand } from '@aws-sdk/client-bedrock-agent-runtime';
 import crypto from 'crypto';
+import { streamifyResponse } from 'aws-lambda-stream'; // Use this package for compatibility
 
-export const handler = awsLambda.streamifyResponse(async (event, responseStream) => {
+export const handler = streamifyResponse(async (event, responseStream) => {
   const { message, filter } = JSON.parse(event.body || '{}');
   const sessionId = crypto.randomUUID();
 
