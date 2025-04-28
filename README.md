@@ -1,53 +1,63 @@
-import { streamifyResponse } from 'aws-lambda-stream';
-import pkg from '@aws-sdk/client-bedrock-agent-runtime';
-const { BedrockAgentRuntimeClient, InvokeAgentWithResponseStreamCommand } = pkg;
-import crypto from 'crypto';
+import { BedrockAgentRuntimeClient, InvokeAgentCommand } from "@aws-sdk/client-bedrock-agent-runtime";
+import { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
+import { StreamingTextResponse } from 'node-stream-api';
 
-export const handler = streamifyResponse(async (event, responseStream) => {
-  const { message, filter } = JSON.parse(event.body || '{}');
-  const sessionId = crypto.randomUUID();
+const bedrockAgentClient = new BedrockAgentRuntimeClient({ region: "us-east-1" });
+const bedrockRuntimeClient = new BedrockRuntimeClient({ region: "us-east-1" });
 
-  const client = new BedrockAgentRuntimeClient({ region: 'us-east-1' });
+export const handler = async (event) => {
+    const prompt = JSON.parse(event.body).prompt;
+    
+    // Retrieve relevant context from Knowledge Base
+    const agentResponse = await bedrockAgentClient.send(new InvokeAgentCommand({
+        agentId: process.env.AGENT_ID,
+        agentAliasId: process.env.AGENT_ALIAS_ID,
+        sessionId: event.requestContext.requestId,
+        inputText: prompt
+    }));
+    
+    // Get the retrieved context from the Knowledge Base
+    const context = agentResponse.completion.map(c => c.text).join('\n');
 
-  const command = new InvokeAgentWithResponseStreamCommand({
-    agentId: 'YOUR_AGENT_ID',
-    agentAliasId: 'YOUR_AGENT_ALIAS_ID',
-    sessionId: sessionId,
-    inputText: message,
-    sessionState: {
-      knowledgeBaseConfigurations: [
-        {
-          knowledgeBaseId: 'YOUR_KB_ID',
-          retrievalConfiguration: {
-            vectorSearchConfiguration: {
-              overrideSearchType: 'HYBRID',
-              numberOfResults: 10,
-              filter: {
-                equals: {
-                  key: filter?.key || 'type',
-                  value: filter?.value || 'comprehensive'
+    // Create the final prompt with context
+    const fullPrompt = `Context: ${context}\n\nQuestion: ${prompt}\n\nAnswer:`;
+
+    // Invoke the Bedrock model with response streaming
+    const command = new InvokeModelWithResponseStreamCommand({
+        modelId: "anthropic.claude-v2",
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+            prompt: fullPrompt,
+            max_tokens_to_sample: 3000,
+            temperature: 0.5,
+        })
+    });
+
+    const response = await bedrockRuntimeClient.send(command);
+    
+    // Create a ReadableStream from the Bedrock response
+    const stream = new ReadableStream({
+        async start(controller) {
+            try {
+                for await (const chunk of response.body) {
+                    const bytes = new TextDecoder().decode(chunk.chunk.bytes);
+                    const data = JSON.parse(bytes);
+                    controller.enqueue(data.completion);
                 }
-              }
+                controller.close();
+            } catch (error) {
+                controller.error(error);
             }
-          }
         }
-      ]
-    }
-  });
+    });
 
-  try {
-    const response = await client.send(command);
-    if (response.completion) {
-      for await (const chunk of response.completion) {
-        if (chunk.chunk?.bytes) {
-          const chunkData = Buffer.from(chunk.chunk.bytes).toString('utf-8');
-          responseStream.write(chunkData);
-        }
-      }
-    }
-    responseStream.end();
-  } catch (error) {
-    responseStream.write(`Error: ${error.message}`);
-    responseStream.end();
-  }
-});
+    return {
+        statusCode: 200,
+        headers: {
+            'Content-Type': 'text/plain',
+            'Transfer-Encoding': 'chunked'
+        },
+        body: stream
+    };
+};
