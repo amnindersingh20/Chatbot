@@ -1,53 +1,16 @@
-// Updated Lambda Code (Node.js 20.x)
-import { BedrockAgentRuntimeClient, InvokeAgentWithResponseStreamCommand } from '@aws-sdk/client-bedrock-agent-runtime';
-import crypto from 'crypto';
-import { streamifyResponse } from 'aws-lambda-stream'; // Use this package for compatibility
-
-export const handler = streamifyResponse(async (event, responseStream) => {
-  const { message, filter } = JSON.parse(event.body || '{}');
-  const sessionId = crypto.randomUUID();
-
-  const client = new BedrockAgentRuntimeClient({ region: 'us-east-1' });
-
-  const command = new InvokeAgentWithResponseStreamCommand({
-    agentId: 'YOUR_AGENT_ID',
-    agentAliasId: 'YOUR_AGENT_ALIAS_ID',
-    sessionId: sessionId,
-    inputText: message,
-    sessionState: {
-      knowledgeBaseConfigurations: [
-        {
-          knowledgeBaseId: 'YOUR_KB_ID',
-          retrievalConfiguration: {
-            vectorSearchConfiguration: {
-              overrideSearchType: 'HYBRID',
-              numberOfResults: 10,
-              filter: {
-                equals: {
-                  key: filter?.key || 'type',
-                  value: filter?.value || 'comprehensive'
-                }
-              }
-            }
-          }
-        }
-      ]
-    }
-  });
-
-  try {
-    const response = await client.send(command);
-    if (response.completion) {
-      for await (const chunk of response.completion) {
-        if (chunk.chunk?.bytes) {
-          const chunkData = Buffer.from(chunk.chunk.bytes).toString('utf-8');
-          responseStream.write(chunkData);
-        }
-      }
-    }
-    responseStream.end();
-  } catch (error) {
-    responseStream.write(`Error: ${error.message}`);
-    responseStream.end();
-  }
-});
+{
+  "errorType": "Runtime.UserCodeSyntaxError",
+  "errorMessage": "SyntaxError: Named export 'InvokeAgentWithResponseStreamCommand' not found. The requested module '@aws-sdk/client-bedrock-agent-runtime' is a CommonJS module, which may not support all module.exports as named exports.\nCommonJS modules can always be imported via the default export, for example using:\n\nimport pkg from '@aws-sdk/client-bedrock-agent-runtime';\nconst { BedrockAgentRuntimeClient, InvokeAgentWithResponseStreamCommand } = pkg;\n",
+  "trace": [
+    "Runtime.UserCodeSyntaxError: SyntaxError: Named export 'InvokeAgentWithResponseStreamCommand' not found. The requested module '@aws-sdk/client-bedrock-agent-runtime' is a CommonJS module, which may not support all module.exports as named exports.",
+    "CommonJS modules can always be imported via the default export, for example using:",
+    "",
+    "import pkg from '@aws-sdk/client-bedrock-agent-runtime';",
+    "const { BedrockAgentRuntimeClient, InvokeAgentWithResponseStreamCommand } = pkg;",
+    "",
+    "    at _loadUserApp (file:///var/runtime/index.mjs:1084:17)",
+    "    at async UserFunction.js.module.exports.load (file:///var/runtime/index.mjs:1119:21)",
+    "    at async start (file:///var/runtime/index.mjs:1282:23)",
+    "    at async file:///var/runtime/index.mjs:1288:1"
+  ]
+}
