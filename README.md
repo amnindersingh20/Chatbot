@@ -1,3 +1,4 @@
+
 import json
 import boto3
 from botocore.config import Config
@@ -8,9 +9,11 @@ bedrock_agent = boto3.client(
     'bedrock-agent-runtime',
     region_name='us-east-1',
     config=Config(read_timeout=45)
-    
+)
+
 def lambda_handler(event, context):
     try:
+        
         body = json.loads(event.get('body', '{}'))
         user_input = body.get('message') or body.get('prompt')
         if not user_input:
@@ -19,51 +22,45 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'Missing message/prompt in request body'})
             }
 
-        # Use provided sessionId or generate new one
+     
         session_id = body.get('sessionId', context.aws_request_id)
-        
-        # Get sessionState from request or initialize with KB config
-        session_state = body.get('sessionState')
-        if not session_state:
-            session_state = {
-                'knowledgeBaseConfigurations': [{
-                    'knowledgeBaseId': 'TGZ90',
-                    'retrievalConfiguration': {
-                        'vectorSearchConfiguration': {
-                            'overrideSearchType': 'HYBRID',
-                            'numberOfResults': 100
-                        }
-                    }
-                }]
-            }
 
-        # Invoke agent with current session state
+       
         response = bedrock_agent.invoke_agent(
-            agentId='Pro',
-            agentAliasId='MP0',
+            agentId='PTEXPNMEUP',              
+            agentAliasId='MPGSNFMGF1',    
             sessionId=session_id,
             inputText=user_input,
-            sessionState=session_state
+            sessionState={
+                'knowledgeBaseConfigurations': [
+                    {
+                        'knowledgeBaseId': 'TGZMV97MNY',  
+                        'retrievalConfiguration': {
+                            'vectorSearchConfiguration': {
+                                'overrideSearchType': 'HYBRID',
+                                'numberOfResults': 100
+                                
+                            }
+                        }
+                    }
+                ]
+            }
         )
 
-        # Process response stream
+        
         completion = ""
         citations = []
-        new_session_state = None
-        
-        for event in response.get('events', []):
-            if 'chunk' in event:
-                chunk = event['chunk']
-                completion += chunk.get('bytes', b'').decode('utf-8')
-            elif 'attribution' in event:
-                for citation in event['attribution'].get('citations', []):
-                    for ref in citation.get('retrievedReferences', []):
-                        citations.append({
-                            'source': ref.get('location', {}).get('s3Location', {}).get('uri', ''),
-                            'text': ref.get('content', {}).get('text', '')
-                        })
-            elif 'sessionState' in event:
-                new_session_state = event['sessionState']
+        for ev in response['completion']:
+            chunk = ev.get('chunk', {})
+            if 'bytes' in chunk:
+                completion += chunk['bytes'].decode('utf-8')
+            if 'attribution' in chunk and 'citations' in chunk['attribution']:
+                for c in chunk['attribution']['citations']:
+                    ref = c['retrievedReferences'][0]
+                    citations.append({
+                        'source': ref['location']['s3Location']['uri'],
+                        'text': ref['content']['text']
+                    })
 
         return {
             'statusCode': 200,
@@ -74,12 +71,12 @@ def lambda_handler(event, context):
             'body': json.dumps({
                 'message': completion,
                 'citations': citations,
-                'sessionId': session_id,
-                'sessionState': new_session_state
+                'sessionId': session_id
             })
         }
 
     except Exception as e:
+        # Log and return errors
         print(f"Error: {str(e)}")
         traceback.print_exc()
         return {
