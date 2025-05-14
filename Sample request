@@ -1,1 +1,163 @@
-Access to fetch at 'https://venoxznvphmeozioqbvjkdowdy0fqyfa.lambda-url.us-east-1.on.aws/' from origin 'http://127.0.0.1:5500' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource. If an opaque response serves your needs, set the request's mode to 'no-cors' to fetch the resource with CORS disabled.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Agent</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+
+        .chat-history {
+            height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+        }
+
+        .bot-message {
+            background-color: #f5f5f5;
+            margin-right: 20%;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .citation {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+            padding-left: 10px;
+            border-left: 2px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-history" id="chatHistory"></div>
+        <div class="input-container">
+            <input type="text" id="userInput" placeholder="Type your message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let sessionState = null;
+        let sessionId = null;
+        const apiGatewayUrl = 'YOUR_API_GATEWAY_URL'; // Replace with your API Gateway URL
+
+        async function sendMessage() {
+            const userInput = document.getElementById('userInput');
+            const message = userInput.value.trim();
+            userInput.value = '';
+
+            if (!message) return;
+
+            // Add user message to history
+            addMessageToHistory(message, 'user');
+
+            try {
+                const response = await fetch(apiGatewayUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        sessionId: sessionId,
+                        sessionState: sessionState
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // Update session state
+                sessionState = data.sessionState;
+                sessionId = data.sessionId;
+
+                // Add bot response to history
+                addMessageToHistory(data.message, 'bot', data.citations);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                addMessageToHistory('Sorry, there was an error processing your request.', 'bot');
+            }
+        }
+
+        function addMessageToHistory(message, sender, citations = []) {
+            const history = document.getElementById('chatHistory');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}-message`;
+            
+            messageDiv.innerHTML = `
+                <div><strong>${sender === 'user' ? 'You' : 'Agent'}:</strong> ${message}</div>
+                ${citations.map(c => 
+                    `<div class="citation">Source: ${c.source}<br>${c.text}</div>`
+                ).join('')}
+            `;
+
+            history.appendChild(messageDiv);
+            history.scrollTop = history.scrollHeight;
+        }
+
+        // Handle Enter key
+        document.getElementById('userInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
