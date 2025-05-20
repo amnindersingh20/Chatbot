@@ -1,0 +1,80 @@
+import streamlit as st
+import requests
+import json
+import os
+
+# Configuration
+API_URL = os.getenv("API_URL", "YOUR_API_GATEWAY_URL")  # Set your API Gateway URL here
+
+# Page setup
+st.set_page_config(page_title="Chat with Bedrock Agent", page_icon="🤖")
+st.title("Chat with Bedrock Agent 🤖")
+
+# Initialize session state
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "session_id" not in st.session_state:
+    st.session_state.session_id = None
+
+# Display chat messages
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        if message.get("citations"):
+            with st.expander("Sources"):
+                for cite in message["citations"]:
+                    st.write(f"**Source**: {cite['source']}")
+                    st.write(f"**Excerpt**: {cite['text']}")
+                    st.divider()
+
+# Chat input
+if prompt := st.chat_input("What would you like to ask?"):
+    # Add user message to history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    # Display user message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    # Prepare API request
+    payload = {
+        "message": prompt,
+        "sessionId": st.session_state.session_id
+    }
+    
+    try:
+        # Show loading spinner
+        with st.spinner("Thinking..."):
+            # Call API Gateway
+            response = requests.post(
+                API_URL,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps(payload)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Update session ID
+                st.session_state.session_id = data.get("sessionId", st.session_state.session_id)
+                
+                # Add assistant response to history
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": data["message"],
+                    "citations": data.get("citations", [])
+                })
+                
+                # Display assistant response
+                with st.chat_message("assistant"):
+                    st.markdown(data["message"])
+                    if data.get("citations"):
+                        with st.expander("Sources"):
+                            for cite in data["citations"]:
+                                st.write(f"**Source**: {cite['source']}")
+                                st.write(f"**Excerpt**: {cite['text']}")
+                                st.divider()
+            else:
+                st.error(f"API Error: {response.text}")
+    
+    except Exception as e:
+        st.error(f"Request failed: {str(e)}")
