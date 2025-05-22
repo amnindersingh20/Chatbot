@@ -8,6 +8,7 @@ import traceback
 S3_BUCKET = "pocbotai"
 S3_KEY = "DBcheck.csv"
 
+# Load the CSV once, at cold start
 try:
     s3_client = boto3.client('s3')
     response = s3_client.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
@@ -18,48 +19,57 @@ except Exception as e:
     print("Error loading CSV from S3:", str(e))
     df = pd.DataFrame()
 
-response_columns = ["P119", "P143", "P3021", "P3089", "P3368", "P3019", "P3090", "P3373"]
+# Columns we can return
+RESPONSE_COLUMNS = ["P119", "P143", "P3021", "P3089", "P3368", "P3019", "P3090", "P3373"]
 
-def get_medication(condition_name, selected_columns, display_mode):
-    condition_name = condition_name.strip().lower()
-    escaped_condition = re.escape(condition_name)
-    filtered_df = df[df["Data Point Name"].str.contains(escaped_condition, case=False, na=False, regex=True)]
+def get_medication(condition_name: str, selected_columns: str, display_mode: str):
+    condition = condition_name.strip().lower()
+    escaped = re.escape(condition)
+    matched = df[df["Data Point Name"].str.contains(escaped, case=False, na=False, regex=True)]
 
-    if not filtered_df.empty:
-        if display_mode == "row-wise":
-            return {
-                "response_type": "row_wise",
-                "data": filtered_df.replace({pd.NaT: None}).to_dict(orient='records'),
-                "message": f"Found {len(filtered_df)} row(s) for '{condition_name.capitalize()}'"
-            }
-        else:
-            columns_to_check = response_columns if selected_columns.lower() == "all" else [
-                col.strip() for col in selected_columns.split(',') if col.strip() in response_columns
-            ]
-            results = []
-            for _, row in filtered_df.iterrows():
-                result = {
-                    "data_point": row['Data Point Name'],
-                    "columns": {col: row[col] for col in columns_to_check if pd.notna(row[col])}
-                }
-                if result['columns']:
-                    results.append(result)
-            return {
-                "response_type": "column_wise",
-                "data": results,
-                "message": f"Found {len(results)} column-wise result(s) for '{condition_name.capitalize()}'"
-            }
-    else:
+    if matched.empty:
         return {"error": f"No records found for '{condition_name}'"}
 
+    # Row-wise dump of all columns
+    if display_mode == "row-wise":
+        records = matched.replace({pd.NaT: None}).to_dict(orient='records')
+        return {
+            "response_type": "row_wise",
+            "data": records,
+            "message": f"Found {len(records)} row(s) for '{condition_name.capitalize()}'"
+        }
+
+    # Column-wise: filter to selected columns
+    cols = RESPONSE_COLUMNS if selected_columns.lower() == "all" else [
+        c for c in selected_columns.split(",") if c.strip() in RESPONSE_COLUMNS
+    ]
+    results = []
+    for _, row in matched.iterrows():
+        available = {c: row[c] for c in cols if pd.notna(row[c])}
+        if available:
+            results.append({
+                "data_point": row["Data Point Name"],
+                "columns": available
+            })
+
+    return {
+        "response_type": "column_wise",
+        "data": results,
+        "message": f"Found {len(results)} column-wise result(s) for '{condition_name.capitalize()}'"
+    }
+
 def lambda_handler(event, context):
-    bedrock_response = {
+    """
+    Bedrock expects 'body' to be a JSON object, not a serialized string.
+    We therefore assign a dict directly to responseBody['application/json']['body'].
+    """
+    base = {
         "messageVersion": "1.0",
-        "actionGroup": event.get('actionGroup', ''),
+        "actionGroup": event.get("actionGroup", ""),
         "httpStatusCode": 200,
         "responseBody": {
             "application/json": {
-                "body": ""
+                "body": None  # fill in below
             }
         }
     }
@@ -67,42 +77,45 @@ def lambda_handler(event, context):
     try:
         print("Received event:", json.dumps(event, indent=2))
 
-        parameters = {p['name']: p['value'] for p in event.get('parameters', [])}
-        condition_query = parameters.get('condition', '').strip()
-        display_mode = parameters.get('display_mode', 'row-wise').strip().lower()
-        selected_column = parameters.get('selected_column', 'all').strip()
+        params = {p["name"]: p["value"] for p in event.get("parameters", [])}
+        condition = params.get("condition", "").strip()
+        display_mode = params.get("display_mode", "row-wise").strip().lower()
+        selected_column = params.get("selected_column", "all").strip()
 
-        if not condition_query:
-            bedrock_response['httpStatusCode'] = 400
-            bedrock_response['responseBody']['application/json']['body'] = json.dumps({
+        if not condition:
+            base["httpStatusCode"] = 400
+            base["responseBody"]["application/json"]["body"] = {
                 "error": "Missing required parameter: condition",
-                "parameters_received": parameters
-            })
-            return bedrock_response
+                "parameters_received": params
+            }
+            return base
 
-        result = get_medication(condition_query, selected_column, display_mode)
+        result = get_medication(condition, selected_column, display_mode)
 
-        if 'error' in result:
-            bedrock_response['httpStatusCode'] = 404
-            bedrock_response['responseBody']['application/json']['body'] = json.dumps(result)
-            return bedrock_response
+        # Not found case
+        if "error" in result:
+            base["httpStatusCode"] = 404
+            base["responseBody"]["application/json"]["body"] = {
+                "error": result["error"]
+            }
+            return base
 
-        bedrock_response['responseBody']['application/json']['body'] = json.dumps({
+        # Success case: assign a dict directly, no json.dumps
+        base["responseBody"]["application/json"]["body"] = {
             "status": "success",
-            "query": condition_query,
+            "query": condition,
             "display_mode": display_mode,
             "selected_columns": selected_column,
             **result
-        })
-
-        return bedrock_response
+        }
+        return base
 
     except Exception as e:
-        print("Error:", traceback.format_exc())
-        bedrock_response['httpStatusCode'] = 500
-        bedrock_response['responseBody']['application/json']['body'] = json.dumps({
+        print("Error processing request:", traceback.format_exc())
+        base["httpStatusCode"] = 500
+        base["responseBody"]["application/json"]["body"] = {
             "error": "Internal server error",
             "details": str(e),
             "stack_trace": traceback.format_exc()
-        })
-        return bedrock_response
+        }
+        return base
