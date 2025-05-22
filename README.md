@@ -37,23 +37,20 @@ except Exception as e:
     logger.error("Failed to load or parse CSV: %s", e, exc_info=True)
     df = pd.DataFrame()
 
-# ——— Columns to return in column-wise mode ————————————————————————————————————————
+
 RESPONSE_COLUMNS = [
     "P119", "P143", "P3021", "P3089",
     "P3368", "P3019", "P3090", "P3373"
 ]
 
 def get_medication(name: str, selected_columns: str, display_mode: str) -> Dict[str, Any]:
-    """
-    Look up rows in the dataframe matching `name`, and return either row-wise
-    or column-wise results based on `display_mode`.
-    """
     name = name.strip().lower()
-    esc  = re.escape(name)
+    esc = re.escape(name)
     matched = df[df["Data Point Name"].str.contains(esc, case=False, na=False, regex=True)]
 
     if matched.empty:
-        return {"error": f"No records found for '{name}'}
+        # <-- fixed f-string here with matching quotes
+        return {"error": f"No records found for '{name}'"}
 
     if display_mode == "row-wise":
         rows = matched.where(pd.notna(matched), None).to_dict(orient="records")
@@ -63,7 +60,7 @@ def get_medication(name: str, selected_columns: str, display_mode: str) -> Dict[
             "message": f"Found {len(rows)} row(s) for '{name}'"
         }
 
-    # Column-wise mode
+    # Column-wise
     if selected_columns.lower() == "all":
         cols = RESPONSE_COLUMNS
     else:
@@ -86,12 +83,7 @@ def get_medication(name: str, selected_columns: str, display_mode: str) -> Dict[
     }
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """
-    Handler invoked by Bedrock Agent—returns either row-wise or column-wise results
-    as plain text plus JSON data (with indentation) under TEXT.body.
-    """
     try:
-        # Safely build params dict
         params = { p.get('name'): p.get('value') for p in event.get('parameters', []) }
         condition       = params.get('condition', '').strip()
         selected_column = params.get('selected_column', 'all').strip()
@@ -100,11 +92,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not condition:
             raise ValueError("Missing required parameter: condition")
 
-        # Run your lookup
         result = get_medication(condition, selected_column, display_mode)
         logger.info("Result from get_medication: %s", result)
 
-        # Build a clean TEXT.body (not double-JSON-encoded)
         message = result.get('message', result.get('error', 'No message provided'))
         data    = result.get('data', [])
 
@@ -114,7 +104,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         }
 
-        # Wrap into Bedrock action response
         function_response = {
             'actionGroup':       event.get('actionGroup'),
             'function':          event.get('function'),
