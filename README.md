@@ -1,78 +1,107 @@
-import pandas as pd
-import re
+import os
+import json
 import boto3
-from io import StringIO
- 
-# Load data from S3
-S3_BUCKET = "your-s3-bucket-name"
-S3_Key = "DBcheck.csv"
- 
-s3_client = boto3.client('s3')
-response = s3_client.get_object(Bucket=S3_BUCKET, Key=S3_Key)
-csv_data = response['Body'].read().decode('utf-8')
- 
-# Read CSV into DataFrame
-df = pd.read_csv(StringIO(csv_data))
-df["Data Point Name"] = df["Data Point Name"].str.strip().str.lower()
- 
-# Define response columns
-response_columns = ["P119", "P143", "P3021", "P3089", "P3368", "P3019", "P3090", "P3373"]
- 
-# Function to query information based on input parameters
-def get_medication(condition_name, selected_columns, display_mode):
-    condition_name = condition_name.strip().lower()  # Normalize input
-    escaped_condition = re.escape(condition_name)  # Escape special characters
- 
-    # Filter DataFrame for the condition
-    filtered_df = df[df["Data Point Name"].str.contains(escaped_condition, case=False, na=False, regex=True)]
- 
-    if not filtered_df.empty:
-        if display_mode == "row-wise":
-            return f"Row-wise results for '{condition_name.capitalize()}':\n{filtered_df.to_string(index=False)}"
+import pandas as pd
+import io
+import re
+import logging
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+s3 = boto3.client('s3')
+
+# Load and cache CSV in global scope for Lambda cold start
+_df_cache = None
+
+def _load_dataframe():
+    global _df_cache
+    if _df_cache is None:
+        bucket = os.environ.get('BUCKET_NAME')
+        key = os.environ.get('CSV_KEY')
+        if not bucket or not key:
+            raise RuntimeError("Configuration error: BUCKET_NAME or CSV_KEY is missing")
+        # fetch from S3
+        resp = s3.get_object(Bucket=bucket, Key=key)
+        raw = resp['Body'].read()
+        df = pd.read_csv(io.BytesIO(raw))
+        # normalize the "Data Point Name" column
+        df['datapointnames'] = df['Data Point Name'].fillna('')
+        df['normalized_names'] = (
+            df['datapointnames']
+              .str.strip()
+              .str.lower()
+              .str.replace('-', ' ')
+        )
+        _df_cache = df
+    return _df_cache
+
+
+def lambda_handler(event, context):
+    try:
+        logger.info(f"Event received: {json.dumps(event)}")
+
+        # load dataframe
+        df = _load_dataframe()
+
+        # extract params
+        params = {p['name']: p.get('value') for p in event.get('parameters', [])}
+        condition = params.get('condition', '').strip().lower()
+        display_mode = params.get('display_mode', 'row-wise').strip().lower()
+        selected_column = params.get('selected_column', 'all').strip()
+
+        if not condition:
+            return build_response("Missing required parameter: condition", event)
+
+        # regex filter
+        esc = re.escape(condition)
+        filtered = df[df['normalized_names'].str.contains(esc, case=False, na=False, regex=True)]
+
+        if filtered.empty:
+            return build_response(f"No record found for '{condition}'", event)
+
+        # formatting
+        if display_mode == 'row-wise':
+            body = f"Row-wise results for '{condition}':\n" + filtered.to_string(index=False)
         else:
+            # decide columns
+            all_cols = [col for col in df.columns if re.match(r'^P\d+$', col)]
+            cols = all_cols if selected_column.lower() == 'all' else [selected_column]
             responses = []
-            columns_to_check = response_columns if selected_columns.lower() == "all" else [selected_columns] if selected_columns in response_columns else []
- 
-            for _, row in filtered_df.iterrows():
-                row_responses = [f"{col}: {row[col]}" for col in columns_to_check if col in filtered_df.columns and pd.notna(row[col])]
-                if row_responses:
-                    responses.append(f"Data Point Name: {row['Data Point Name']} | " + " | ".join(row_responses))
- 
-            return f"Plan Column-wise responses for '{condition_name.capitalize()}':\n" + "\n".join(responses) if responses else f"No matching records found in '{selected_columns}' for '{condition_name}'."
-    else:
-        return f"No record found for '{condition_name}'."
- 
-# Event handler function
-def event_handler(event):
-    agent = event.get('agent', '')
-    actionGroup = event.get('actionGroup', '')
-    parameters = event.get('parameters', [])
- 
-    # Convert parameters into dictionary
-    param_dict = {param['name']: param['value'] for param in parameters}
-   
-    # Extract relevant inputs
-    condition_query = param_dict.get('condition', '').strip()
-    display_mode = param_dict.get('display_mode', 'row-wise').strip().lower()
-    selected_column = param_dict.get('selected_column', 'all').strip()
- 
-    if condition_query:
-        response = get_medication(condition_query, selected_column, display_mode)
-        return response
-    else:
-        return "No condition provided in parameters."
- 
-# Example usage:
-if __name__ == "__main__":
-    # Simulated event input
-    event_data = {
-        "agent": "chatbot_agent",
-        "actionGroup": "med_query",
-        "parameters": [
-            {"name": "condition", "value": "diabetes"},
-            {"name": "display_mode", "value": "column-wise"},
-            {"name": "selected_column", "value": "P119"}
-        ]
+            for _, row in filtered.iterrows():
+                entries = []
+                for col in cols:
+                    if col in row and pd.notna(row[col]):
+                        entries.append(f"{col}: {row[col]}")
+                if entries:
+                    responses.append(f"Data Point Name: {row['datapointnames']} | " + " | ".join(entries))
+            body = (
+                f"Plan Column-wise responses for '{condition}':\n" + "\n".join(responses)
+                if responses else f"No matching records found in '{selected_column}' for '{condition}'."
+            )
+
+        return build_response(body, event)
+
+    except RuntimeError as ce:
+        logger.error(str(ce))
+        return build_response(str(ce), event)
+    except Exception as e:
+        logger.error(f"Unhandled error: {str(e)}", exc_info=True)
+        return build_response(f"Internal error: {str(e)}", event)
+
+
+def build_response(answer_text, event):
+    return {
+        "messageVersion": "1.0",
+        "response": {
+            "actionGroup": event.get("actionGroup"),
+            "function": event.get("function"),
+            "functionResponse": {
+                "responseBody": {
+                    "TEXT": {"body": answer_text}
+                }
+            }
+        },
+        "sessionAttributes": event.get("sessionAttributes", {}),
+        "promptSessionAttributes": event.get("promptSessionAttributes", {})
     }
- 
-    print(event_handler(event_data))
