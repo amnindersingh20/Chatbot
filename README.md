@@ -1,1 +1,4 @@
-Error: An error occurred (dependencyFailedException) when calling the InvokeAgent operation: Your request couldn't be completed. Lambda function arn:aws:lambda:us-east-1:653858776174:function:poc-pandas-acg-nq416 encountered a problem while processing request.The error message from the Lambda function is Unhandled. Check the Lambda function log for error details, then try your request again after fixing the error.
+[ERROR] KeyError: 'message'
+Traceback (most recent call last):
+  File "/var/task/dummy_lambda.py", line 107, in lambda_handler
+    'message': result['message'],
