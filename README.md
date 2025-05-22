@@ -8,14 +8,14 @@ import traceback
 S3_BUCKET = "pocbotai"
 S3_KEY    = "DBcheck.csv"
 
-# — Cold start: load & normalize your CSV once —
+# Cold-start: load and normalize CSV
 try:
     s3 = boto3.client('s3')
     obj = s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
     df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
     df["Data Point Name"] = df["Data Point Name"].str.strip().str.lower()
 except Exception as e:
-    print("Failed to load CSV:", str(e))
+    print("CSV load failed:", str(e))
     df = pd.DataFrame()
 
 RESPONSE_COLUMNS = ["P119","P143","P3021","P3089","P3368","P3019","P3090","P3373"]
@@ -24,6 +24,7 @@ def get_medication(name, selected_columns, display_mode):
     name = name.strip().lower()
     esc  = re.escape(name)
     matched = df[df["Data Point Name"].str.contains(esc, case=False, na=False, regex=True)]
+
     if matched.empty:
         return {"error": f"No records found for '{name}'"}
 
@@ -35,7 +36,6 @@ def get_medication(name, selected_columns, display_mode):
             "message": f"Found {len(rows)} row(s) for '{name}'"
         }
 
-    # column-wise
     cols = (
         RESPONSE_COLUMNS
         if selected_columns.lower() == "all"
@@ -53,57 +53,56 @@ def get_medication(name, selected_columns, display_mode):
     }
 
 def lambda_handler(event, context):
-    """
-    Safely uses .get() to avoid KeyError on missing fields,
-    and handles both API-schema and function-details action groups.
-    """
-    try:
-        print("Event:", json.dumps(event, indent=2))
+    # **1) Dump the entire incoming event so you can inspect apiPath/httpMethod**
+    print("=== FULL EVENT ===")
+    print(json.dumps(event, indent=2))
+    print("=== EVENT KEYS ===", list(event.keys()))
 
-        # Extract params
+    try:
+        # Extract parameters safely
         params = {p.get("name"): p.get("value") for p in event.get("parameters", [])}
-        cond   = (params.get("condition") or "").strip()
-        mode   = (params.get("display_mode") or "row-wise").strip().lower()
-        cols   = (params.get("selected_column") or "all").strip()
+        cond  = (params.get("condition")         or "").strip()
+        mode  = (params.get("display_mode")      or "row-wise").strip().lower()
+        cols  = (params.get("selected_column")   or "all").strip()
 
         if not cond:
             raise ValueError("Missing required parameter: condition")
 
+        # Perform the lookup
         result = get_medication(cond, cols, mode)
         if "error" in result:
-            status_code = 404
-            body = {"error": result["error"]}
+            status, body = 404, {"error": result["error"]}
         else:
-            status_code = 200
-            body = {
-                "status": "success",
-                "query": cond,
-                "display_mode": mode,
+            status, body = 200, {
+                "status":           "success",
+                "query":            cond,
+                "display_mode":     mode,
                 "selected_columns": cols,
                 **result
             }
 
-        # Detect API-schema mode by presence of apiPath/httpMethod
-        api_path   = event.get("apiPath")
+        # Pull incoming apiPath and httpMethod (if present)
+        api_path    = event.get("apiPath")
         http_method = event.get("httpMethod")
-        action_group = event.get("actionGroup", "")
+        action_grp  = event.get("actionGroup", "")
 
+        # Build the response wrapper
         if api_path and http_method:
-            # API-schema style: echo path+method exactly
+            print(f"Echoing API schema mode → apiPath={api_path}, httpMethod={http_method}")
             response_wrapper = {
-                "actionGroup":    action_group,
-                "apiPath":        api_path,
-                "httpMethod":     http_method,
-                "httpStatusCode": status_code,
+                "actionGroup":    action_grp,
+                "apiPath":        api_path,     # must match exactly what you see in the logs!
+                "httpMethod":     http_method,  # same here
+                "httpStatusCode": status,
                 "responseBody": {
                     "application/json": {"body": body}
                 }
             }
         else:
-            # Function-details style: use responseState instead
+            print("Function-details mode (no apiPath/httpMethod present)")
             response_wrapper = {
-                "actionGroup":    action_group,
-                "responseState":  "SUCCESS" if status_code < 400 else "FAILURE",
+                "actionGroup":    action_grp,
+                "responseState":  "SUCCESS" if status < 400 else "FAILURE",
                 "responseBody": {
                     "application/json": {"body": body}
                 }
@@ -118,35 +117,35 @@ def lambda_handler(event, context):
 
     except Exception as e:
         print("Handler error:", traceback.format_exc())
-        error_body = {"error": "Internal server error", "details": str(e)}
+        err_body = {"error": "Internal server error", "details": str(e)}
 
-        # Mirror the same branching for errors
+        # Mirror the same branch so your error shape matches input style
         api_path    = event.get("apiPath")
         http_method = event.get("httpMethod")
-        action_group = event.get("actionGroup", "")
+        action_grp  = event.get("actionGroup", "")
 
         if api_path and http_method:
-            response_wrapper = {
-                "actionGroup":    action_group,
+            error_wrapper = {
+                "actionGroup":    action_grp,
                 "apiPath":        api_path,
                 "httpMethod":     http_method,
                 "httpStatusCode": 500,
                 "responseBody": {
-                    "application/json": {"body": error_body}
+                    "application/json": {"body": err_body}
                 }
             }
         else:
-            response_wrapper = {
-                "actionGroup":    action_group,
+            error_wrapper = {
+                "actionGroup":    action_grp,
                 "responseState":  "FAILURE",
                 "responseBody": {
-                    "application/json": {"body": error_body}
+                    "application/json": {"body": err_body}
                 }
             }
 
         return {
             "messageVersion":          "1.0",
-            "response":                response_wrapper,
+            "response":                error_wrapper,
             "sessionAttributes":       event.get("sessionAttributes", {}),
             "promptSessionAttributes": event.get("promptSessionAttributes", {}),
         }
