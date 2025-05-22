@@ -1,145 +1,82 @@
-import logging
-from typing import Dict, Any
-from http import HTTPStatus
 
+import json
 import boto3
-import pandas as pd
-import re
-from io import StringIO
+from botocore.config import Config
+import traceback
 
-# ——— Logger setup —————————————————————————————————————————————————————————————
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
-# ——— S3 & CSV loading (done once at cold start) ————————————————————————————————
-S3_BUCKET = "pocbotai"
-S3_KEY    = "DBcheck.csv"
+bedrock_agent = boto3.client(
+    'bedrock-agent-runtime',
+    region_name='us-east-1',
+    config=Config(read_timeout=100)
+)
 
-try:
-    s3 = boto3.client('s3')
-    obj = s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
-    df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
-
-    # Log the columns we actually loaded
-    logger.info("CSV Columns: %s", list(df.columns))
-
-    # Ensure the key column exists
-    if 'Data Point Name' not in df.columns:
-        raise KeyError("'Data Point Name' column is missing from the CSV")
-
-    # Normalize the lookup key column
-    df["Data Point Name"] = (
-        df["Data Point Name"]
-        .astype(str)
-        .str.strip()
-        .str.lower()
-    )
-
-    logger.info("Successfully loaded and normalized 'Data Point Name' column")
-except Exception as e:
-    logger.error("Failed to load or parse CSV: %s", e, exc_info=True)
-    df = pd.DataFrame()
-
-# ——— The columns you're willing to return in column-wise mode ————————————————————
-RESPONSE_COLUMNS = [
-    "P119", "P143", "P3021", "P3089",
-    "P3368", "P3019", "P3090", "P3373"
-]
-
-def get_medication(name: str, selected_columns: str, display_mode: str) -> Dict[str, Any]:
-    """
-    Look up rows in the dataframe matching `name`, and return either row-wise
-    or column-wise results based on `display_mode`.
-    """
-    name = name.strip().lower()
-    esc  = re.escape(name)
-    matched = df[df["Data Point Name"].str.contains(esc, case=False, na=False, regex=True)]
-
-    if matched.empty:
-        return {"error": f"No records found for '{name}'"}
-
-    if display_mode == "row-wise":
-        rows = matched.where(pd.notna(matched), None).to_dict(orient="records")
-        return {
-            "response_type": "row_wise",
-            "data": rows,
-            "message": f"Found {len(rows)} row(s) for '{name}'"
-        }
-
-    # — Column-wise mode —
-    if selected_columns.lower() == "all":
-        cols = RESPONSE_COLUMNS
-    else:
-        cols = [c.strip() for c in selected_columns.split(",")]
-        cols = [c for c in cols if c in RESPONSE_COLUMNS]
-
-    out = []
-    for _, r in matched.iterrows():
-        avail = {c: r[c] for c in cols if pd.notna(r[c])}
-        if avail:
-            out.append({
-                "data_point": r["Data Point Name"],
-                "columns":   avail
-            })
-
-    return {
-        "response_type": "column_wise",
-        "data": out,
-        "message": f"Found {len(out)} column-wise result(s) for '{name}'"
-    }
-
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """
-    AWS Lambda handler for processing Bedrock agent requests.
-    Expects:
-      - event['actionGroup']
-      - event['function']
-      - event['parameters']: list of { 'name': ..., 'value': ... }
-    Returns the same actionGroup/function envelope with your lookup result.
-    """
+def lambda_handler(event, context):
     try:
-        action_group    = event['actionGroup']
-        function_name   = event['function']
-        message_version = event.get('messageVersion', 1)
-
-        # Pull parameters into a dict for easy lookup
-        params = { p['name']: p['value'] for p in event.get('parameters', []) }
-        condition    = (params.get("condition")       or "").strip()
-        display_mode = (params.get("display_mode")    or "row-wise").strip().lower()
-        selected_col = (params.get("selected_column") or "all").strip()
-
-        if not condition:
-            raise ValueError("Missing required parameter: condition")
-
-        # Run the lookup
-        result = get_medication(condition, selected_col, display_mode)
-
-        # Build your Bedrock-compatible response envelope
-        action_response = {
-            'actionGroup': action_group,
-            'function':     function_name,
-            'functionResponse': {
-                'responseBody': result
+        
+        body = json.loads(event.get('body', '{}'))
+        user_input = body.get('message') or body.get('prompt')
+        if not user_input:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing message/prompt in request body'})
             }
-        }
-        response = {
-            'response':      action_response,
-            'messageVersion': message_version
-        }
 
-        logger.info("Successful lookup for '%s': %s", condition, result)
-        return response
+     
+        session_id = body.get('sessionId') or context.aws_request_id
 
-    except KeyError as e:
-        logger.error("Missing required field in event: %s", e)
+       
+        response = bedrock_agent.invoke_agent(
+            
+            agentId='NE89PFJCD6',              
+            agentAliasId='LZK78CEF6B',    
+            sessionId=session_id,
+            inputText=user_input,
+            sessionState={
+                'knowledgeBaseConfigurations': [
+                    {
+                        'knowledgeBaseId': 'RIBHZRVAQA',  
+                        'retrievalConfiguration': {
+                            'vectorSearchConfiguration': {
+                                'overrideSearchType': 'HYBRID',
+                                'numberOfResults': 100
+                            }
+                        }
+                    }
+                ]
+            }
+        )
+        
+
+        
+        completion = ""
+        citations = []
+        for ev in response['completion']:
+            chunk = ev.get('chunk', {})
+            if 'bytes' in chunk:
+                completion += chunk['bytes'].decode('utf-8')
+
         return {
-            'statusCode': HTTPStatus.BAD_REQUEST,
-            'body':       f"Error: Missing field {e}"
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'message': completion,
+                'citations': citations,
+                'sessionId': session_id
+            })
         }
 
     except Exception as e:
-        logger.error("Unexpected error: %s", e, exc_info=True)
+        # Log and return errors
+        print(f"Error: {str(e)}")
+        traceback.print_exc()
         return {
-            'statusCode': HTTPStatus.INTERNAL_SERVER_ERROR,
-            'body':       "Internal server error"
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': str(e),
+                'stackTrace': traceback.format_exc()
+            })
         }
