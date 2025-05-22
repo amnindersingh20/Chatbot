@@ -18,12 +18,26 @@ S3_KEY    = "DBcheck.csv"
 try:
     s3 = boto3.client('s3')
     obj = s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
-    df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
+    df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
+
+    # Log the columns we actually loaded
+    logger.info("CSV Columns: %s", list(df.columns))
+
+    # Ensure the key column exists
+    if 'Data Point Name' not in df.columns:
+        raise KeyError("'Data Point Name' column is missing from the CSV")
+
     # Normalize the lookup key column
-    df["Data Point Name"] = df["Data Point Name"].str.strip().str.lower()
-    logger.info("Loaded CSV from S3: %s/%s", S3_BUCKET, S3_KEY)
+    df["Data Point Name"] = (
+        df["Data Point Name"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+
+    logger.info("Successfully loaded and normalized 'Data Point Name' column")
 except Exception as e:
-    logger.error("Failed to load CSV from S3: %s", e)
+    logger.error("Failed to load or parse CSV: %s", e, exc_info=True)
     df = pd.DataFrame()
 
 # ——— The columns you're willing to return in column-wise mode ————————————————————
