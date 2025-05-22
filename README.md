@@ -5,11 +5,9 @@ from io import StringIO
 import json
 import traceback
 
-# Constants
 S3_BUCKET = "pocbotai"
 S3_KEY = "DBcheck.csv"
 
-# Load CSV from S3
 try:
     s3_client = boto3.client('s3')
     response = s3_client.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
@@ -20,7 +18,6 @@ except Exception as e:
     print("Error loading CSV from S3:", str(e))
     df = pd.DataFrame()
 
-# Response columns
 response_columns = ["P119", "P143", "P3021", "P3089", "P3368", "P3019", "P3090", "P3373"]
 
 def get_medication(condition_name, selected_columns, display_mode):
@@ -57,9 +54,8 @@ def get_medication(condition_name, selected_columns, display_mode):
 
 def lambda_handler(event, context):
     bedrock_response = {
+        "messageVersion": "1.0",
         "actionGroup": event.get('actionGroup', ''),
-        "apiPath": event.get('apiPath', ''),
-        "httpMethod": event.get('httpMethod', ''),
         "httpStatusCode": 200,
         "responseBody": {
             "application/json": {
@@ -71,7 +67,6 @@ def lambda_handler(event, context):
     try:
         print("Received event:", json.dumps(event, indent=2))
 
-        # Extract parameters
         parameters = {p['name']: p['value'] for p in event.get('parameters', [])}
         condition_query = parameters.get('condition', '').strip()
         display_mode = parameters.get('display_mode', 'row-wise').strip().lower()
@@ -85,16 +80,13 @@ def lambda_handler(event, context):
             })
             return bedrock_response
 
-        # Get data from core logic
         result = get_medication(condition_query, selected_column, display_mode)
-        
-        # Handle error responses from core logic
+
         if 'error' in result:
             bedrock_response['httpStatusCode'] = 404
             bedrock_response['responseBody']['application/json']['body'] = json.dumps(result)
             return bedrock_response
 
-        # Successful response
         bedrock_response['responseBody']['application/json']['body'] = json.dumps({
             "status": "success",
             "query": condition_query,
