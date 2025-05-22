@@ -37,7 +37,7 @@ except Exception as e:
     logger.error("Failed to load or parse CSV: %s", e, exc_info=True)
     df = pd.DataFrame()
 
-
+# ——— Columns to return in column-wise mode ————————————————————————————————————————
 RESPONSE_COLUMNS = [
     "P119", "P143", "P3021", "P3089",
     "P3368", "P3019", "P3090", "P3373"
@@ -46,10 +46,10 @@ RESPONSE_COLUMNS = [
 def get_medication(name: str, selected_columns: str, display_mode: str) -> Dict[str, Any]:
     name = name.strip().lower()
     esc = re.escape(name)
-    matched = df[df["Data Point Name"].str.contains(esc, case=False, na=False, regex=True)]
+    matched = df[df["Data Point Name"]
+                 .str.contains(esc, case=False, na=False, regex=True)]
 
     if matched.empty:
-        # <-- fixed f-string here with matching quotes
         return {"error": f"No records found for '{name}'"}
 
     if display_mode == "row-wise":
@@ -60,7 +60,7 @@ def get_medication(name: str, selected_columns: str, display_mode: str) -> Dict[
             "message": f"Found {len(rows)} row(s) for '{name}'"
         }
 
-    # Column-wise
+    # Column-wise mode
     if selected_columns.lower() == "all":
         cols = RESPONSE_COLUMNS
     else:
@@ -83,18 +83,47 @@ def get_medication(name: str, selected_columns: str, display_mode: str) -> Dict[
     }
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Handler with auto-detection & swap of condition vs. selected_column
+    so that the UI order (P119/pre-natal) or the correct order
+    (pre-natal/P119) both work.
+    """
     try:
-        params = { p.get('name'): p.get('value') for p in event.get('parameters', []) }
-        condition       = params.get('condition', '').strip()
-        selected_column = params.get('selected_column', 'all').strip()
+        # --- Unwrap API Gateway body if needed ---
+        payload = event
+        if 'body' in event and isinstance(event['body'], str):
+            try:
+                payload = json.loads(event['body'])
+                logger.info("Unwrapped body to payload: %s", payload)
+            except json.JSONDecodeError:
+                logger.warning("Could not JSON-decode `body`; using top-level event")
+
+        # --- Build params dict ---
+        raw_params = payload.get('parameters', [])
+        params = { p.get('name'): p.get('value') for p in raw_params }
+
+        # --- Auto-detect & swap if needed ---
+        cond = params.get('condition', '').strip()
+        sel  = params.get('selected_column', '').strip()
+        # If condition looks like P### (a column), but selected_column does not,
+        # swap them.
+        if re.fullmatch(r"P\d+", cond, re.IGNORECASE) and not re.fullmatch(r"P\d+", sel, re.IGNORECASE):
+            logger.info("Auto-swapping: condition was '%s', selected_column was '%s'", cond, sel)
+            cond, sel = sel, cond
+
+        # --- Finalize variables with defaults ---
+        condition       = cond
+        selected_column = sel or "all"
         display_mode    = params.get('display_mode', 'column-wise').strip().lower()
 
         if not condition:
             raise ValueError("Missing required parameter: condition")
 
+        # --- Invoke lookup ---
         result = get_medication(condition, selected_column, display_mode)
         logger.info("Result from get_medication: %s", result)
 
+        # --- Build TEXT.body as plain string + indented JSON ---
         message = result.get('message', result.get('error', 'No message provided'))
         data    = result.get('data', [])
 
@@ -104,21 +133,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         }
 
+        # --- Wrap into Bedrock Agent response format ---
         function_response = {
-            'actionGroup':       event.get('actionGroup'),
-            'function':          event.get('function'),
+            'actionGroup':       payload.get('actionGroup'),
+            'function':          payload.get('function'),
             'functionResponse': {
                 'responseBody': response_body
             }
         }
 
         return {
-            'messageVersion': event.get('messageVersion', '1.0'),
+            'messageVersion': payload.get('messageVersion', '1.0'),
             'response':       function_response
         }
 
     except KeyError as e:
-        logger.error("Missing field in event: %s", e, exc_info=True)
+        logger.error("Missing field in event/payload: %s", e, exc_info=True)
         return {
             'statusCode': HTTPStatus.BAD_REQUEST,
             'body':       json.dumps({'error': f"Missing field {e}"})
