@@ -1,141 +1,152 @@
+import logging
+from typing import Dict, Any
+from http import HTTPStatus
 import json
-import re
 import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
-import traceback
+import pandas as pd
+import re
+from io import StringIO
 
-bedrock_agent = boto3.client(
-    'bedrock-agent-runtime',
-    region_name='us-east-1',
-    config=Config(read_timeout=100)
-)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-APOLOGY_PATTERN = re.compile(
-    r"I apologize, but I (?:couldn't|could not) find any specific information about",
-    re.IGNORECASE
-)
+S3_BUCKET = "pocbotai"
+S3_KEY    = "2025 Medical SI HPCC for Chatbot Testing.csv"
 
-def lambda_handler(event, context):
-    try:
-        # Parse input
-        body = json.loads(event.get('body', '{}'))
-        original_input = body.get('message') or body.get('prompt') or ""
-        if not original_input:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing message/prompt in request body'})
-            }
-        session_id = body.get('sessionId') or context.aws_request_id
+try:
+    s3 = boto3.client('s3')
+    obj = s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
+    content = obj['Body'].read().decode('utf-8')
+    df = pd.read_csv(StringIO(content))
+    logger.info("CSV Columns: %s", list(df.columns))
 
-        # Prepare two prompts: original and (if different) stripped
-        stripped_input = re.sub(r'\bcolumn-wise\s+P\d+\b', '', original_input, flags=re.IGNORECASE).strip()
-        prompts = [original_input]
-        if stripped_input and stripped_input.lower() != original_input.lower():
-            prompts.append(stripped_input)
+    if 'Data Point Name' not in df.columns:
+        raise KeyError("'Data Point Name' column is missing from the CSV")
 
-        response = None
-        final_completion = ""
-        citations = []
-        last_error = None
+    df["Data Point Name"] = (
+        df["Data Point Name"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+    logger.info("Successfully loaded and normalized 'Data Point Name' column")
 
-        for idx, prompt in enumerate(prompts, start=1):
-            try:
-                print(f"Attempt #{idx} with prompt: {prompt!r}")
-                resp = bedrock_agent.invoke_agent(
-                    agentId='NE89PFJCD6',
-                    agentAliasId='LZK78CEF6B',
-                    sessionId=session_id,
-                    inputText=prompt,
-                    sessionState={
-                        'knowledgeBaseConfigurations': [
-                            {
-                                'knowledgeBaseId': 'RIBHZRVAQA',
-                                'retrievalConfiguration': {
-                                    'vectorSearchConfiguration': {
-                                        'overrideSearchType': 'HYBRID',
-                                        'numberOfResults': 100
-                                    }
-                                }
-                            }
-                        ]
-                    }
-                )
-                status = resp.get('ResponseMetadata', {}).get('HTTPStatusCode', 500)
-                print(f"Received HTTP status: {status}")
+except Exception as e:
+    logger.error("Failed to load or parse CSV: %s", e, exc_info=True)
+    df = pd.DataFrame()
 
-                if status != 200:
-                    last_error = f"HTTP {status}"
-                    continue
 
-                # Build the completion string for this attempt
-                completion = ""
-                temp_citations = []
-                for ev in resp.get('completion', []):
-                    chunk = ev.get('chunk', {})
-                    if 'bytes' in chunk:
-                        completion += chunk['bytes'].decode('utf-8')
-                    for attr in chunk.get('attribution', {}).get('citations', []):
-                        ref = attr['retrievedReferences'][0]
-                        temp_citations.append({
-                            'source': ref['location']['s3Location']['uri'],
-                            'text': ref['content']['text']
-                        })
+RESPONSE_COLUMNS = [
+    1651,1652,1809,1653,1811,1810,2784
+]
 
-                # If it’s just the apology, treat as failure and retry
-                if APOLOGY_PATTERN.search(completion):
-                    last_error = "Got apology response"
-                    print(f"Attempt #{idx} returned apology—will retry if possible.")
-                    continue
+def get_medication(name: str, selected_columns: str, display_mode: str) -> Dict[str, Any]:
+    name = name.strip().lower()
+    esc = re.escape(name)
+    matched = df[df["Data Point Name"]
+                 .str.contains(esc, case=False, na=False, regex=True)]
 
-                # Success case
-                response = resp
-                final_completion = completion
-                citations = temp_citations
-                break
+    if matched.empty:
+        return {"error": f"No records found for '{name}'"}
 
-            except ClientError as e:
-                code = e.response.get('Error', {}).get('Code')
-                msg = e.response.get('Error', {}).get('Message')
-                print(f"ClientError on attempt #{idx}: {code} – {msg}")
-                last_error = f"{code}: {msg}"
-            except Exception as e:
-                print(f"Unexpected exception on attempt #{idx}: {e}")
-                traceback.print_exc()
-                last_error = str(e)
-
-        # If no successful completion, return error
-        if response is None:
-            return {
-                'statusCode': 502,
-                'body': json.dumps({
-                    'error': 'Bedrock invoke_agent failed after retries',
-                    'detail': last_error
-                })
-            }
-
-        # Return the successful result
+    if display_mode == "row-wise":
+        rows = matched.where(pd.notna(matched), None).to_dict(orient="records")
         return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'message': final_completion,
-                'citations': citations,
-                'sessionId': session_id
+            "response_type": "row_wise",
+            "data": rows,
+            "message": f"Found {len(rows)} row(s) for '{name}'"
+        }
+
+    # Column-wise mode
+    if selected_columns.lower() == "all":
+        cols = RESPONSE_COLUMNS
+    else:
+        cols = [c.strip() for c in selected_columns.split(",")]
+        cols = [c for c in cols if c in RESPONSE_COLUMNS]
+
+    out = []
+    for _, r in matched.iterrows():
+        avail = {c: r[c] for c in cols if pd.notna(r[c])}
+        if avail:
+            out.append({
+                "data_point": r["Data Point Name"],
+                "columns":   avail
             })
+
+    return {
+        "response_type": "column_wise",
+        "data": out,
+        "message": f"Found {len(out)} column-wise result(s) for '{name}'"
+    }
+
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    logger.info("Raw event: %s",json.dumps(event))
+    try:
+ 
+        payload = event
+        if 'body' in event and isinstance(event['body'], str):
+            try:
+                payload = json.loads(event['body'])
+                logger.info("Unwrapped body to payload: %s", payload)
+            except json.JSONDecodeError:
+                logger.warning("Could not JSON-decode `body`; using top-level event")
+
+        raw_params = payload.get('parameters', [])
+        params = { p.get('name'): p.get('value') for p in raw_params }
+
+
+        cond = params.get('condition', '').strip()
+        sel  = params.get('selected_column', '').strip()
+
+        if re.fullmatch(r"P\d+", cond, re.IGNORECASE) and not re.fullmatch(r"P\d+", sel, re.IGNORECASE):
+            logger.info("Auto-swapping: condition was '%s', selected_column was '%s'", cond, sel)
+            cond, sel = sel, cond
+
+
+        condition       = cond
+        selected_column = sel or "all"
+        display_mode    = params.get('display_mode', 'column-wise').strip().lower()
+
+        if not condition:
+            raise ValueError("Missing required parameter: condition")
+
+
+        result = get_medication(condition, selected_column, display_mode)
+        logger.info("Result from get_medication: %s", result)
+
+
+        message = result.get('message', result.get('error', 'No message provided'))
+        data    = result.get('data', [])
+
+        response_body = {
+            'TEXT': {
+                'body': f"{message}\n\n" + json.dumps(data, indent=2)
+            }
+        }
+
+        function_response = {
+            'actionGroup':       payload.get('actionGroup'),
+            'function':          payload.get('function'),
+            'functionResponse': {
+                'responseBody': response_body
+            }
+        }
+
+        return {
+            'messageVersion': payload.get('messageVersion', '1.0'),
+            'response':       function_response
+        }
+
+    except KeyError as e:
+        logger.error("Missing field in event/payload: %s", e, exc_info=True)
+        return {
+            'statusCode': HTTPStatus.BAD_REQUEST,
+            'body':       json.dumps({'error': f"Missing field {e}"})
         }
 
     except Exception as e:
-        print(f"Unhandled error in handler: {e}")
-        traceback.print_exc()
+        logger.error("Unexpected error: %s", e, exc_info=True)
         return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': 'Internal server error in lambda_handler',
-                'detail': str(e),
-                'stackTrace': traceback.format_exc()
-            })
+            'statusCode': HTTPStatus.INTERNAL_SERVER_ERROR,
+            'body':       json.dumps({'error': str(e)})
         }
