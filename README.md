@@ -75,73 +75,57 @@ def invoke_and_check(prompt, session_id):
         return False, "", [], str(e)
 
 
+def make_response(status_code, body_dict):
+    return {
+        'statusCode': status_code,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+        },
+        'body': json.dumps(body_dict)
+    }
+
+
 def lambda_handler(event, context):
     try:
         body = json.loads(event.get('body', '{}'))
         original_input = body.get('message') or body.get('prompt') or ""
         if not original_input:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing message/prompt in request body'})
-            }
+            return make_response(400, {'error': 'Missing message/prompt in request body'})
         session_id = body.get('sessionId') or context.aws_request_id
 
-        # build stripped version once
+        # build stripped version
         stripped_input = STRIP_PATTERN.sub('', original_input).strip()
-        print(f"Original input: {original_input!r}")
-        print(f"Stripped input: {stripped_input!r}")
+        print(f"[DEBUG] Original input: {original_input!r}")
+        print(f"[DEBUG] Stripped input: {stripped_input!r}")
 
-        # 1) Try full prompt
-        ok, completion, citations, reason = invoke_and_check(original_input, session_id)
-        if not ok:
-            print(f"Full-prompt attempt failed ({reason}); retrying with stripped prompt.")
-            # 2) If stripped differs, try that next
-            if stripped_input and stripped_input.lower() != original_input.lower():
-                ok2, comp2, cit2, reason2 = invoke_and_check(stripped_input, session_id)
-                if ok2:
-                    completion, citations = comp2, cit2
-                else:
-                    # second attempt also failed
-                    print(f"Stripped-prompt attempt also failed ({reason2})")
-                    return {
-                        'statusCode': 502,
-                        'body': json.dumps({
-                            'error': 'Bedrock invoke_agent failed after retries',
-                            'detail': reason2
-                        })
-                    }
-            else:
-                # no meaningful stripped prompt to try
-                return {
-                    'statusCode': 502,
-                    'body': json.dumps({
-                        'error': 'No fallback prompt available; original attempt failed',
-                        'detail': reason
-                    })
-                }
+        # always try two attempts
+        prompts = [original_input, stripped_input or original_input]
 
-        # success path
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'message': completion,
-                'citations': citations,
-                'sessionId': session_id
-            })
-        }
+        last_error = None
+        for idx, prompt in enumerate(prompts, start=1):
+            print(f"[DEBUG] Attempt #{idx} with prompt: {prompt!r}")
+            ok, completion, citations, reason = invoke_and_check(prompt, session_id)
+            if ok:
+                return make_response(200, {
+                    'message': completion,
+                    'citations': citations,
+                    'sessionId': session_id
+                })
+            last_error = reason
+            print(f"[DEBUG] Attempt #{idx} failed: {reason}")
+
+        # both attempts failed
+        return make_response(502, {
+            'error': 'Bedrock invoke_agent failed after retries',
+            'detail': last_error
+        })
 
     except Exception as e:
         print(f"Unhandled error in handler: {e}")
         traceback.print_exc()
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': 'Internal server error in lambda_handler',
-                'detail': str(e),
-                'stackTrace': traceback.format_exc()
-            })
-        }
+        return make_response(500, {
+            'error': 'Internal server error in lambda_handler',
+            'detail': str(e),
+            'stackTrace': traceback.format_exc()
+        })
