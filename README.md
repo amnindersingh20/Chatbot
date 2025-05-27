@@ -11,8 +11,15 @@ bedrock_agent = boto3.client(
     config=Config(read_timeout=100)
 )
 
+# if the model apologizes, we’ll retry with a stripped prompt
 APOLOGY_PATTERN = re.compile(
     r"I apologize, but I (?:couldn't|could not) find any specific information about",
+    re.IGNORECASE
+)
+
+# strip either "column-wise P123" or "column-wise & 1651"
+STRIP_PATTERN = re.compile(
+    r'\bcolumn-wise\s+(?:P\d+|&\s*\d+)\b',
     re.IGNORECASE
 )
 
@@ -28,7 +35,11 @@ def lambda_handler(event, context):
             }
         session_id = body.get('sessionId') or context.aws_request_id
 
-        stripped_input = re.sub(r'\bcolumn-wise\s+P\d+\b', '', original_input, flags=re.IGNORECASE).strip()
+        # Try with the full prompt, then (if changed) with a stripped one
+        stripped_input = STRIP_PATTERN.sub('', original_input).strip()
+        print(f"Original input: {original_input!r}")
+        print(f"Stripped input: {stripped_input!r}")
+
         prompts = [original_input]
         if stripped_input and stripped_input.lower() != original_input.lower():
             prompts.append(stripped_input)
@@ -38,6 +49,7 @@ def lambda_handler(event, context):
         citations = []
         last_error = None
 
+        # Loop over prompts until we get a non-apology, 200‐OK result
         for idx, prompt in enumerate(prompts, start=1):
             try:
                 print(f"Attempt #{idx} with prompt: {prompt!r}")
@@ -67,6 +79,7 @@ def lambda_handler(event, context):
                     last_error = f"HTTP {status}"
                     continue
 
+                # Assemble the text and citations
                 completion = ""
                 temp_citations = []
                 for ev in resp.get('completion', []):
@@ -80,11 +93,13 @@ def lambda_handler(event, context):
                             'text': ref['content']['text']
                         })
 
+                # If it apologizes, treat as failure and retry
                 if APOLOGY_PATTERN.search(completion):
                     last_error = "Got apology response"
                     print(f"Attempt #{idx} returned apology—will retry if possible.")
                     continue
 
+                # Success!
                 response = resp
                 final_completion = completion
                 citations = temp_citations
@@ -100,6 +115,7 @@ def lambda_handler(event, context):
                 traceback.print_exc()
                 last_error = str(e)
 
+        # If we never got a good response, return 502 with details
         if response is None:
             return {
                 'statusCode': 502,
@@ -109,6 +125,7 @@ def lambda_handler(event, context):
                 })
             }
 
+        # Otherwise return the successful answer
         return {
             'statusCode': 200,
             'headers': {
