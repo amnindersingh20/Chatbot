@@ -13,62 +13,115 @@ tog.setLevel(logging.INFO)
 
 # Configuration
 S3_BUCKET = "pocbotai"
-S3_KEY = "2025 Medical SI HPCC for Chatbot Testing.csv"
-# Hardcoded fallback Lambda name
+S3_KEY    = "2025 Medical SI HPCC for Chatbot Testing.csv"
+# Hardcoded fallback Lambda name (if you still need it)
 FALLBACK_LAMBDA_NAME = "fallbackHandler"
 
 # Initialize AWS clients
-_s3 = boto3.client('s3')
+_s3     = boto3.client('s3')
 _lambda = boto3.client('lambda')
 
 
 def load_dataframe() -> pd.DataFrame:
+    """
+    - Pulls the CSV from S3
+    - Strips and lower-cases the 'Data Point Name' column
+    - Normalizes any en-dashes → hyphens and removes zero-width spaces
+    - Strips all column names so you can look up "1651" etc. reliably
+    """
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
         content = obj['Body'].read().decode('utf-8')
         df = pd.read_csv(StringIO(content))
-        tog.info("CSV Columns: %s", list(df.columns))
-        
+        tog.info("CSV Columns Before Strip: %s", list(df.columns))
+
+        # 1) Strip & normalize column names
+        df.columns = (
+            df.columns
+              .astype(str)
+              .str.strip()
+        )
+
+        # 2) Normalize your 'Data Point Name' column
         if 'Data Point Name' not in df.columns:
             raise KeyError("Missing 'Data Point Name' column in CSV")
-
+        
         df['Data Point Name'] = (
             df['Data Point Name']
               .astype(str)
+              .str.replace('–', '-', regex=False)     # en-dash → hyphen
+              .str.replace('\u200b', '', regex=False)  # remove zero-width space
               .str.strip()
               .str.lower()
         )
-        df.columns = df.columns.str.strip()
+
+        tog.info("CSV Columns After Strip: %s", list(df.columns))
+        tog.info("First 20 Data Point Names (repr): %s",
+                 [repr(x) for x in df['Data Point Name'].head(20)])
         return df
 
     except Exception as e:
         tog.error("Error loading CSV: %s", e, exc_info=True)
         return pd.DataFrame()
 
+
 # Load once at cold start
 df = load_dataframe()
 
 
-def get_medication(name: str) -> dict:
+def get_plan_value(name: str, plan_id: str) -> dict:
     """
-    Retrieves matching records for a given medication/data-point name.
-    Returns a dict with either 'data' on success, or 'error' on failure.
+    Returns the single cell under your plan column.
     """
-    name = name.strip().lower()
-    esc = re.escape(name)
+    name    = name.strip().lower()
+    plan_id = str(plan_id).strip()
 
-    matched = df[df['Data Point Name'].str.contains(esc, case=False, na=False, regex=True)]
+    # 1) Find the matching row(s) in your 'Data Point Name' column
+    esc     = re.escape(name)
+    matched = df[
+        df['Data Point Name']
+          .str.contains(esc, case=False, na=False, regex=True)
+    ]
+
     if matched.empty:
-        return {'statusCode': 404, 'message': f"No records found for '{name}'", 'error': True}
+        return {
+            'statusCode': 404,
+            'message': f"No data-point '{name}' found",
+            'error': True
+        }
 
-    # Convert to records
-    rows = matched.where(pd.notna(matched), None).to_dict(orient='records')
-    return {'statusCode': 200, 'message': f"Found {len(rows)} record(s)", 'data': rows}
+    # 2) Make sure your plan column exists
+    if plan_id not in df.columns:
+        return {
+            'statusCode': 404,
+            'message': f"Plan '{plan_id}' not found",
+            'error': True
+        }
+
+    # 3) Grab the first match and its value under that plan
+    row   = matched.iloc[0]
+    value = row.get(plan_id, None)
+    if pd.isna(value):
+        return {
+            'statusCode': 404,
+            'message': f"No value for '{name}' under plan '{plan_id}'",
+            'error': True
+        }
+
+    return {
+        'statusCode': 200,
+        'message': f"Value for '{name}' under plan '{plan_id}'",
+        'data': {
+            'condition': name,
+            'plan': plan_id,
+            'value': value
+        }
+    }
 
 
 def invoke_fallback(original_event: dict) -> dict:
     """
-    Invokes the fallback lambda function and returns its response payload.
+    If you still want to call your fallback Lambda on error.
     """
     try:
         response = _lambda.invoke(
@@ -81,67 +134,69 @@ def invoke_fallback(original_event: dict) -> dict:
         return json.loads(result_bytes)
     except Exception as e:
         tog.error("Fallback invocation failed: %s", e, exc_info=True)
-        return {'statusCode': 500, 'error': f"Fallback handler error: {e}"}
+        return {
+            'statusCode': 500,
+            'error': f"Fallback handler error: {e}"
+        }
 
 
 def lambda_handler(event, context):
-    """
-    Main entry point. Expects JSON payload with 'condition' parameter.
-    Supports inputs under 'body', 'prompt', or top-level 'parameters'.
-    On error or non-200 from primary, strips unwanted tokens and invokes fallback.
-    """
     tog.info("Received event: %s", json.dumps(event))
 
-    try:
-        # Extract raw payload string or dict from 'body' or 'prompt'
-        raw = event.get('body') or event.get('prompt') or event
-        if isinstance(raw, str):
-            try:
-                payload = json.loads(raw)
-            except json.JSONDecodeError:
-                payload = {}
-        elif isinstance(raw, dict):
-            payload = raw
-        else:
+    # --- 1) Unwrap the incoming JSON-string or dict
+    raw = event.get('body') or event.get('prompt') or event
+    if isinstance(raw, str):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
             payload = {}
+    elif isinstance(raw, dict):
+        payload = raw
+    else:
+        payload = {}
 
-        params = payload.get('parameters') or {}
-        # Allow both list or dict style
-        if isinstance(params, list):
-            params = {p.get('name'): p.get('value') for p in params if p.get('name')}
+    # --- 2) Normalize parameters list → dict
+    params = payload.get('parameters') or {}
+    if isinstance(params, list):
+        params = {p.get('name'): p.get('value') for p in params if p.get('name')}
 
-        condition = params.get('condition')
-        if not condition:
-            return {'statusCode': HTTPStatus.BAD_REQUEST, 'body': json.dumps({'error': "'condition' is required"})}
+    condition = params.get('condition')
+    plan      = params.get('plan')
 
-        # Call primary handler
-        result = get_medication(condition)
-        status = result.get('statusCode', 500)
-        msg = result.get('message', '')
-
-        # On failure or apology, strip and delegate
-        if status != 200 or re.search(r"sorry|apology|no records", msg, re.IGNORECASE):
-            tog.warning("Primary handler failed or apologized, preparing fallback...")
-            stripped = re.sub(r"(column-wise|1651)", "", condition, flags=re.IGNORECASE).strip()
-            # Build fallback event preserving original structure
-            fallback_event = event.copy()
-            # Use JSON string for body and prompt
-            fallback_payload = {'parameters': [{'name': 'condition', 'value': stripped}]}
-            fallback_event['body'] = json.dumps(fallback_payload)
-            fallback_event['prompt'] = json.dumps(fallback_payload)
-            return invoke_fallback(fallback_event)
-
-        # Success: return data
+    # --- 3) Validate both inputs
+    if not condition:
         return {
-            'statusCode': 200,
-            'body': json.dumps({'message': msg, 'data': result.get('data', [])})
+            'statusCode': HTTPStatus.BAD_REQUEST,
+            'body': json.dumps({'error': "'condition' is required"})
+        }
+    if not plan:
+        return {
+            'statusCode': HTTPStatus.BAD_REQUEST,
+            'body': json.dumps({'error': "'plan' is required"})
         }
 
-    except Exception as e:
-        tog.error("Unhandled exception: %s", e, exc_info=True)
-        stripped = re.sub(r"(column-wise|1651)", "", params.get('condition', ''), flags=re.IGNORECASE).strip()
-        fallback_event = event.copy()
-        fallback_payload = {'parameters': [{'name': 'condition', 'value': stripped}]}
-        fallback_event['body'] = json.dumps(fallback_payload)
-        fallback_event['prompt'] = json.dumps(fallback_payload)
-        return invoke_fallback(fallback_event)
+    # --- 4) Call our new helper
+    result = get_plan_value(condition, plan)
+    status = result.get('statusCode', 500)
+    if status != 200:
+        # If you want fallback-on-404, uncomment the lines below:
+        # fallback_event = event.copy()
+        # fallback_payload = [
+        #     {'name':'condition','value':condition},
+        #     {'name':'plan',     'value':plan}
+        # ]
+        # fallback_event['body']   = {'parameters': fallback_payload}
+        # fallback_event['prompt'] = {'parameters': fallback_payload}
+        # return invoke_fallback(fallback_event)
+
+        # Otherwise just return the 404/400
+        return {
+            'statusCode': status,
+            'body': json.dumps({'error': result.get('message')})
+        }
+
+    # --- 5) Success! return the single-cell data
+    return {
+        'statusCode': 200,
+        'body': json.dumps(result['data'])
+    }
