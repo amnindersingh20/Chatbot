@@ -1,18 +1,3 @@
 {
   "body": "{\"parameters\":[{\"name\":\"condition\",\"value\":\"x-ray charges\"},{\"name\":\"plan\",\"value\":\"1651\"}]}"
 }
-
-
-{
-  "body": {
-    "parameters": [
-      { "name": "condition", "value": "x-ray charges" },
-      { "name": "plan",      "value": "1651"         }
-    ]
-  }
-}
-
-{
-  "statusCode": 500,
-  "body": "{\"error\": \"the JSON object must be str, bytes or bytearray, not dict\"}"
-}
