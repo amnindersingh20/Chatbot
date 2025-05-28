@@ -77,7 +77,6 @@ def invoke_fallback(original_event: dict) -> dict:
             Payload=json.dumps(original_event).encode('utf-8')
         )
         payload = response.get('Payload')
-        # Read bytes and decode
         result_bytes = payload.read() if hasattr(payload, 'read') else payload
         return json.loads(result_bytes)
     except Exception as e:
@@ -88,7 +87,7 @@ def invoke_fallback(original_event: dict) -> dict:
 def lambda_handler(event, context):
     """
     Main entry point. Expects JSON payload with 'condition' parameter.
-    If get_medication returns error or non-200 status, invoke fallback lambda.
+    If get_medication returns error or non-200 status, strip unwanted tokens and invoke fallback lambda.
     """
     tog.info("Received event: %s", json.dumps(event))
 
@@ -114,10 +113,15 @@ def lambda_handler(event, context):
         status = result.get('statusCode', 500)
         msg = result.get('message', '')
 
-        # If primary handler fails or issues apology-style message, delegate
+        # Check for failure or apology
         if status != 200 or re.search(r"sorry|apology|no records", msg, re.IGNORECASE):
-            tog.warning("Primary handler failed or apologized, invoking fallback...")
-            return invoke_fallback(event)
+            tog.warning("Primary handler failed or apologized, preparing fallback...")
+            # Strip unwanted tokens from user input
+            stripped = re.sub(r"(column-wise|1651)", "", condition, flags=re.IGNORECASE).strip()
+            # Build new event for fallback with stripped condition
+            fallback_event = {**event}
+            fallback_event['body'] = json.dumps({'parameters': [{'name': 'condition', 'value': stripped}]})
+            return invoke_fallback(fallback_event)
 
         # Success: return data
         return {
@@ -127,5 +131,8 @@ def lambda_handler(event, context):
 
     except Exception as e:
         tog.error("Unhandled exception: %s", e, exc_info=True)
-        # On unexpected error, also invoke fallback
-        return invoke_fallback(event)
+        # On unexpected error, strip and invoke fallback
+        stripped = re.sub(r"(column-wise|1651)", "", params.get('condition', ''), flags=re.IGNORECASE).strip()
+        fallback_event = {**event}
+        fallback_event['body'] = json.dumps({'parameters': [{'name': 'condition', 'value': stripped}]})
+        return invoke_fallback(fallback_event)
