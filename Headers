@@ -1,121 +1,122 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>AI Enrollment Chatbot</title>
-    <style>
-        /* Same styles as your original code – truncated for brevity */
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            background: #fff;
-        }
-        /* ... rest of your styles ... */
-    </style>
-</head>
-<body>
-    <div id="chat-container">
-        <div id="chat-history"></div>
-        <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
-    </div>
-    
-    <div class="error-message" id="error-message"></div>
-    <div id="input-container">
-        <input type="text" id="message-input" placeholder="Ask your question" onkeypress="handleEnterKey(event)">
-        <button id="send-button" onclick="sendMessage()">
-            <svg width="40px" height="40px" viewBox="0 0 24 24" fill="none"><path d="M7.75778 6.14799C6.84443 5.77187 6.0833 5.45843 5.49196 5.30702C4.91915 5.16036 4.18085 5.07761 3.63766 5.62862C3.09447 6.17962 3.18776 6.91666 3.34259 7.48732C3.50242 8.07644 3.8267 8.83302 4.21583 9.7409L4.86259 11.25H10C10.4142 11.25 10.75 11.5858 10.75 12C10.75 12.4142 10.4142 12.75 10 12.75H4.8626L4.21583 14.2591C3.8267 15.167 3.50242 15.9236 3.34259 16.5127C3.18776 17.0833 3.09447 17.8204 3.63766 18.3714C4.18085 18.9224 4.91915 18.8396 5.49196 18.693C6.0833 18.5416 6.84443 18.2281 7.75777 17.852L19.1997 13.1406C19.4053 13.0561 19.6279 12.9645 19.7941 12.867C19.944 12.779 20.3434 12.5192 20.3434 12C20.3434 11.4808 19.944 11.221 19.7941 11.133C19.6279 11.0355 19.4053 10.9439 19.1997 10.8594L7.75778 6.14799Z" fill="#000000"/></svg>
-        </button>
-    </div>
-
-    <script>
-        const userHistory = JSON.parse(sessionStorage.getItem('userHistory')) || [];
-        const API_URL = 'https://0ho0tvkvph.execute-api.us-east-1.amazonaws.com/Dev/chat';
-        const chatHistory = document.getElementById('chat-history');
-        const messageInput = document.getElementById('message-input');
-        const typingIndicator = document.getElementById('typing-indicator');
-        const errorMessage = document.getElementById('error-message');
-
-        function handleEnterKey(event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                sendMessage();
-            }
-        }
-
-        function appendMessage(message, isUser) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            if (isUser) {
-                bubble.textContent = message;
-            } else {
-                typeWordByWord(message, bubble);
-            }
-            messageDiv.appendChild(bubble);
-            chatHistory.appendChild(messageDiv);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        }
-
-        async function sendMessage() {
-            const message = messageInput.value.trim();
-            if (!message) return;
-            messageInput.value = '';
-            errorMessage.textContent = '';
-            appendMessage(message, true);
-            typingIndicator.style.display = 'block';
-
-            try {
-                let condition = '';
-                let plan = '1651'; // Default plan if not provided
-
-                const planRegex = /\bfor\s+plan\s+(\d+)\b/i;
-                const match = message.match(planRegex);
-
-                if (match) {
-                    plan = match[1];
-                    condition = message.replace(planRegex, '').trim();
-                } else {
-                    condition = message;
-                }
-
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        parameters: [
-                            { name: 'condition', value: condition },
-                            { name: 'plan', value: plan }
-                        ]
-                    })
-                });
-
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-                appendMessage(data.message, false);
-
-                userHistory.push({ question: message, response: data.message });
-                sessionStorage.setItem('userHistory', JSON.stringify(userHistory));
-            } catch (error) {
-                errorMessage.textContent = `Error: ${error.message}`;
-            } finally {
-                typingIndicator.style.display = 'none';
-            }
-        }
-
-        function typeWordByWord(response, element) {
-            const words = response.split(' ');
-            let delay = 0;
-            words.forEach((word) => {
-                setTimeout(() => {
-                    element.innerHTML += word + ' ';
-                }, delay);
-                delay += 50;
-            });
-        }
-    </script>
-</body>
-</html>
+{
+    "resource": "/chat",
+    "path": "/chat",
+    "httpMethod": "POST",
+    "headers": {
+        "accept": "*/*",
+        "accept-encoding": "gzip, deflate, br, zstd",
+        "accept-language": "en-US,en;q=0.9",
+        "content-type": "application/json",
+        "Host": "0ho0tvkvph.execute-api.us-east-1.amazonaws.com",
+        "origin": "http://127.0.0.1:5500",
+        "priority": "u=1, i",
+        "referer": "http://127.0.0.1:5500/",
+        "sec-ch-ua": "\"Chromium\";v=\"136\", \"Google Chrome\";v=\"136\", \"Not.A/Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "cross-site",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+        "X-Amzn-Trace-Id": "Root=1-683717e4-59c3cdd4316986ae778f398a",
+        "X-Forwarded-For": "147.161.235.33",
+        "X-Forwarded-Port": "443",
+        "X-Forwarded-Proto": "https"
+    },
+    "multiValueHeaders": {
+        "accept": [
+            "*/*"
+        ],
+        "accept-encoding": [
+            "gzip, deflate, br, zstd"
+        ],
+        "accept-language": [
+            "en-US,en;q=0.9"
+        ],
+        "content-type": [
+            "application/json"
+        ],
+        "Host": [
+            "0ho0tvkvph.execute-api.us-east-1.amazonaws.com"
+        ],
+        "origin": [
+            "http://127.0.0.1:5500"
+        ],
+        "priority": [
+            "u=1, i"
+        ],
+        "referer": [
+            "http://127.0.0.1:5500/"
+        ],
+        "sec-ch-ua": [
+            "\"Chromium\";v=\"136\", \"Google Chrome\";v=\"136\", \"Not.A/Brand\";v=\"99\""
+        ],
+        "sec-ch-ua-mobile": [
+            "?0"
+        ],
+        "sec-ch-ua-platform": [
+            "\"Windows\""
+        ],
+        "sec-fetch-dest": [
+            "empty"
+        ],
+        "sec-fetch-mode": [
+            "cors"
+        ],
+        "sec-fetch-site": [
+            "cross-site"
+        ],
+        "User-Agent": [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+        ],
+        "X-Amzn-Trace-Id": [
+            "Root=1-683717e4-59c3cdd4316986ae778f398a"
+        ],
+        "X-Forwarded-For": [
+            "147.161.235.33"
+        ],
+        "X-Forwarded-Port": [
+            "443"
+        ],
+        "X-Forwarded-Proto": [
+            "https"
+        ]
+    },
+    "queryStringParameters": null,
+    "multiValueQueryStringParameters": null,
+    "pathParameters": null,
+    "stageVariables": null,
+    "requestContext": {
+        "resourceId": "9e35cs",
+        "resourcePath": "/chat",
+        "httpMethod": "POST",
+        "extendedRequestId": "LSCrsHkOIAMEJyA=",
+        "requestTime": "28/May/2025:14:04:20 +0000",
+        "path": "/Dev/chat",
+        "accountId": "653858776174",
+        "protocol": "HTTP/1.1",
+        "stage": "Dev",
+        "domainPrefix": "0ho0tvkvph",
+        "requestTimeEpoch": 1748441060026,
+        "requestId": "3af0a6ba-8989-4e03-a002-b8aff32d21de",
+        "identity": {
+            "cognitoIdentityPoolId": null,
+            "accountId": null,
+            "cognitoIdentityId": null,
+            "caller": null,
+            "sourceIp": "147.161.235.33",
+            "principalOrgId": null,
+            "accessKey": null,
+            "cognitoAuthenticationType": null,
+            "cognitoAuthenticationProvider": null,
+            "userArn": null,
+            "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            "user": null
+        },
+        "domainName": "0ho0tvkvph.execute-api.us-east-1.amazonaws.com",
+        "deploymentId": "qt1die",
+        "apiId": "0ho0tvkvph"
+    },
+    "body": "{\"prompt\":{\"parameters\":[{\"name\":\"condition\",\"value\":\"Annual Deductible - Out-of-Network\"},{\"name\":\"plan\",\"value\":\"1651\"}]}}",
+    "isBase64Encoded": false
+}
