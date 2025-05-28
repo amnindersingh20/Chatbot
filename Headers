@@ -34,10 +34,16 @@ async function sendMessage() {
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
 
-        // Compose user-friendly message from data
-        const botReply = data?.value
-            ? `For "${data.condition}" under plan ${data.plan}, the value is: ${data.value}`
-            : '[No response]';
+        // Support both response types
+        let botReply = '';
+
+        if (typeof data.message === 'string') {
+            botReply = data.message;
+        } else if (data.value && data.condition && data.plan) {
+            botReply = `For "${data.condition}" under plan ${data.plan}, the value is: ${data.value}`;
+        } else {
+            botReply = '[No meaningful response]';
+        }
 
         appendMessage(botReply, false);
 
@@ -48,20 +54,4 @@ async function sendMessage() {
     } finally {
         typingIndicator.style.display = 'none';
     }
-}
-
-function typeWordByWord(response, element) {
-    if (!response || typeof response !== 'string') {
-        element.textContent = '[No response from bot]';
-        return;
-    }
-
-    const words = response.split(' ');
-    let delay = 0;
-    words.forEach((word) => {
-        setTimeout(() => {
-            element.innerHTML += word + ' ';
-        }, delay);
-        delay += 50;
-    });
 }
