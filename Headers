@@ -1,19 +1,5 @@
-{
-  "prompt": "{\"parameters\": [{\"name\": \"condition\", \"value\": \"aspirin\"}]}"
-}
 
 {
-  "statusCode": 400,
-  "body": "{\"error\": \"Missing parameter: 'prompt'\"}"
+  "statusCode": 400,
+  "body": "{\"error\": \"'condition' is required\"}"
 }
-
-event: {'prompt': '{"parameters": [{"name": "condition", "value": "aspirin"}]}'}
-[INFO]	2025-05-28T09:39:55.029Z	4fbb57e0-4db8-4098-b681-7de573f063e0	Received event: 
-{
-    "prompt": "{\"parameters\": [{\"name\": \"condition\", \"value\": \"aspirin\"}]}"
-}
-
-body: None
-params: 
-{}
-
