@@ -1,1 +1,5 @@
-Error: Cannot read properties of undefined (reading 'split')
+{
+    "condition": "annual deductible - network",
+    "plan": "1651",
+    "value": "$1,000 Individual; $2,000 Family; combined with MH/SUD; capped at $1,000 per Individual"
+}
