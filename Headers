@@ -1,5 +1,6 @@
-
 {
-  "statusCode": 400,
-  "body": "{\"error\": \"'condition' is required\"}"
+  "body": "{\"parameters\": [\
+    {\"name\":\"condition\",\"value\":\"x-ray charges\"},\
+    {\"name\":\"plan\",\"value\":\"1651\"}\
+  ]}"
 }
