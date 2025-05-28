@@ -14,7 +14,6 @@ tog.setLevel(logging.INFO)
 # Configuration
 S3_BUCKET = "pocbotai"
 S3_KEY    = "2025 Medical SI HPCC for Chatbot Testing.csv"
-# Hardcoded fallback Lambda name (if you still need it)
 FALLBACK_LAMBDA_NAME = "fallbackHandler"
 
 # Initialize AWS clients
@@ -27,7 +26,7 @@ def load_dataframe() -> pd.DataFrame:
     - Pulls the CSV from S3
     - Strips and lower-cases the 'Data Point Name' column
     - Normalizes any en-dashes → hyphens and removes zero-width spaces
-    - Strips all column names so you can look up "1651" etc. reliably
+    - Strips all column names so plan columns can be looked up reliably
     """
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
@@ -71,12 +70,12 @@ df = load_dataframe()
 
 def get_plan_value(name: str, plan_id: str) -> dict:
     """
-    Returns the single cell under your plan column.
+    Returns the single cell under your plan column for a given data-point name.
     """
     name    = name.strip().lower()
     plan_id = str(plan_id).strip()
 
-    # 1) Find the matching row(s) in your 'Data Point Name' column
+    # 1) Find matching row(s)
     esc     = re.escape(name)
     matched = df[
         df['Data Point Name']
@@ -90,7 +89,7 @@ def get_plan_value(name: str, plan_id: str) -> dict:
             'error': True
         }
 
-    # 2) Make sure your plan column exists
+    # 2) Check plan column exists
     if plan_id not in df.columns:
         return {
             'statusCode': 404,
@@ -98,7 +97,7 @@ def get_plan_value(name: str, plan_id: str) -> dict:
             'error': True
         }
 
-    # 3) Grab the first match and its value under that plan
+    # 3) Get first matching row and its plan-cell
     row   = matched.iloc[0]
     value = row.get(plan_id, None)
     if pd.isna(value):
@@ -121,21 +120,39 @@ def get_plan_value(name: str, plan_id: str) -> dict:
 
 def invoke_fallback(original_event: dict) -> dict:
     """
-    If you still want to call your fallback Lambda on error.
+    If you still need to call your fallback Lambda on error.
     """
     try:
-        response = _lambda.invoke(
+        resp = _lambda.invoke(
             FunctionName=FALLBACK_LAMBDA_NAME,
             InvocationType='RequestResponse',
             Payload=json.dumps(original_event).encode('utf-8')
         )
-        payload = response.get('Payload')
-        result_bytes = payload.read() if hasattr(payload, 'read') else payload
-        return json.loads(result_bytes)
+        payload = resp.get('Payload')
+        raw = payload.read() if hasattr(payload, 'read') else payload
+
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode('utf-8')
+        if isinstance(raw, str):
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                return {
+                    'statusCode': HTTPStatus.INTERNAL_SERVER_ERROR,
+                    'error': 'Fallback returned invalid JSON'
+                }
+        elif isinstance(raw, dict):
+            return raw
+        else:
+            return {
+                'statusCode': HTTPStatus.INTERNAL_SERVER_ERROR,
+                'error': 'Fallback returned unexpected payload type'
+            }
+
     except Exception as e:
         tog.error("Fallback invocation failed: %s", e, exc_info=True)
         return {
-            'statusCode': 500,
+            'statusCode': HTTPStatus.INTERNAL_SERVER_ERROR,
             'error': f"Fallback handler error: {e}"
         }
 
@@ -143,8 +160,13 @@ def invoke_fallback(original_event: dict) -> dict:
 def lambda_handler(event, context):
     tog.info("Received event: %s", json.dumps(event))
 
-    # --- 1) Unwrap the incoming JSON-string or dict
+    # 1) Unwrap body/prompt/event but only json.loads() strings
     raw = event.get('body') or event.get('prompt') or event
+
+    # decode bytes if needed
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode('utf-8')
+
     if isinstance(raw, str):
         try:
             payload = json.loads(raw)
@@ -155,7 +177,7 @@ def lambda_handler(event, context):
     else:
         payload = {}
 
-    # --- 2) Normalize parameters list → dict
+    # 2) Normalize parameters list → dict
     params = payload.get('parameters') or {}
     if isinstance(params, list):
         params = {p.get('name'): p.get('value') for p in params if p.get('name')}
@@ -163,7 +185,7 @@ def lambda_handler(event, context):
     condition = params.get('condition')
     plan      = params.get('plan')
 
-    # --- 3) Validate both inputs
+    # 3) Validate inputs
     if not condition:
         return {
             'statusCode': HTTPStatus.BAD_REQUEST,
@@ -175,27 +197,26 @@ def lambda_handler(event, context):
             'body': json.dumps({'error': "'plan' is required"})
         }
 
-    # --- 4) Call our new helper
+    # 4) Perform lookup
     result = get_plan_value(condition, plan)
     status = result.get('statusCode', 500)
     if status != 200:
-        # If you want fallback-on-404, uncomment the lines below:
+        # If you want to invoke fallback on lookup failures, uncomment:
         # fallback_event = event.copy()
-        # fallback_payload = [
-        #     {'name':'condition','value':condition},
-        #     {'name':'plan',     'value':plan}
+        # fallback_params = [
+        #     {'name': 'condition', 'value': condition},
+        #     {'name': 'plan',      'value': plan}
         # ]
-        # fallback_event['body']   = {'parameters': fallback_payload}
-        # fallback_event['prompt'] = {'parameters': fallback_payload}
+        # fallback_event['body']   = {'parameters': fallback_params}
+        # fallback_event['prompt'] = {'parameters': fallback_params}
         # return invoke_fallback(fallback_event)
 
-        # Otherwise just return the 404/400
         return {
             'statusCode': status,
             'body': json.dumps({'error': result.get('message')})
         }
 
-    # --- 5) Success! return the single-cell data
+    # 5) Success — return the single-cell value
     return {
         'statusCode': 200,
         'body': json.dumps(result['data'])
