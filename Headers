@@ -1,3 +1,45 @@
 {
-  "body": "{\"parameters\": [{\"name\": \"condition\", \"value\": \"x-ray charges\"}, {\"name\": \"plan\", \"value\": \"1651\"}]}"
+    "resource": "/chat",
+    "path": "/chat",
+    "httpMethod": "POST",
+    "headers": null,
+    "multiValueHeaders": null,
+    "queryStringParameters": null,
+    "multiValueQueryStringParameters": null,
+    "pathParameters": null,
+    "stageVariables": null,
+    "requestContext": {
+        "resourceId": "9e35cs",
+        "resourcePath": "/chat",
+        "httpMethod": "POST",
+        "extendedRequestId": "LR9vGFhWoAMFd3Q=",
+        "requestTime": "28/May/2025:13:30:33 +0000",
+        "path": "/chat",
+        "accountId": "653858776174",
+        "protocol": "HTTP/1.1",
+        "stage": "test-invoke-stage",
+        "domainPrefix": "testPrefix",
+        "requestTimeEpoch": 1748439033808,
+        "requestId": "b5290a57-ae0a-419b-8c63-265277f7d933",
+        "identity": {
+            "cognitoIdentityPoolId": null,
+            "cognitoIdentityId": null,
+            "apiKey": "test-invoke-api-key",
+            "principalOrgId": null,
+            "cognitoAuthenticationType": null,
+            "userArn": "arn:aws:sts::653858776174:assumed-role/AWSReservedSSO_admin_78c5410abf281a8f/amninder.singh@alight.com",
+            "apiKeyId": "test-invoke-api-key-id",
+            "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0",
+            "accountId": "653858776174",
+            "caller": "AROAZQPIFERXIXADME3LW:amninder.singh@alight.com",
+            "sourceIp": "test-invoke-source-ip",
+            "accessKey": "ASIAZQPIFERXIVSUFMG5",
+            "cognitoAuthenticationProvider": null,
+            "user": "AROAZQPIFERXIXADME3LW:amninder.singh@alight.com"
+        },
+        "domainName": "testPrefix.testDomainName",
+        "apiId": "0ho0tvkvph"
+    },
+    "body": "{\n    \"body\": \"{\\\"parameters\\\": [{\\\"name\\\": \\\"condition\\\", \\\"value\\\": \\\"Annual Deductible - Out-of-Network\\\"}, {\\\"name\\\": \\\"plan\\\", \\\"value\\\": \\\"1651\\\"}]}\"\n}",
+    "isBase64Encoded": false
 }
