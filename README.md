@@ -7,19 +7,21 @@ from http import HTTPStatus
 import boto3
 import pandas as pd
 
-# ---------- same setup as before ----------
-tog = logging.getLogger()
-tog.setLevel(logging.INFO)
+# Configure logging
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
-S3_BUCKET           = "pocbotai"
-S3_KEY              = "2025 Medical SI HPCC for Chatbot Testing.csv"
+# Config
+S3_BUCKET = "pocbotai"
+S3_KEY = "2025 Medical SI HPCC for Chatbot Testing.csv"
 FALLBACK_LAMBDA_NAME = "fallbackHandler"
 
-_s3     = boto3.client('s3')
+# Clients
+_s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
 
-
-def load_dataframe() -> pd.DataFrame:
+# Load DataFrame once at cold start
+def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
         df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
@@ -35,66 +37,101 @@ def load_dataframe() -> pd.DataFrame:
               .str.lower()
         )
         return df
-    except Exception:
-        tog.exception("Failed to load CSV")
+    except Exception as e:
+        log.exception("Failed to load CSV")
         return pd.DataFrame()
 
 df = load_dataframe()
 
 
-def get_plan_value(name: str, plan_id: str) -> dict:
+def get_plan_value(name: str, plan_id: str):
     name, plan_id = name.strip().lower(), str(plan_id).strip()
-    esc = re.escape(name)
-    matched = df[df['Data Point Name'].str.contains(esc, case=False, na=False, regex=True)]
-    if matched.empty:
-        return {'statusCode': 404, 'message': f"No data-point '{name}'"}
+    if 'Data Point Name' not in df.columns:
+        return {'statusCode': 500, 'message': 'CSV missing required column'}
     if plan_id not in df.columns:
         return {'statusCode': 404, 'message': f"Plan '{plan_id}' not found"}
+
+    matched = df[df['Data Point Name'].str.contains(re.escape(name), case=False, na=False, regex=True)]
+    if matched.empty:
+        return {'statusCode': 404, 'message': f"No data-point '{name}' found"}
+
     val = matched.iloc[0].get(plan_id)
     if pd.isna(val):
-        return {'statusCode':404, 'message':f"No value for '{name}' under plan '{plan_id}'"}
-    return {'statusCode':200, 'data':{'condition':name,'plan':plan_id,'value':val}}
+        return {'statusCode': 404, 'message': f"No value for '{name}' under plan '{plan_id}'"}
+
+    return {'statusCode': 200, 'data': {'condition': name, 'plan': plan_id, 'value': val}}
+
+
+def invoke_fallback(event_payload: dict):
+    try:
+        response = _lambda.invoke(
+            FunctionName=FALLBACK_LAMBDA_NAME,
+            InvocationType='RequestResponse',
+            Payload=json.dumps(event_payload).encode('utf-8')
+        )
+        result_bytes = response['Payload'].read()
+        return json.loads(result_bytes)
+    except Exception as e:
+        log.exception("Fallback invocation failed")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': f"Fallback error: {str(e)}"})
+        }
 
 
 def lambda_handler(event, context):
-    tog.info("Event: %s", event)
+    log.info("Received event: %s", json.dumps(event))
 
-    # --- 1) extract payload dict from event['body'] (string or dict)
-    raw = event.get('body')
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode('utf-8')
-    if isinstance(raw, str):
-        try:
+    try:
+        # Step 1: Parse body
+        raw = event.get('body') or event.get('prompt') or {}
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode('utf-8')
+        if isinstance(raw, str):
             payload = json.loads(raw)
-        except json.JSONDecodeError:
+        elif isinstance(raw, dict):
+            payload = raw
+        else:
             payload = {}
-    elif isinstance(raw, dict):
-        payload = raw
-    else:
-        payload = {}
 
-    # --- 2) pull params
-    params = payload.get('parameters') or []
-    if isinstance(params, dict):
-        # in case someone passed {name:value} style
-        params = [{'name':k,'value':v} for k,v in params.items()]
-    if isinstance(params, list):
-        params = {p['name']: p['value'] for p in params if 'name' in p and 'value' in p}
+        # Step 2: Parse parameters
+        params = payload.get('parameters') or []
+        if isinstance(params, dict):
+            params = [{'name': k, 'value': v} for k, v in params.items()]
+        param_dict = {p['name']: p['value'] for p in params if 'name' in p and 'value' in p}
+        condition = param_dict.get('condition')
+        plan = param_dict.get('plan')
 
-    condition = params.get('condition')
-    plan      = params.get('plan')
+        if not condition or not plan:
+            missing = []
+            if not condition: missing.append('condition')
+            if not plan: missing.append('plan')
+            return {'statusCode': 400, 'body': json.dumps({'error': f"Missing: {', '.join(missing)}"})}
 
-    # --- 3) validate
-    if not condition:
-        return {'statusCode':400, 'body': json.dumps({'error': "'condition' required"})}
-    if not plan:
-        return {'statusCode':400, 'body': json.dumps({'error': "'plan' required"})}
+        # Step 3: Query CSV
+        result = get_plan_value(condition, plan)
+        if result['statusCode'] != 200:
+            log.warning("Primary lookup failed, invoking fallback.")
+            fallback_event = {
+                'body': json.dumps({'parameters': [
+                    {'name': 'condition', 'value': condition},
+                    {'name': 'plan', 'value': plan}
+                ]})
+            }
+            return invoke_fallback(fallback_event)
 
-    # --- 4) lookup
-    result = get_plan_value(condition, plan)
-    if result['statusCode'] != 200:
-        return {'statusCode': result['statusCode'],
-                'body': json.dumps({'error': result.get('message')})}
+        # Step 4: Success
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result['data'])
+        }
 
-    # --- 5) success
-    return {'statusCode':200, 'body': json.dumps(result['data'])}
+    except Exception as e:
+        log.exception("Unhandled error")
+        fallback_event = {
+            'body': json.dumps({'parameters': [
+                {'name': 'condition', 'value': param_dict.get('condition', '')},
+                {'name': 'plan', 'value': param_dict.get('plan', '')}
+            ]})
+        }
+        return invoke_fallback(fallback_event)
