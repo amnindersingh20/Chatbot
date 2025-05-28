@@ -87,22 +87,28 @@ def invoke_fallback(original_event: dict) -> dict:
 def lambda_handler(event, context):
     """
     Main entry point. Expects JSON payload with 'condition' parameter.
-    If get_medication returns error or non-200 status, strip unwanted tokens and invoke fallback lambda.
+    Supports inputs under 'body', 'prompt', or top-level 'parameters'.
+    On error or non-200 from primary, strips unwanted tokens and invokes fallback.
     """
     tog.info("Received event: %s", json.dumps(event))
 
     try:
-        body = event.get('body')
-        if isinstance(body, str):
+        # Extract raw payload string or dict from 'body' or 'prompt'
+        raw = event.get('body') or event.get('prompt') or event
+        if isinstance(raw, str):
             try:
-                body = json.loads(body)
+                payload = json.loads(raw)
             except json.JSONDecodeError:
-                pass
+                payload = {}
+        elif isinstance(raw, dict):
+            payload = raw
+        else:
+            payload = {}
 
-        params = (body or event).get('parameters') or {}
+        params = payload.get('parameters') or {}
         # Allow both list or dict style
         if isinstance(params, list):
-            params = {p.get('name'): p.get('value') for p in params}
+            params = {p.get('name'): p.get('value') for p in params if p.get('name')}
 
         condition = params.get('condition')
         if not condition:
@@ -113,14 +119,16 @@ def lambda_handler(event, context):
         status = result.get('statusCode', 500)
         msg = result.get('message', '')
 
-        # Check for failure or apology
+        # On failure or apology, strip and delegate
         if status != 200 or re.search(r"sorry|apology|no records", msg, re.IGNORECASE):
             tog.warning("Primary handler failed or apologized, preparing fallback...")
-            # Strip unwanted tokens from user input
             stripped = re.sub(r"(column-wise|1651)", "", condition, flags=re.IGNORECASE).strip()
-            # Build new event for fallback with stripped condition
-            fallback_event = {**event}
-            fallback_event['body'] = json.dumps({'parameters': [{'name': 'condition', 'value': stripped}]})
+            # Build fallback event preserving original structure
+            fallback_event = event.copy()
+            # Use JSON string for body and prompt
+            fallback_payload = {'parameters': [{'name': 'condition', 'value': stripped}]}
+            fallback_event['body'] = json.dumps(fallback_payload)
+            fallback_event['prompt'] = json.dumps(fallback_payload)
             return invoke_fallback(fallback_event)
 
         # Success: return data
@@ -131,8 +139,9 @@ def lambda_handler(event, context):
 
     except Exception as e:
         tog.error("Unhandled exception: %s", e, exc_info=True)
-        # On unexpected error, strip and invoke fallback
         stripped = re.sub(r"(column-wise|1651)", "", params.get('condition', ''), flags=re.IGNORECASE).strip()
-        fallback_event = {**event}
-        fallback_event['body'] = json.dumps({'parameters': [{'name': 'condition', 'value': stripped}]})
+        fallback_event = event.copy()
+        fallback_payload = {'parameters': [{'name': 'condition', 'value': stripped}]}
+        fallback_event['body'] = json.dumps(fallback_payload)
+        fallback_event['prompt'] = json.dumps(fallback_payload)
         return invoke_fallback(fallback_event)
