@@ -1,165 +1,131 @@
-
 import logging
-from typing import Dict, Any
-from http import HTTPStatus
 import json
-import boto3
-import pandas as pd
 import re
 from io import StringIO
+from http import HTTPStatus
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+import boto3
+import pandas as pd
 
+# Configure logging
+tog = logging.getLogger()
+tog.setLevel(logging.INFO)
+
+# Configuration
 S3_BUCKET = "pocbotai"
-S3_KEY    = "2025 Medical SI HPCC for Chatbot Testing.csv"
+S3_KEY = "2025 Medical SI HPCC for Chatbot Testing.csv"
+# Hardcoded fallback Lambda name
+FALLBACK_LAMBDA_NAME = "fallbackHandler"
+
+# Initialize AWS clients
+_s3 = boto3.client('s3')
+_lambda = boto3.client('lambda')
+
 
 def load_dataframe() -> pd.DataFrame:
     try:
-        s3 = boto3.client('s3')
-        obj = s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
+        obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
         content = obj['Body'].read().decode('utf-8')
         df = pd.read_csv(StringIO(content))
-        logger.info("CSV Columns: %s", list(df.columns))
-
+        tog.info("CSV Columns: %s", list(df.columns))
+        
         if 'Data Point Name' not in df.columns:
-            raise KeyError("'Data Point Name' column is missing from the CSV")
+            raise KeyError("Missing 'Data Point Name' column in CSV")
 
         df['Data Point Name'] = (
             df['Data Point Name']
-            .astype(str)
-            .str.strip()
-            .str.lower()
+              .astype(str)
+              .str.strip()
+              .str.lower()
         )
-
         df.columns = df.columns.str.strip()
-
         return df
+
     except Exception as e:
-        logger.error("Failed to load or parse CSV: %s", e, exc_info=True)
+        tog.error("Error loading CSV: %s", e, exc_info=True)
         return pd.DataFrame()
 
-
+# Load once at cold start
 df = load_dataframe()
 
-def get_medication(
-    name: str,
-    selected_columns: str,
-    display_mode: str
-) -> Dict[str, Any]:
+
+def get_medication(name: str) -> dict:
+    """
+    Retrieves matching records for a given medication/data-point name.
+    Returns a dict with either 'data' on success, or 'error' on failure.
+    """
     name = name.strip().lower()
     esc = re.escape(name)
-    matched = df[
-        df['Data Point Name']
-          .str.contains(esc, case=False, na=False, regex=True)
-    ]
 
+    matched = df[df['Data Point Name'].str.contains(esc, case=False, na=False, regex=True)]
     if matched.empty:
-        return {"error": f"No records found for '{name}'"}
+        return {'statusCode': 404, 'message': f"No records found for '{name}'", 'error': True}
 
-    if display_mode == 'row-wise':
-        rows = matched.where(pd.notna(matched), None).to_dict(orient='records')
-        return {
-            'response_type': 'row_wise',
-            'data': rows,
-            'message': f"Found {len(rows)} row(s) for '{name}'"
-        }
-
- 
-    sel_cols = [c.strip() for c in selected_columns.split(',')] if selected_columns else []
-
-    valid_cols = [c for c in sel_cols if c in df.columns and c not in ('Data Point Name', 'Option ID')]
-
-    if not valid_cols:
-        available = [col for col in df.columns if col not in ('Data Point Name', 'Option ID')]
-        return {
-            'error': (
-                f"No valid columns selected from input '{selected_columns}'. "
-                f"Available columns: {available}"
-            )
-        }
-
-    out = []
-    for _, row in matched.iterrows():
-
-        row_values = {c: row[c] for c in valid_cols if pd.notna(row[c])}
-        if row_values:
-            out.append({
-                'data_point': row['Data Point Name'],
-                'columns': row_values
-            })
-
-    return {
-        'response_type': 'column_wise',
-        'data': out,
-        'message': f"Found {len(out)} column-wise result(s) for '{name}'"
-    }
+    # Convert to records
+    rows = matched.where(pd.notna(matched), None).to_dict(orient='records')
+    return {'statusCode': 200, 'message': f"Found {len(rows)} record(s)", 'data': rows}
 
 
-def lambda_handler(
-    event: Dict[str, Any],
-    context: Any
-) -> Dict[str, Any]:
-    logger.info("Raw event: %s", json.dumps(event))
+def invoke_fallback(original_event: dict) -> dict:
+    """
+    Invokes the fallback lambda function and returns its response payload.
+    """
     try:
-        payload = event
-        if 'body' in event and isinstance(event['body'], str):
+        response = _lambda.invoke(
+            FunctionName=FALLBACK_LAMBDA_NAME,
+            InvocationType='RequestResponse',
+            Payload=json.dumps(original_event).encode('utf-8')
+        )
+        payload = response.get('Payload')
+        # Read bytes and decode
+        result_bytes = payload.read() if hasattr(payload, 'read') else payload
+        return json.loads(result_bytes)
+    except Exception as e:
+        tog.error("Fallback invocation failed: %s", e, exc_info=True)
+        return {'statusCode': 500, 'error': f"Fallback handler error: {e}"}
+
+
+def lambda_handler(event, context):
+    """
+    Main entry point. Expects JSON payload with 'condition' parameter.
+    If get_medication returns error or non-200 status, invoke fallback lambda.
+    """
+    tog.info("Received event: %s", json.dumps(event))
+
+    try:
+        body = event.get('body')
+        if isinstance(body, str):
             try:
-                payload = json.loads(event['body'])
-                logger.info("Unwrapped body to payload: %s", payload)
+                body = json.loads(body)
             except json.JSONDecodeError:
-                logger.warning("Could not JSON-decode `body`; using top-level event")
+                pass
 
-        raw_params = payload.get('parameters', [])
-        params = {p.get('name'): p.get('value') for p in raw_params}
+        params = (body or event).get('parameters') or {}
+        # Allow both list or dict style
+        if isinstance(params, list):
+            params = {p.get('name'): p.get('value') for p in params}
 
-        condition = params.get('condition', '').strip()
-        sel       = params.get('selected_column', '').strip()
-
-
-        if re.fullmatch(r"P\d+", condition, re.IGNORECASE) and not re.fullmatch(r"P\d+", sel, re.IGNORECASE):
-            logger.info("Auto-swapping: condition was '%s', selected_column was '%s'", condition, sel)
-            condition, sel = sel, condition
-
+        condition = params.get('condition')
         if not condition:
-            raise ValueError("Missing required parameter: condition")
+            return {'statusCode': HTTPStatus.BAD_REQUEST, 'body': json.dumps({'error': "'condition' is required"})}
 
-        result = get_medication(condition, sel, params.get('display_mode', 'column-wise').strip().lower())
-        logger.info("Result from get_medication: %s", result)
+        # Call primary handler
+        result = get_medication(condition)
+        status = result.get('statusCode', 500)
+        msg = result.get('message', '')
 
-        message = result.get('message', result.get('error', 'No message provided'))
-        data = result.get('data', [])
+        # If primary handler fails or issues apology-style message, delegate
+        if status != 200 or re.search(r"sorry|apology|no records", msg, re.IGNORECASE):
+            tog.warning("Primary handler failed or apologized, invoking fallback...")
+            return invoke_fallback(event)
 
-        response_body = {
-            'TEXT': {
-                'body': f"{message}\n\n" + json.dumps(data, indent=2)
-            }
-        }
-
-        function_response = {
-            'actionGroup':       payload.get('actionGroup'),
-            'function':          payload.get('function'),
-            'functionResponse': {
-                'responseBody': response_body
-            }
-        }
-
+        # Success: return data
         return {
-            'messageVersion': payload.get('messageVersion', '1.0'),
-            'response':       function_response
-        }
-
-    except KeyError as e:
-        logger.error("Missing field in event/payload: %s", e, exc_info=True)
-        return {
-            'statusCode': HTTPStatus.BAD_REQUEST,
-            'body':       json.dumps({'error': f"Missing field {e}"})
+            'statusCode': 200,
+            'body': json.dumps({'message': msg, 'data': result.get('data', [])})
         }
 
     except Exception as e:
-        logger.error("Unexpected error: %s", e, exc_info=True)
-        return {
-            'statusCode': HTTPStatus.INTERNAL_SERVER_ERROR,
-            'body':       json.dumps({'error': str(e)})
-        }
-
+        tog.error("Unhandled exception: %s", e, exc_info=True)
+        # On unexpected error, also invoke fallback
+        return invoke_fallback(event)
