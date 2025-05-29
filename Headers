@@ -1,57 +1,23 @@
-async function sendMessage() {
-    const message = messageInput.value.trim();
-    if (!message) return;
-    messageInput.value = '';
-    errorMessage.textContent = '';
-    appendMessage(message, true);
-    typingIndicator.style.display = 'block';
-
-    try {
-        let condition = '';
-        let plan = '1651'; // Default plan if not provided
-
-        const planRegex = /\bfor\s+plan\s+(\d+)\b/i;
-        const match = message.match(planRegex);
-
-        if (match) {
-            plan = match[1];
-            condition = message.replace(planRegex, '').trim();
-        } else {
-            condition = message;
-        }
-
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                parameters: [
-                    { name: 'condition', value: condition },
-                    { name: 'plan', value: plan }
-                ]
-            })
-        });
-
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data = await response.json();
-
-        // Support both response types
-        let botReply = '';
-
-        if (typeof data.message === 'string') {
-            botReply = data.message;
-        } else if (data.value && data.condition && data.plan) {
-            botReply = `For "${data.condition}" under plan ${data.plan}, the value is: ${data.value}`;
-        } else {
-            botReply = '[No meaningful response]';
-        }
-
-        appendMessage(botReply, false);
-
-        userHistory.push({ question: message, response: botReply });
-        sessionStorage.setItem('userHistory', JSON.stringify(userHistory));
-    } catch (error) {
-        errorMessage.textContent = `Error: ${error.message}`;
-    } finally {
-        typingIndicator.style.display = 'none';
+[
+    {
+        "condition": "annual out-of-pocket maximum - network",
+        "plan": "1651",
+        "value": "$4,200 Individual; $8,400 Family; Includes Annual Deductible; combined with MH/SUD; capped at $4,200 per Individual"
+    },
+    {
+        "condition": "annual out-of-pocket maximum - out-of-network",
+        "plan": "1651",
+        "value": "$12,600 Individual; $25,200 Family; Includes Annual Deductible; combined with MH/SUD; capped at $12,600 per Individual"
     }
+]
+
+this is what I am getting for the CSV lookup response in the browser response and below is what I got from the fallback lambda as response in the browser response
+
+{
+    "statusCode": 200,
+    "headers": {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+    },
+    "body": "{\"message\": \"For plan 1651, the annual deductible varies by year and coverage type (individual or family). Here are the annual deductible amounts for the years 2023-2026:\\n\\n2023: $1,700 for individual / $3,400 for family\\n2024: $1,750 for individual / $3,500 for family\\n2025: $1,800 for individual / $3,600 for family\\n2026: $1,850 for individual / $3,700 for family\\n\\nThese deductibles apply to medical, mental health/substance use disorder (MH/SUD), prescription drug (Rx), and CarePlus services. It's important to note that unless otherwise specified, the annual deductible applies to covered services. This means you'll need to pay the full cost of most services up to your deductible amount before the plan starts to pay its share. However, some services, such as preventive care, may be covered without having to meet the deductible first.\", \"citations\": []}"
 }
