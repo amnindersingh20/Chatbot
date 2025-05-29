@@ -1,24 +1,4 @@
-START RequestId: b8dc5602-19e6-48a7-90a9-c836398913bb Version: $LATEST
-[INFO]	2025-05-29T10:57:44.748Z	b8dc5602-19e6-48a7-90a9-c836398913bb	Received: 
 {
-    "body": {
-        "parameters": [
-            {
-                "name": "condition",
-                "value": "what is my out of pocket maximum"
-            },
-            {
-                "name": "plan",
-                "value": "1651"
-            }
-        ]
-    }
+    "statusCode": 500,
+    "body": "{\"error\": \"Parameter validation failed:\\nUnknown parameter in input: \\\"promptSpecification\\\", must be one of: input, retrieveAndGenerateConfiguration, sessionConfiguration, sessionId\"}"
 }
-
-[INFO]	2025-05-29T10:57:44.748Z	b8dc5602-19e6-48a7-90a9-c836398913bb	Original query: 'what is my out of pocket maximum'
-[INFO]	2025-05-29T10:57:44.748Z	b8dc5602-19e6-48a7-90a9-c836398913bb	After strip_filler: 'is my out of pocket maximum'
-[INFO]	2025-05-29T10:57:45.102Z	b8dc5602-19e6-48a7-90a9-c836398913bb	After Comprehend entity extraction: 'is my out of pocket maximum'
-[INFO]	2025-05-29T10:57:45.102Z	b8dc5602-19e6-48a7-90a9-c836398913bb	After expand_synonyms: 'is my out of pocket maximum'
-[INFO]	2025-05-29T10:57:45.102Z	b8dc5602-19e6-48a7-90a9-c836398913bb	Normalized query: 'ismyoutofpocketmaximum'
-[WARNING]	2025-05-29T10:57:45.107Z	b8dc5602-19e6-48a7-90a9-c836398913bb	Primary lookup failed (404). Invoking fallback.
-END RequestId: b8dc5602-19e6-48a7-90a9-c836398913bb
