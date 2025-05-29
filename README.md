@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 
@@ -187,7 +186,7 @@
 
     <script>
         const userHistory = JSON.parse(sessionStorage.getItem('userHistory')) || [];
-        const API_URL = 'https://0ho0tvkvph.execute-api.us-east-1.amazonaws.com/Dev/chat';
+        const API_URL = 'https://0ho.execute-api.us-east-1.amazonaws.com/Dev/chat';
         const chatHistory = document.getElementById('chat-history');
         const messageInput = document.getElementById('message-input');
         const typingIndicator = document.getElementById('typing-indicator');
@@ -214,6 +213,7 @@
             chatHistory.appendChild(messageDiv);
             chatHistory.scrollTop = chatHistory.scrollHeight;
         }
+
         async function sendMessage() {
             const message = messageInput.value.trim();
             if (!message) return;
@@ -224,7 +224,7 @@
 
             try {
                 let condition = '';
-                let plan = '1651'; // Default plan if not provided
+                let plan = '1651';
 
                 const planRegex = /\bfor\s+plan\s+(\d+)\b/i;
                 const match = message.match(planRegex);
@@ -248,11 +248,27 @@
                 });
 
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
+                let data = await response.json();
+
+                // Handle double-encoded response body
+                if (data.body && typeof data.body === 'string') {
+                    try {
+                        const parsedBody = JSON.parse(data.body);
+                        Object.assign(data, parsedBody);
+                    } catch (e) {
+                        console.warn('Failed to parse nested body JSON');
+                    }
+                }
 
                 let botReply = '';
 
-                if (typeof data.message === 'string') {
+                if (typeof data === 'string') {
+                    botReply = data;
+                } else if (Array.isArray(data)) {
+                    botReply = data.map(item =>
+                        `For "${item.condition}" under plan ${item.plan}, the value is: ${item.value}`
+                    ).join('\n\n');
+                } else if (typeof data.message === 'string') {
                     botReply = data.message;
                 } else if (data.value && data.condition && data.plan) {
                     botReply = `For "${data.condition}" under plan ${data.plan}, the value is: ${data.value}`;
@@ -261,16 +277,15 @@
                 }
 
                 appendMessage(botReply, false);
-
                 userHistory.push({ question: message, response: botReply });
                 sessionStorage.setItem('userHistory', JSON.stringify(userHistory));
+
             } catch (error) {
                 errorMessage.textContent = `Error: ${error.message}`;
             } finally {
                 typingIndicator.style.display = 'none';
             }
         }
-
 
         function typeWordByWord(response, element) {
             const words = response.split(' ');
