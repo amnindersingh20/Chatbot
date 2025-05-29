@@ -9,21 +9,20 @@ S3_BUCKET = "pi"
 S3_KEY = "2025 ng.csv"
 FALLBACK_LAMBDA_NAME = "Poc_"
 
-_s3      = boto3.client('s3')
-_lambda  = boto3.client('lambda')
+_s3 = boto3.client('s3')
+_lambda = boto3.client('lambda')
 
 SYNONYMS = {
-    r"\bco[\s\-]?pay(ment)?s?\b"    : "copayment",
-    r"\bco[\s\-]?insurance\b"       : "coinsurance",
-    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b" : "out of pocket",
-    r"\bdeductible(s)?\b"           : "deductible",   
+    r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
+    r"\bco[\s\-]?insurance\b": "coinsurance",
+    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
+    r"\bdeductible(s)?\b": "deductible",
 }
 
 def normalize(text: str) -> str:
     return re.sub(r'[^a-z0-9]', '', text.lower())
 
 def strip_filler(text: str) -> str:
-
     text = text.lower().strip()
     return re.sub(r"^(what('?s)?|what is|tell me|give me|please show|how much is)\s+(my\s+)?",
                   "", text).strip()
@@ -36,20 +35,27 @@ def expand_synonyms(text: str) -> str:
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
-        df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
+        df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
         df.columns = df.columns.astype(str).str.strip()
+
         if 'Data Point Name' not in df.columns:
             raise KeyError("Missing 'Data Point Name'")
+
         df['Data Point Name'] = (
             df['Data Point Name']
-              .astype(str)
-              .str.replace('–', '-', regex=False)
-              .str.replace('\u200b', '', regex=False)
-              .str.strip()
-              .str.lower()
+            .astype(str)
+            .str.replace('–', '-', regex=False)
+            .str.replace('\u200b', '', regex=False)
+            .str.strip()
+            .str.lower()
         )
         df['normalized_name'] = df['Data Point Name'].apply(normalize)
+
+        log.info("CSV loaded with columns: %s", list(df.columns))
+        log.info("Sample 'Data Point Name' values: %s", df['Data Point Name'].head(5).tolist())
+
         return df
+
     except Exception:
         log.exception("Failed to load CSV from S3")
         return pd.DataFrame()
@@ -57,22 +63,28 @@ def load_dataframe():
 DF = load_dataframe()
 
 def get_plan_value(raw_condition: str, plan_id: str):
-    plan_id   = str(plan_id).strip()
+    plan_id = str(plan_id).strip()
     condition = expand_synonyms(strip_filler(raw_condition))
     query_norm = normalize(condition)
 
     if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
+        log.error("Missing 'Data Point Name' or plan '%s' in columns: %s", plan_id, list(DF.columns))
         return 500, f"CSV missing required columns or plan '{plan_id}'"
 
     matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
+    log.info("Normalized query: '%s'", query_norm)
+    log.info("Initial matches: %s", matches['Data Point Name'].tolist())
 
     if matches.empty:
+        log.warning("No direct matches. Trying fuzzy match...")
         all_norms = DF['normalized_name'].tolist()
         ratios = difflib.get_close_matches(query_norm, all_norms, n=5, cutoff=0.7)
+        log.info("Fuzzy matches: %s", ratios)
         if ratios:
             matches = DF[DF['normalized_name'].isin(ratios)]
 
     if matches.empty:
+        log.warning("No match found after fuzzy matching for query: '%s'", query_norm)
         return 404, f"No data-points matching '{raw_condition}' found"
 
     results = []
@@ -81,9 +93,13 @@ def get_plan_value(raw_condition: str, plan_id: str):
         if pd.notna(val):
             results.append({
                 "condition": row['Data Point Name'],
-                "plan"     : plan_id,
-                "value"    : val
+                "plan": plan_id,
+                "value": val
             })
+        else:
+            log.warning("Matched row found but value is NaN: %s", row['Data Point Name'])
+
+    log.info("Matched rows for plan '%s': %s", plan_id, results)
 
     if not results:
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
@@ -103,18 +119,21 @@ def wrap_response(status, body):
 
 def invoke_fallback(event_payload):
     try:
+        log.info("Invoking fallback Lambda with payload: %s", event_payload)
         resp = _lambda.invoke(
-            FunctionName   = FALLBACK_LAMBDA_NAME,
-            InvocationType = "RequestResponse",
-            Payload        = json.dumps(event_payload).encode()
+            FunctionName=FALLBACK_LAMBDA_NAME,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(event_payload).encode()
         )
-        return wrap_response(200, json.loads(resp['Payload'].read()))
+        response_body = json.loads(resp['Payload'].read())
+        log.info("Fallback response: %s", response_body)
+        return wrap_response(200, response_body)
     except Exception as e:
         log.exception("Fallback invocation failed")
         return wrap_response(500, {"error": f"Fallback error: {e}"})
 
 def lambda_handler(event, _context):
-    log.info("Received: %s", json.dumps(event))
+    log.info("Received event: %s", json.dumps(event))
     try:
         raw = event.get("body") or event.get("prompt") or "{}"
         if isinstance(raw, (bytes, bytearray)):
@@ -126,35 +145,37 @@ def lambda_handler(event, _context):
             params = [{"name": k, "value": v} for k, v in params.items()]
         p = {d["name"]: d["value"] for d in params if "name" in d and "value" in d}
         condition = p.get("condition") or payload.get("condition")
-        plan      = p.get("plan")      or payload.get("plan")
+        plan = p.get("plan") or payload.get("plan")
 
         if not condition or not plan:
             missing = [k for k in ("condition", "plan") if not locals()[k]]
+            log.error("Missing required input: %s", missing)
             return wrap_response(400, {"error": f"Missing: {', '.join(missing)}"})
 
+        log.info("Processing condition='%s', plan='%s'", condition, plan)
         status, data = get_plan_value(condition, plan)
+
         if status == 200:
             return wrap_response(200, data)
         else:
-
             log.warning("Primary lookup failed (%s). Invoking fallback.", status)
             fb_event = {
                 "body": json.dumps({
                     "parameters": [
                         {"name": "condition", "value": condition},
-                        {"name": "plan",      "value": plan}
+                        {"name": "plan", "value": plan}
                     ]
                 })
             }
             return invoke_fallback(fb_event)
 
     except Exception as e:
-        log.exception("Unhandled error")
+        log.exception("Unhandled error in lambda_handler")
         fb_event = {
             "body": json.dumps({
                 "parameters": [
                     {"name": "condition", "value": p.get("condition", "")},
-                    {"name": "plan",      "value": p.get("plan", "")}
+                    {"name": "plan", "value": p.get("plan", "")}
                 ]
             })
         }
