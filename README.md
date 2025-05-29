@@ -1,27 +1,49 @@
-import logging
-import json
-import re
+import logging, json, re, difflib
 from io import StringIO
-from http import HTTPStatus
-
-import boto3
-import pandas as pd
+import boto3, pandas as pd
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-S3_BUCKET = "pi"
-S3_KEY = "20sting.csv"
+S3_BUCKET            = "pi"
+S3_KEY               = "20sting.csv"
 FALLBACK_LAMBDA_NAME = "Poc"
 
-_s3 = boto3.client('s3')
-_lambda = boto3.client('lambda')
+_s3      = boto3.client('s3')
+_lambda  = boto3.client('lambda')
 
+# ---------- synonym map ----------
+SYNONYMS = {
+    r"\bco[\s\-]?pay(ment)?s?\b"    : "copayment",
+    r"\bco[\s\-]?insurance\b"       : "coinsurance",
+    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b" : "out of pocket",
+    r"\bdeductible(s)?\b"           : "deductible",   # canonical
+    # add more domain terms here
+}
 
+# ---------- helpers ----------
+def normalize(text: str) -> str:
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+def strip_filler(text: str) -> str:
+    """
+    remove leading phrases like "what's my", "tell me", etc.
+    """
+    text = text.lower().strip()
+    return re.sub(r"^(what('?s)?|what is|tell me|give me|please show|how much is)\s+(my\s+)?",
+                  "", text).strip()
+
+def expand_synonyms(text: str) -> str:
+    """replace any synonyms with canonical terms"""
+    for pattern, repl in SYNONYMS.items():
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+    return text
+
+# ---------- data load ----------
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
-        df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
+        df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
         df.columns = df.columns.astype(str).str.strip()
         if 'Data Point Name' not in df.columns:
             raise KeyError("Missing 'Data Point Name'")
@@ -33,149 +55,119 @@ def load_dataframe():
               .str.strip()
               .str.lower()
         )
+        df['normalized_name'] = df['Data Point Name'].apply(normalize)
         return df
-    except Exception as e:
-        log.exception("Failed to load CSV")
+    except Exception:
+        log.exception("Failed to load CSV from S3")
         return pd.DataFrame()
 
-df = load_dataframe()
+DF = load_dataframe()
 
+# ---------- core lookup ----------
+def get_plan_value(raw_condition: str, plan_id: str):
+    plan_id   = str(plan_id).strip()
+    condition = expand_synonyms(strip_filler(raw_condition))
+    query_norm = normalize(condition)
 
-def normalize(text):
-    return re.sub(r'[^a-z0-9]', '', str(text).lower().strip())
+    if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
+        return 500, f"CSV missing required columns or plan '{plan_id}'"
 
+    # 1️⃣  direct/partial contains match
+    matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
 
-def preprocess_condition(condition: str) -> str:
-    condition = condition.lower().strip()
-    condition = re.sub(r"^(what('?s)?|what is|tell me|give me|please show|how much is)\s+(my\s+)?", "", condition)
-    return condition.strip()
+    # 2️⃣  fuzzy backup if nothing found
+    if matches.empty:
+        all_norms = DF['normalized_name'].tolist()
+        ratios = difflib.get_close_matches(query_norm, all_norms, n=5, cutoff=0.7)
+        if ratios:
+            matches = DF[DF['normalized_name'].isin(ratios)]
 
-
-def get_plan_value(name: str, plan_id: str):
-    name = preprocess_condition(name)
-    name_norm = normalize(name)
-    plan_id = str(plan_id).strip()
-
-    if 'Data Point Name' not in df.columns:
-        return {'statusCode': 500, 'message': 'CSV missing required column'}
-    if plan_id not in df.columns:
-        return {'statusCode': 404, 'message': f"Plan '{plan_id}' not found"}
-
-    df['normalized_name'] = df['Data Point Name'].apply(normalize)
-    matched = df[df['normalized_name'].str.contains(name_norm, na=False)]
-
-    if matched.empty:
-        return {'statusCode': 404, 'message': f"No data-point '{name}' found"}
+    if matches.empty:
+        return 404, f"No data-points matching '{raw_condition}' found"
 
     results = []
-    for _, row in matched.iterrows():
+    for _, row in matches.iterrows():
         val = row.get(plan_id)
-        if not pd.isna(val):
+        if pd.notna(val):
             results.append({
-                'condition': row['Data Point Name'],
-                'plan': plan_id,
-                'value': val
+                "condition": row['Data Point Name'],
+                "plan"     : plan_id,
+                "value"    : val
             })
 
     if not results:
-        return {'statusCode': 404, 'message': f"No value for '{name}' under plan '{plan_id}'"}
+        return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
 
-    return {'statusCode': 200, 'data': results}
+    return 200, results
 
+# ---------- fallback wrapper ----------
+def wrap_response(status, body):
+    return {
+        "statusCode": status,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "OPTIONS,POST"
+        },
+        "body": json.dumps(body)
+    }
 
-def invoke_fallback(event_payload: dict):
+def invoke_fallback(event_payload):
     try:
-        response = _lambda.invoke(
-            FunctionName=FALLBACK_LAMBDA_NAME,
-            InvocationType='RequestResponse',
-            Payload=json.dumps(event_payload).encode('utf-8')
+        resp = _lambda.invoke(
+            FunctionName   = FALLBACK_LAMBDA_NAME,
+            InvocationType = "RequestResponse",
+            Payload        = json.dumps(event_payload).encode()
         )
-        result_bytes = response['Payload'].read()
-        result_json = json.loads(result_bytes)
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'OPTIONS,POST'
-            },
-            'body': json.dumps(result_json)
-        }
+        return wrap_response(200, json.loads(resp['Payload'].read()))
     except Exception as e:
         log.exception("Fallback invocation failed")
-        return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'OPTIONS,POST'
-            },
-            'body': json.dumps({'error': f"Fallback error: {str(e)}"})
-        }
+        return wrap_response(500, {"error": f"Fallback error: {e}"})
 
-
-def lambda_handler(event, context):
-    log.info("Received event: %s", json.dumps(event))
-
+# ---------- handler ----------
+def lambda_handler(event, _context):
+    log.info("Received: %s", json.dumps(event))
     try:
-        raw = event.get('body') or event.get('prompt') or {}
+        raw = event.get("body") or event.get("prompt") or "{}"
         if isinstance(raw, (bytes, bytearray)):
-            raw = raw.decode('utf-8')
-        if isinstance(raw, str):
-            payload = json.loads(raw)
-        elif isinstance(raw, dict):
-            payload = raw
-        else:
-            payload = {}
+            raw = raw.decode()
+        payload = json.loads(raw) if isinstance(raw, str) else raw
 
-        params = payload.get('parameters') or []
+        params = payload.get("parameters") or []
         if isinstance(params, dict):
-            params = [{'name': k, 'value': v} for k, v in params.items()]
-        param_dict = {p['name']: p['value'] for p in params if 'name' in p and 'value' in p}
-        condition = param_dict.get('condition') or payload.get('condition')
-        plan = param_dict.get('plan') or payload.get('plan')
+            params = [{"name": k, "value": v} for k, v in params.items()]
+        p = {d["name"]: d["value"] for d in params if "name" in d and "value" in d}
+        condition = p.get("condition") or payload.get("condition")
+        plan      = p.get("plan")      or payload.get("plan")
 
         if not condition or not plan:
-            missing = []
-            if not condition: missing.append('condition')
-            if not plan: missing.append('plan')
-            return {
-                'statusCode': 400,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'OPTIONS,POST'
-                },
-                'body': json.dumps({'error': f"Missing: {', '.join(missing)}"})
-            }
+            missing = [k for k in ("condition", "plan") if not locals()[k]]
+            return wrap_response(400, {"error": f"Missing: {', '.join(missing)}"})
 
-        result = get_plan_value(condition, plan)
-        if result['statusCode'] != 200:
-            log.warning("Primary lookup failed, invoking fallback.")
-            fallback_event = {
-                'body': json.dumps({'parameters': [
-                    {'name': 'condition', 'value': condition},
-                    {'name': 'plan', 'value': plan}
-                ]})
+        status, data = get_plan_value(condition, plan)
+        if status == 200:
+            return wrap_response(200, data)
+        else:
+            # primary failed – optionally kick fallback
+            log.warning("Primary lookup failed (%s). Invoking fallback.", status)
+            fb_event = {
+                "body": json.dumps({
+                    "parameters": [
+                        {"name": "condition", "value": condition},
+                        {"name": "plan",      "value": plan}
+                    ]
+                })
             }
-            return invoke_fallback(fallback_event)
-
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'OPTIONS,POST'
-            },
-            'body': json.dumps(result['data'])
-        }
+            return invoke_fallback(fb_event)
 
     except Exception as e:
         log.exception("Unhandled error")
-        fallback_event = {
-            'body': json.dumps({'parameters': [
-                {'name': 'condition', 'value': condition or ''},
-                {'name': 'plan', 'value': plan or ''}
-            ]})
+        fb_event = {
+            "body": json.dumps({
+                "parameters": [
+                    {"name": "condition", "value": p.get("condition", "")},
+                    {"name": "plan",      "value": p.get("plan", "")}
+                ]
+            })
         }
-        return invoke_fallback(fallback_event)
+        return invoke_fallback(fb_event)
