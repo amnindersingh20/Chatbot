@@ -17,6 +17,12 @@ FALLBACK_LAMBDA_NAME = "Poc"
 _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
 
+
+def normalize(text: str) -> str:
+    """Normalize text by lowercasing, removing punctuation, and extra spaces."""
+    return re.sub(r'[^a-z0-9 ]+', ' ', text.lower()).strip()
+
+
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
@@ -27,35 +33,48 @@ def load_dataframe():
         df['Data Point Name'] = (
             df['Data Point Name']
               .astype(str)
-              .str.replace('–','-',regex=False)
-              .str.replace('\u200b','',regex=False)
+              .str.replace('–', '-', regex=False)
+              .str.replace('\u200b', '', regex=False)
               .str.strip()
-              .str.lower()
         )
+        df['normalized_name'] = df['Data Point Name'].apply(normalize)
         return df
     except Exception as e:
         log.exception("Failed to load CSV")
         return pd.DataFrame()
 
+
 df = load_dataframe()
 
 
 def get_plan_value(name: str, plan_id: str):
-    name, plan_id = name.strip().lower(), str(plan_id).strip()
-    if 'Data Point Name' not in df.columns:
-        return {'statusCode': 500, 'message': 'CSV missing required column'}
+    name, plan_id = name.strip(), str(plan_id).strip()
+    if 'Data Point Name' not in df.columns or 'normalized_name' not in df.columns:
+        return {'statusCode': 500, 'message': 'CSV missing required columns'}
     if plan_id not in df.columns:
         return {'statusCode': 404, 'message': f"Plan '{plan_id}' not found"}
 
-    matched = df[df['Data Point Name'].str.contains(re.escape(name), case=False, na=False, regex=True)]
+    normalized_name = normalize(name)
+
+    matched = df[df['normalized_name'].str.contains(re.escape(normalized_name), case=False, na=False, regex=True)]
     if matched.empty:
-        return {'statusCode': 404, 'message': f"No data-point '{name}' found"}
+        return {'statusCode': 404, 'message': f"No data-points matching '{name}' found"}
 
-    val = matched.iloc[0].get(plan_id)
-    if pd.isna(val):
-        return {'statusCode': 404, 'message': f"No value for '{name}' under plan '{plan_id}'"}
+    results = []
+    for _, row in matched.iterrows():
+        val = row.get(plan_id)
+        if pd.isna(val):
+            continue
+        results.append({
+            'condition': row['Data Point Name'],
+            'plan': plan_id,
+            'value': val
+        })
 
-    return {'statusCode': 200, 'data': {'condition': name, 'plan': plan_id, 'value': val}}
+    if not results:
+        return {'statusCode': 404, 'message': f"No values found for '{name}' under plan '{plan_id}'"}
+
+    return {'statusCode': 200, 'data': results}
 
 
 def invoke_fallback(event_payload: dict):
@@ -79,7 +98,6 @@ def lambda_handler(event, context):
     log.info("Received event: %s", json.dumps(event))
 
     try:
-
         raw = event.get('body') or event.get('prompt') or {}
         if isinstance(raw, (bytes, bytearray)):
             raw = raw.decode('utf-8')
@@ -123,7 +141,6 @@ def lambda_handler(event, context):
             },
             'body': json.dumps(result['data'])
         }
-        print("result", result)
 
     except Exception as e:
         log.exception("Unhandled error")
