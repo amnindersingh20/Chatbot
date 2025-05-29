@@ -3,8 +3,7 @@ import boto3
 
 client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
 
-# The default Bedrock RnG template, which includes the instructions
-# for the model to add footnote citations.
+# Default RnG template including $output_format_instructions$
 DEFAULT_RNG_TEMPLATE = """
 You are a question answering agent. I will provide you with a set of search results.
 The user will provide you with a question. Your job is to answer the user's question
@@ -21,18 +20,18 @@ $output_format_instructions$
 
 def lambda_handler(event, context):
     try:
-        body = (json.loads(event['body'])
-                if isinstance(event.get('body'), str)
-                else event.get('body', {}))
+        # Parse incoming body
+        body = json.loads(event['body']) if isinstance(event.get('body'), str) else event.get('body', {})
 
-        # Pull parameters out
+        # Extract parameters
         params = {p['name']: p['value'] for p in body.get('parameters', [])}
         condition = params.get('condition', '')
-        plan = params.get('plan', '')
+        plan      = params.get('plan', '')
 
+        # Build the question
         input_prompt = f"What is the {condition} for plan {plan}?"
 
-        # Call retrieve_and_generate with a custom promptSpecification
+        # Call Bedrock with promptSpecification nested correctly
         response = client_bedrock.retrieve_and_generate(
             input={"text": input_prompt},
             retrieveAndGenerateConfiguration={
@@ -49,25 +48,25 @@ def lambda_handler(event, context):
                             "numberOfResults": 10,
                         }
                     }
+                },
+                # <-- move promptSpecification here:
+                "promptSpecification": {
+                    "templateType": "CUSTOM",
+                    "promptTemplate": DEFAULT_RNG_TEMPLATE
                 }
-            },
-            promptSpecification={
-                "templateType": "CUSTOM",
-                "promptTemplate": DEFAULT_RNG_TEMPLATE
             }
         )
 
-        # Get the generated answer
+        # Generated answer
         completion = response['output']['text']
 
-        # Correctly pull citations from the top level
-        raw_citations = response.get('citations', [])
+        # Pull citations from top-level list
         citations = []
-        for cit in raw_citations:
+        for cit in response.get('citations', []):
             ref = cit['retrievedReferences'][0]
             citations.append({
                 'source': ref['location']['s3Location']['uri'],
-                'text': ref['content']['text']
+                'text':   ref['content']['text']
             })
 
         return {
@@ -77,7 +76,7 @@ def lambda_handler(event, context):
                 'Access-Control-Allow-Origin': '*'
             },
             'body': json.dumps({
-                'message': completion,
+                'message':   completion,
                 'citations': citations
             })
         }
