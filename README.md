@@ -9,15 +9,15 @@ S3_BUCKET = "pi"
 S3_KEY = "2025 ng.csv"
 FALLBACK_LAMBDA_NAME = "Poc_"
 
-_s3      = boto3.client('s3')
-_lambda  = boto3.client('lambda')
+_s3     = boto3.client('s3')
+_lambda = boto3.client('lambda')
+# _comprehend = boto3.client('comprehend')  # Optional if using Comprehend
 
 SYNONYMS = {
-    r"\bco[\s\-]?pay(ment)?s?\b"            : "copayment",
-    r"\bco[\s\-]?insurance\b"               : "coinsurance",
-    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b"  : "out of pocket",
-    r"\bdeductible(s)?\b"                   : "deductible",   
-    r"\bmax(imum)?\b"                       : "maximum",
+    r"\bco[\s\-]?pay(ment)?s?\b"          : "copayment",
+    r"\bco[\s\-]?insurance\b"             : "coinsurance",
+    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
+    r"\bdeductible(s)?\b"                 : "deductible"
 }
 
 def normalize(text: str) -> str:
@@ -25,11 +25,20 @@ def normalize(text: str) -> str:
 
 def strip_filler(text: str) -> str:
     text = text.lower().strip()
-    # Remove common starters
-    text = re.sub(r"^(what('?s)?|what is|is|can you tell me|tell me|give me|please show|how much is|show me|i want to know)\s+(my\s+)?", "", text)
-    # Remove trailing pleasantries
-    text = re.sub(r"(\s+please|thanks|now)?$", "", text)
-    return text.strip()
+    # More robust: remove filler phrases anywhere
+    filler_patterns = [
+        r"\bwhat('?s)?\b",
+        r"\bwhat is\b",
+        r"\btell me\b",
+        r"\bgive me\b",
+        r"\bplease show\b",
+        r"\bhow much is\b",
+        r"\bis\b",
+        r"\bmy\b"
+    ]
+    for pattern in filler_patterns:
+        text = re.sub(pattern, '', text).strip()
+    return re.sub(r'\s+', ' ', text).strip()
 
 def expand_synonyms(text: str) -> str:
     for pattern, repl in SYNONYMS.items():
@@ -60,17 +69,27 @@ def load_dataframe():
 DF = load_dataframe()
 
 def get_plan_value(raw_condition: str, plan_id: str):
-    plan_id = str(plan_id).strip()
+    plan_id   = str(plan_id).strip()
+    log.info("Original query: '%s'", raw_condition)
 
-    log.info(f"Original query: '{raw_condition}'")
     stripped = strip_filler(raw_condition)
-    log.info(f"After strip_filler: '{stripped}'")
+    log.info("After strip_filler: '%s'", stripped)
+
+    # Optional: AWS Comprehend (disabled for now)
+    # try:
+    #     resp = _comprehend.detect_entities(Text=stripped, LanguageCode='en')
+    #     entities = [e['Text'] for e in resp.get('Entities', []) if e['Score'] > 0.7]
+    #     if entities:
+    #         stripped = ' '.join(entities)
+    #     log.info("After Comprehend entity extraction: '%s'", stripped)
+    # except Exception as e:
+    #     log.warning("Comprehend failed: %s", e)
 
     expanded = expand_synonyms(stripped)
-    log.info(f"After expand_synonyms: '{expanded}'")
+    log.info("After expand_synonyms: '%s'", expanded)
 
     query_norm = normalize(expanded)
-    log.info(f"Normalized query: '{query_norm}'")
+    log.info("Normalized query: '%s'", query_norm)
 
     if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
         return 500, f"CSV missing required columns or plan '{plan_id}'"
@@ -78,12 +97,10 @@ def get_plan_value(raw_condition: str, plan_id: str):
     matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
 
     if matches.empty:
-        log.info("No direct match found, trying fuzzy match")
         all_norms = DF['normalized_name'].tolist()
-        close_matches = difflib.get_close_matches(query_norm, all_norms, n=5, cutoff=0.6)
-        log.info(f"Fuzzy matched: {close_matches}")
-        if close_matches:
-            matches = DF[DF['normalized_name'].isin(close_matches)]
+        ratios = difflib.get_close_matches(query_norm, all_norms, n=5, cutoff=0.7)
+        if ratios:
+            matches = DF[DF['normalized_name'].isin(ratios)]
 
     if matches.empty:
         return 404, f"No data-points matching '{raw_condition}' found"
@@ -127,7 +144,7 @@ def invoke_fallback(event_payload):
         return wrap_response(500, {"error": f"Fallback error: {e}"})
 
 def lambda_handler(event, _context):
-    log.info("Received: \n%s", json.dumps(event, indent=4))
+    log.info("Received: \n%s", json.dumps(event))
     try:
         raw = event.get("body") or event.get("prompt") or "{}"
         if isinstance(raw, (bytes, bytearray)):
