@@ -1,303 +1,161 @@
-<!DOCTYPE html>
-<html>
+import logging, json, re, difflib
+from io import StringIO
+import boto3, pandas as pd
 
-<head>
-    <title>AI Enrollment Chatbot</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            background: #fff;
-        }
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
-        #chat-container {
-            max-width: 800px;
-            margin: 0 auto;
-            width: 100%;
-            padding: 0;
-            margin-bottom: 20px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            height: calc(100vh - 120px);
-        }
+S3_BUCKET = "pi"
+S3_KEY = "2025 ng.csv"
+FALLBACK_LAMBDA_NAME = "Poc_"
 
-        #chat-history {
-            overflow-y: auto;
-            padding: 10px;
-            background: transparent;
-            border-radius: 10px;
-            margin-bottom: 25px;
-        }
+_s3      = boto3.client('s3')
+_lambda  = boto3.client('lambda')
 
-        .message {
-            margin-bottom: 15px;
-            display: flex;
-        }
+SYNONYMS = {
+    r"\bco[\s\-]?pay(ment)?s?\b"    : "copayment",
+    r"\bco[\s\-]?insurance\b"       : "coinsurance",
+    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b" : "out of pocket",
+    r"\bdeductible(s)?\b"           : "deductible",   
+}
 
-        .user-message {
-            justify-content: flex-end;
-        }
+def normalize(text: str) -> str:
+    return re.sub(r'[^a-z0-9]', '', text.lower())
 
-        .bot-message {
-            justify-content: flex-start;
-        }
+def strip_filler(text: str) -> str:
 
-        .message-bubble {
-            max-width: 100%;
-            padding: 12px 14px;
-            border-radius: 15px;
-            word-break: break-word;
-            white-space: pre-wrap;
-            font-size: 14px;
-        }
+    text = text.lower().strip()
+    return re.sub(r"^(what('?s)?|what is|tell me|give me|please show|how much is)\s+(my\s+)?",
+                  "", text).strip()
 
-        .user-message .message-bubble {
-            background: #007bff;
-            color: white;
-            border-bottom-right-radius: 5px;
-        }
+def expand_synonyms(text: str) -> str:
+    for pattern, repl in SYNONYMS.items():
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+    return text
 
-        .bot-message .message-bubble {
-            background: #e9ecef;
-            color: #212529;
-            border-bottom-left-radius: 5px;
-        }
+def load_dataframe():
+    try:
+        obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
+        df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
+        df.columns = df.columns.astype(str).str.strip()
+        if 'Data Point Name' not in df.columns:
+            raise KeyError("Missing 'Data Point Name'")
+        df['Data Point Name'] = (
+            df['Data Point Name']
+              .astype(str)
+              .str.replace('–', '-', regex=False)
+              .str.replace('\u200b', '', regex=False)
+              .str.strip()
+              .str.lower()
+        )
+        df['normalized_name'] = df['Data Point Name'].apply(normalize)
+        return df
+    except Exception:
+        log.exception("Failed to load CSV from S3")
+        return pd.DataFrame()
 
-        #input-container {
-            display: inline-flex;
-            padding: 2%;
-            background: #fff;
-            position: fixed;
-            bottom: 0;
-            width: 96%;
-            margin: 0;
-        }
+DF = load_dataframe()
 
-        #message-input:focus {
-            border-color: #007bff;
-        }
+def get_plan_value(raw_condition: str, plan_id: str):
+    plan_id   = str(plan_id).strip()
+    condition = expand_synonyms(strip_filler(raw_condition))
+    query_norm = normalize(condition)
 
-        #message-input {
-            padding: 15px 60px 15px 8px;
-            width: 100%;
-            border: 2px solid #ababab;
-            border-radius: 8px;
-            font-size: 14px;
-            outline: none;
-        }
+    if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
+        return 500, f"CSV missing required columns or plan '{plan_id}'"
 
-        #send-button {
-            padding: 2px 15px;
-            background: transparent;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            position: absolute;
-            right: 30px;
-            top: 28%;
-        }
+    matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
 
-        .typing-indicator {
-            display: none;
-            padding: 10px;
-            font-style: italic;
-            color: #6c757d;
-        }
+    if matches.empty:
+        all_norms = DF['normalized_name'].tolist()
+        ratios = difflib.get_close_matches(query_norm, all_norms, n=5, cutoff=0.7)
+        if ratios:
+            matches = DF[DF['normalized_name'].isin(ratios)]
 
-        .error-message {
-            color: #dc3545;
-            padding: 10px;
-            text-align: center;
-        }
+    if matches.empty:
+        return 404, f"No data-points matching '{raw_condition}' found"
 
-        .message-bubble ol,
-        .message-bubble ul {
-            padding-left: 1.5em;
-            margin: 8px 0;
-        }
+    results = []
+    for _, row in matches.iterrows():
+        val = row.get(plan_id)
+        if pd.notna(val):
+            results.append({
+                "condition": row['Data Point Name'],
+                "plan"     : plan_id,
+                "value"    : val
+            })
 
-        .message-bubble ul li::before {
-            content: "â€¢";
-            color: #3498db;
-            margin-right: 8px;
-        }
+    if not results:
+        return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
 
-        .badge {
-            background-color: powderblue;
-            color: #000;
-            padding: 4px 8px;
-            text-align: center;
-            border-radius: 5px;
-            margin: 5px;
-            display: inline-block;
-        }
+    return 200, results
 
-        .question-tile {
-            background-color: #f0f0f0;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            padding: 10px;
-            font-size: 14px;
-            margin: 5px 0;
-            cursor: pointer;
-            transition: background-color 0.3s, box-shadow 0.3s;
-        }
+def wrap_response(status, body):
+    return {
+        "statusCode": status,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "OPTIONS,POST"
+        },
+        "body": json.dumps(body)
+    }
 
-        .suggested_messagep {
-            padding: 0;
-            margin: 0;
-            font-style: italic;
-            font-weight: 500;
-        }
+def invoke_fallback(event_payload):
+    try:
+        resp = _lambda.invoke(
+            FunctionName   = FALLBACK_LAMBDA_NAME,
+            InvocationType = "RequestResponse",
+            Payload        = json.dumps(event_payload).encode()
+        )
+        return wrap_response(200, json.loads(resp['Payload'].read()))
+    except Exception as e:
+        log.exception("Fallback invocation failed")
+        return wrap_response(500, {"error": f"Fallback error: {e}"})
 
-        .question-tile:hover {
-            background-color: #e0e0e0;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
+def lambda_handler(event, _context):
+    log.info("Received: %s", json.dumps(event))
+    try:
+        raw = event.get("body") or event.get("prompt") or "{}"
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode()
+        payload = json.loads(raw) if isinstance(raw, str) else raw
 
-        .question-tile:active {
-            background-color: #d0d0d0;
-        }
-    </style>
-</head>
+        params = payload.get("parameters") or []
+        if isinstance(params, dict):
+            params = [{"name": k, "value": v} for k, v in params.items()]
+        p = {d["name"]: d["value"] for d in params if "name" in d and "value" in d}
+        condition = p.get("condition") or payload.get("condition")
+        plan      = p.get("plan")      or payload.get("plan")
 
-<body>
-    <div id="chat-container">
-        <div id="chat-history"></div>
-        <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
-    </div>
+        if not condition or not plan:
+            missing = [k for k in ("condition", "plan") if not locals()[k]]
+            return wrap_response(400, {"error": f"Missing: {', '.join(missing)}"})
 
-    <div class="error-message" id="error-message"></div>
-    <div id="input-container">
-        <input type="text" id="message-input" placeholder="Ask your question" onkeypress="handleEnterKey(event)">
-        <button id="send-button" onclick="sendMessage()">
-            <svg width="40px" height="40px" viewBox="0 0 24 24" fill="none">
-                <path
-                    d="M7.75778 6.14799C6.84443 5.77187 6.0833 5.45843 5.49196 5.30702C4.91915 5.16036 4.18085 5.07761 3.63766 5.62862C3.09447 6.17962 3.18776 6.91666 3.34259 7.48732C3.50242 8.07644 3.8267 8.83302 4.21583 9.7409L4.86259 11.25H10C10.4142 11.25 10.75 11.5858 10.75 12C10.75 12.4142 10.4142 12.75 10 12.75H4.8626L4.21583 14.2591C3.8267 15.167 3.50242 15.9236 3.34259 16.5127C3.18776 17.0833 3.09447 17.8204 3.63766 18.3714C4.18085 18.9224 4.91915 18.8396 5.49196 18.693C6.0833 18.5416 6.84443 18.2281 7.75777 17.852L19.1997 13.1406C19.4053 13.0561 19.6279 12.9645 19.7941 12.867C19.944 12.779 20.3434 12.5192 20.3434 12C20.3434 11.4808 19.944 11.221 19.7941 11.133C19.6279 11.0355 19.4053 10.9439 19.1997 10.8594L7.75778 6.14799Z"
-                    fill="#000000" />
-            </svg>
-        </button>
-    </div>
+        status, data = get_plan_value(condition, plan)
+        if status == 200:
+            return wrap_response(200, data)
+        else:
 
-    <script>
-        const userHistory = JSON.parse(sessionStorage.getItem('userHistory')) || [];
-        const API_URL = 'https://0ho.execute-api.us-east-1.amazonaws.com/Dev/chat';
-        const chatHistory = document.getElementById('chat-history');
-        const messageInput = document.getElementById('message-input');
-        const typingIndicator = document.getElementById('typing-indicator');
-        const errorMessage = document.getElementById('error-message');
-
-        function handleEnterKey(event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                sendMessage();
+            log.warning("Primary lookup failed (%s). Invoking fallback.", status)
+            fb_event = {
+                "body": json.dumps({
+                    "parameters": [
+                        {"name": "condition", "value": condition},
+                        {"name": "plan",      "value": plan}
+                    ]
+                })
             }
+            return invoke_fallback(fb_event)
+
+    except Exception as e:
+        log.exception("Unhandled error")
+        fb_event = {
+            "body": json.dumps({
+                "parameters": [
+                    {"name": "condition", "value": p.get("condition", "")},
+                    {"name": "plan",      "value": p.get("plan", "")}
+                ]
+            })
         }
-
-        function appendMessage(message, isUser) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            if (isUser) {
-                bubble.textContent = message;
-            } else {
-                typeWordByWord(message, bubble);
-            }
-            messageDiv.appendChild(bubble);
-            chatHistory.appendChild(messageDiv);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        }
-
-        async function sendMessage() {
-            const message = messageInput.value.trim();
-            if (!message) return;
-            messageInput.value = '';
-            errorMessage.textContent = '';
-            appendMessage(message, true);
-            typingIndicator.style.display = 'block';
-
-            try {
-                let condition = '';
-                let plan = '1651';
-
-                const planRegex = /\bfor\s+plan\s+(\d+)\b/i;
-                const match = message.match(planRegex);
-
-                if (match) {
-                    plan = match[1];
-                    condition = message.replace(planRegex, '').trim();
-                } else {
-                    condition = message;
-                }
-
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        parameters: [
-                            { name: 'condition', value: condition },
-                            { name: 'plan', value: plan }
-                        ]
-                    })
-                });
-
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                let data = await response.json();
-
-                // Handle double-encoded response body
-                if (data.body && typeof data.body === 'string') {
-                    try {
-                        const parsedBody = JSON.parse(data.body);
-                        Object.assign(data, parsedBody);
-                    } catch (e) {
-                        console.warn('Failed to parse nested body JSON');
-                    }
-                }
-
-                let botReply = '';
-
-                if (typeof data === 'string') {
-                    botReply = data;
-                } else if (Array.isArray(data)) {
-                    botReply = data.map(item =>
-                        `For "${item.condition}" under plan ${item.plan}, the value is: ${item.value}`
-                    ).join('\n\n');
-                } else if (typeof data.message === 'string') {
-                    botReply = data.message;
-                } else if (data.value && data.condition && data.plan) {
-                    botReply = `For "${data.condition}" under plan ${data.plan}, the value is: ${data.value}`;
-                } else {
-                    botReply = '[No meaningful response]';
-                }
-
-                appendMessage(botReply, false);
-                userHistory.push({ question: message, response: botReply });
-                sessionStorage.setItem('userHistory', JSON.stringify(userHistory));
-
-            } catch (error) {
-                errorMessage.textContent = `Error: ${error.message}`;
-            } finally {
-                typingIndicator.style.display = 'none';
-            }
-        }
-
-        function typeWordByWord(response, element) {
-            const words = response.split(' ');
-            let delay = 0;
-            words.forEach((word) => {
-                setTimeout(() => {
-                    element.innerHTML += word + ' ';
-                }, delay);
-                delay += 50;
-            });
-        }
-    </script>
-</body>
-
-</html>
+        return invoke_fallback(fb_event)
