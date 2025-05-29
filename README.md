@@ -11,13 +11,13 @@ FALLBACK_LAMBDA_NAME = "Poc_"
 
 _s3      = boto3.client('s3')
 _lambda  = boto3.client('lambda')
-comprehend = boto3.client('comprehend')
 
 SYNONYMS = {
-    r"\bco[\s\-]?pay(ment)?s?\b"    : "copayment",
-    r"\bco[\s\-]?insurance\b"       : "coinsurance",
-    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b" : "out of pocket",
-    r"\bdeductible(s)?\b"           : "deductible",   
+    r"\bco[\s\-]?pay(ment)?s?\b"            : "copayment",
+    r"\bco[\s\-]?insurance\b"               : "coinsurance",
+    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b"  : "out of pocket",
+    r"\bdeductible(s)?\b"                   : "deductible",   
+    r"\bmax(imum)?\b"                       : "maximum",
 }
 
 def normalize(text: str) -> str:
@@ -25,29 +25,16 @@ def normalize(text: str) -> str:
 
 def strip_filler(text: str) -> str:
     text = text.lower().strip()
-    text = re.sub(r"^(what('?s)?|what is|is|tell me|give me|please show|how much is)\s+(my\s+)?", "", text).strip()
-    log.info(f"After strip_filler: '{text}'")
-    return text
+    # Remove common starters
+    text = re.sub(r"^(what('?s)?|what is|is|can you tell me|tell me|give me|please show|how much is|show me|i want to know)\s+(my\s+)?", "", text)
+    # Remove trailing pleasantries
+    text = re.sub(r"(\s+please|thanks|now)?$", "", text)
+    return text.strip()
 
 def expand_synonyms(text: str) -> str:
     for pattern, repl in SYNONYMS.items():
         text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
-    log.info(f"After expand_synonyms: '{text}'")
     return text
-
-def extract_key_phrase(text):
-    try:
-        result = comprehend.detect_entities(Text=text, LanguageCode="en")
-        entities = result.get("Entities", [])
-        if entities:
-            sorted_entities = sorted(entities, key=lambda e: e["Score"], reverse=True)
-            phrase = sorted_entities[0]["Text"]
-            log.info(f"Extracted entity from Comprehend: '{phrase}'")
-            return phrase
-        return text
-    except Exception as e:
-        log.warning(f"Comprehend entity extraction failed: {e}")
-        return text
 
 def load_dataframe():
     try:
@@ -74,14 +61,15 @@ DF = load_dataframe()
 
 def get_plan_value(raw_condition: str, plan_id: str):
     plan_id = str(plan_id).strip()
+
     log.info(f"Original query: '{raw_condition}'")
-    
     stripped = strip_filler(raw_condition)
-    key_phrase = extract_key_phrase(stripped)
-    log.info(f"After Comprehend entity extraction: '{key_phrase}'")
-    
-    condition = expand_synonyms(key_phrase)
-    query_norm = normalize(condition)
+    log.info(f"After strip_filler: '{stripped}'")
+
+    expanded = expand_synonyms(stripped)
+    log.info(f"After expand_synonyms: '{expanded}'")
+
+    query_norm = normalize(expanded)
     log.info(f"Normalized query: '{query_norm}'")
 
     if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
@@ -90,10 +78,12 @@ def get_plan_value(raw_condition: str, plan_id: str):
     matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
 
     if matches.empty:
+        log.info("No direct match found, trying fuzzy match")
         all_norms = DF['normalized_name'].tolist()
-        ratios = difflib.get_close_matches(query_norm, all_norms, n=5, cutoff=0.7)
-        if ratios:
-            matches = DF[DF['normalized_name'].isin(ratios)]
+        close_matches = difflib.get_close_matches(query_norm, all_norms, n=5, cutoff=0.6)
+        log.info(f"Fuzzy matched: {close_matches}")
+        if close_matches:
+            matches = DF[DF['normalized_name'].isin(close_matches)]
 
     if matches.empty:
         return 404, f"No data-points matching '{raw_condition}' found"
@@ -104,8 +94,8 @@ def get_plan_value(raw_condition: str, plan_id: str):
         if pd.notna(val):
             results.append({
                 "condition": row['Data Point Name'],
-                "plan"     : plan_id,
-                "value"    : val
+                "plan": plan_id,
+                "value": val
             })
 
     if not results:
