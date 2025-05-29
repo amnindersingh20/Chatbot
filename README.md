@@ -1,68 +1,8 @@
-import json
-import boto3
-
-client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
-
-# … your DEFAULT_RNG_TEMPLATE here …
-
-def lambda_handler(event, context):
-    try:
-        # parse body & build prompt (same as before)…
-        body = json.loads(event['body']) if isinstance(event.get('body'), str) else event.get('body', {})
-        params = { p['name']: p['value'] for p in body.get('parameters', []) }
-        condition = params.get('condition', '')
-        plan      = params.get('plan', '')
-        input_prompt = f"What is the {condition} for plan {plan}?"
-
-        # call Bedrock
-        response = client_bedrock.retrieve_and_generate(
-            input={"text": input_prompt},
-            retrieveAndGenerateConfiguration={
-                "type": "KNOWLEDGE_BASE",
-                "knowledgeBaseConfiguration": {
-                    "knowledgeBaseId": "RIBHZRVAQA",
-                    "modelArn": "arn:aws:bedrock:us-east-1:653858776174:inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0",
-                    "retrievalConfiguration": {
-                        "vectorSearchConfiguration": {
-                            "overrideSearchType": "HYBRID",
-                            "numberOfResults": 10
-                        }
-                    },
-                    "generationConfiguration": {
-                        "promptTemplate": {
-                            "textPromptTemplate": DEFAULT_RNG_TEMPLATE
-                        }
-                    }
-                }
-            }
-        )
-
-        # extract answer + citations
-        answer    = response['output']['text']
-        raw_cites = response.get('citations', [])
-        cites     = []
-        for c in raw_cites:
-            ref = c['retrievedReferences'][0]
-            cites.append(f"{ref['location']['s3Location']['uri']}: {ref['content']['text']}")
-
-        # merge into one string so your front end needs no changes
-        if cites:
-            answer += "\n\nReferences:\n" + "\n".join(f"{i+1}. {txt}" for i, txt in enumerate(cites))
-
-        # return exactly the same JSON shape your front end already expects
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'message': answer
-            })
-        }
-
-    except Exception as e:
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+{
+    "statusCode": 200,
+    "headers": {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+    },
+    "body": "{\n  \"message\": \"Rehired Eligible Former Employees refers to individuals who previously terminated employment from a member of the AT&T Controlled Group of Companies with eligibility for Post-Employment Benefits, and are subsequently rehired by a member of the AT&T Controlled Group of Companies. Special eligibility rules apply to these Rehired Retirees.\\n\\nAs a Rehired Retiree, your Active Employee benefits will be provided under AT&T Umbrella Benefit Plan No. 3. When you terminate employment again, your Eligible Former Employee benefits will be the same as the benefits you had before you were rehired, subject to any amendments or changes made over time. If you are rehired after having qualified for coverage as an Eligible Former Employee and became Medicare Eligible before your rehire, there are exception provisions that supersede the standard rules. These exceptions are detailed in the AT&T Rehired Eligible Former Employee Supplement, which can be accessed online.\\n\\nIt's important to note that while you are an Active Employee after being rehired, you generally will not be eligible for benefits from programs under AT&T Umbrella Benefit Plan No. 1, except in certain limited circumstances.\",\n  \"citations\": [\n    {\n      \"source\": \"s3://pocbotck/20230623---SPD---ATT-Corp-Medical-Program---NIN-78-69032.pdf\",\n      \"text\": \"As a Rehired Retiree, your Active Employee benefits will be provided under AT&T Umbrella Benefit Plan No. 3. When you again terminate employment your Eligible Former Employee benefits will be the same benefits (as amended/changed from time to time) you had before you were rehired.     The provisions of your applicable new hire SPD will control your eligibility for Active Employee benefits, as a Rehired Retiree, which eligibility begins when you are eligible for the family subsidy as provided in your applicable new hire SPD.Page 19     If you are rehired after having qualified for coverage as an Eligible Former Employee and became Medicare Eligible, the provisions of the AT&T Rehired Eligible Former Employee Supplement supersede the rules in this section of the SPD.      To access the AT&T Rehired Eligible Former Employee Supplement, go to      https://directpath.dcatalog.com/v/SMM---ATT-Rehired-Eligible-Former-Employee- Supplement/               You will not be eligible for benefits from a program under AT&T Umbrella Benefits Plan No. 1 while you are an Active Employee, except in certain limited circumstances.     Contact the Eligibility and Enrollment Vendor if you have questions. See the Eligibility and Enrollment Vendor table in the \\u201cContact Information\\u201d section for contact information.\"\n    },\n    {\n      \"source\": \"s3://pocbotck/20250327---SMM---ATT-Health-and-Welfare-Programs-(Rehired-Eligible-Former-Employees)---78-74469.pdf\",\n      \"text\": \"If you are rehired after having qualified for coverage as an Eligible Former Employee and becoming Medicare Eligible before you rehire, the exception provision of the supplement below supersedes the rules in this section of the SPD.     You will not be eligible for benefits from a program under AT&T Umbrella Benefit Plan No. 1 while you are an Active Employee, except in certain limited circumstances.     Contact the Eligibility and Enrollment Vendor if you have questions. See the Eligibility and Enrollment Vendor table in the \\u201cContact Information\\u201d section for contact information.      To access the AT&T Rehired Eligible Former Employee Supplement, go to:      https://directpath.dcatalog.com/v/SMM---ATT-Rehired-Eligible-Former-Employee- Supplement/                           https://directpath.dcatalog.com/v/SMM---ATT-Rehired-Eligible-Former-Employee-Supplement/         https://directpath.dcatalog.com/v/SMM---ATT-Rehired-Eligible-Former-Employee-Supplement/Page 4     FOR MORE INFORMATION If you have any questions regarding the information provided in this SMM or to request a hardcopy of the SMM or an SPD, contact the vendor identified below.\"\n    }\n  ]\n}"
+}
