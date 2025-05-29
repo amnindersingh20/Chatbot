@@ -1,5 +1,5 @@
-START RequestId: 6118f1a4-5ed8-4cb8-8ff6-0475a78982f6 Version: $LATEST
-[INFO]	2025-05-29T10:06:24.258Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Received: 
+START RequestId: b8dc5602-19e6-48a7-90a9-c836398913bb Version: $LATEST
+[INFO]	2025-05-29T10:57:44.748Z	b8dc5602-19e6-48a7-90a9-c836398913bb	Received: 
 {
     "body": {
         "parameters": [
@@ -15,10 +15,10 @@ START RequestId: 6118f1a4-5ed8-4cb8-8ff6-0475a78982f6 Version: $LATEST
     }
 }
 
-[INFO]	2025-05-29T10:06:24.567Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Extracted key phrase from Comprehend: 'my out'
-[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Original query: 'what is my out of pocket maximum'
-[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	After strip_filler: 'is my out of pocket maximum'
-[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	After comprehend key phrase extraction: 'my out'
-[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	After expand_synonyms: 'my out'
-[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Normalized query: 'myout'
-[WARNING]	2025-05-29T10:06:24.577Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Primary lookup failed (404). Invoking fallback.
+[INFO]	2025-05-29T10:57:44.748Z	b8dc5602-19e6-48a7-90a9-c836398913bb	Original query: 'what is my out of pocket maximum'
+[INFO]	2025-05-29T10:57:44.748Z	b8dc5602-19e6-48a7-90a9-c836398913bb	After strip_filler: 'is my out of pocket maximum'
+[INFO]	2025-05-29T10:57:45.102Z	b8dc5602-19e6-48a7-90a9-c836398913bb	After Comprehend entity extraction: 'is my out of pocket maximum'
+[INFO]	2025-05-29T10:57:45.102Z	b8dc5602-19e6-48a7-90a9-c836398913bb	After expand_synonyms: 'is my out of pocket maximum'
+[INFO]	2025-05-29T10:57:45.102Z	b8dc5602-19e6-48a7-90a9-c836398913bb	Normalized query: 'ismyoutofpocketmaximum'
+[WARNING]	2025-05-29T10:57:45.107Z	b8dc5602-19e6-48a7-90a9-c836398913bb	Primary lookup failed (404). Invoking fallback.
+END RequestId: b8dc5602-19e6-48a7-90a9-c836398913bb
