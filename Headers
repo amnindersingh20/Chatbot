@@ -1,1 +1,24 @@
-[INFO]	2025-05-29T09:35:23.189Z	e0893a5f-3adf-4d3e-9960-dd62541bae87	Normalized query: 'ismyoutofpocketmaximum'
+START RequestId: 6118f1a4-5ed8-4cb8-8ff6-0475a78982f6 Version: $LATEST
+[INFO]	2025-05-29T10:06:24.258Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Received: 
+{
+    "body": {
+        "parameters": [
+            {
+                "name": "condition",
+                "value": "what is my out of pocket maximum"
+            },
+            {
+                "name": "plan",
+                "value": "1651"
+            }
+        ]
+    }
+}
+
+[INFO]	2025-05-29T10:06:24.567Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Extracted key phrase from Comprehend: 'my out'
+[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Original query: 'what is my out of pocket maximum'
+[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	After strip_filler: 'is my out of pocket maximum'
+[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	After comprehend key phrase extraction: 'my out'
+[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	After expand_synonyms: 'my out'
+[INFO]	2025-05-29T10:06:24.568Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Normalized query: 'myout'
+[WARNING]	2025-05-29T10:06:24.577Z	6118f1a4-5ed8-4cb8-8ff6-0475a78982f6	Primary lookup failed (404). Invoking fallback.
