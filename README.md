@@ -1,6 +1,10 @@
-import logging, json, re, difflib
+import logging
+import json
+import re
+import difflib
 from io import StringIO
-import boto3, pandas as pd
+import boto3
+import pandas as pd
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -11,6 +15,7 @@ FALLBACK_LAMBDA_NAME = "Poc_"
 
 _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
+_comprehend = boto3.client('comprehend')
 
 SYNONYMS = {
     r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
@@ -24,38 +29,73 @@ def normalize(text: str) -> str:
 
 def strip_filler(text: str) -> str:
     text = text.lower().strip()
-    return re.sub(r"^(what('?s)?|what is|tell me|give me|please show|how much is)\s+(my\s+)?",
-                  "", text).strip()
+    starters = [
+        r"what('?s)?",
+        r"what is",
+        r"tell me",
+        r"give me",
+        r"please show",
+        r"how much is",
+        r"could you please",
+        r"can you",
+        r"would you",
+        r"do you know",
+        r"is",
+        r"show me",
+        r"explain",
+        r"i want to know",
+        r"find out",
+    ]
+    starters_pattern = r"^(?:" + "|".join(starters) + r")"
+    fillers_pattern = r"(?:\s+(?:please|my|the))*\s*"
+    pattern = starters_pattern + fillers_pattern
+    cleaned_text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+    cleaned_text = re.sub(r"[?.!]*$", "", cleaned_text).strip()
+    return cleaned_text
 
 def expand_synonyms(text: str) -> str:
     for pattern, repl in SYNONYMS.items():
         text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
     return text
 
+def extract_key_condition_with_comprehend(text: str) -> str:
+    """
+    Use AWS Comprehend to extract key phrases from the user input.
+    Return the longest key phrase as the main condition.
+    """
+    try:
+        response = _comprehend.detect_key_phrases(
+            Text=text,
+            LanguageCode='en'
+        )
+        phrases = [kp['Text'].lower() for kp in response.get('KeyPhrases', [])]
+        if not phrases:
+            return text  # fallback to raw text if no key phrases found
+        # Choose the longest phrase assuming it’s most descriptive
+        key_phrase = max(phrases, key=len)
+        log.info(f"Extracted key phrase from Comprehend: '{key_phrase}'")
+        return key_phrase
+    except Exception as e:
+        log.warning(f"Comprehend key phrase extraction failed: {e}")
+        return text
+
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
         df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
         df.columns = df.columns.astype(str).str.strip()
-
         if 'Data Point Name' not in df.columns:
             raise KeyError("Missing 'Data Point Name'")
-
         df['Data Point Name'] = (
             df['Data Point Name']
-            .astype(str)
-            .str.replace('–', '-', regex=False)
-            .str.replace('\u200b', '', regex=False)
-            .str.strip()
-            .str.lower()
+              .astype(str)
+              .str.replace('–', '-', regex=False)
+              .str.replace('\u200b', '', regex=False)
+              .str.strip()
+              .str.lower()
         )
         df['normalized_name'] = df['Data Point Name'].apply(normalize)
-
-        log.info("CSV loaded with columns: %s", list(df.columns))
-        log.info("Sample 'Data Point Name' values: %s", df['Data Point Name'].head(5).tolist())
-
         return df
-
     except Exception:
         log.exception("Failed to load CSV from S3")
         return pd.DataFrame()
@@ -64,27 +104,34 @@ DF = load_dataframe()
 
 def get_plan_value(raw_condition: str, plan_id: str):
     plan_id = str(plan_id).strip()
-    condition = expand_synonyms(strip_filler(raw_condition))
+    # Strip filler words first
+    cleaned = strip_filler(raw_condition)
+    # Extract key phrase using AWS Comprehend
+    key_condition = extract_key_condition_with_comprehend(cleaned)
+    # Expand synonyms after that
+    condition = expand_synonyms(key_condition)
     query_norm = normalize(condition)
 
+    log.info(f"Original query: '{raw_condition}'")
+    log.info(f"After strip_filler: '{cleaned}'")
+    log.info(f"After comprehend key phrase extraction: '{key_condition}'")
+    log.info(f"After expand_synonyms: '{condition}'")
+    log.info(f"Normalized query: '{query_norm}'")
+
     if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
-        log.error("Missing 'Data Point Name' or plan '%s' in columns: %s", plan_id, list(DF.columns))
         return 500, f"CSV missing required columns or plan '{plan_id}'"
 
+    # Try substring match (contains)
     matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
-    log.info("Normalized query: '%s'", query_norm)
-    log.info("Initial matches: %s", matches['Data Point Name'].tolist())
 
+    # If no matches, try fuzzy matching with difflib
     if matches.empty:
-        log.warning("No direct matches. Trying fuzzy match...")
         all_norms = DF['normalized_name'].tolist()
         ratios = difflib.get_close_matches(query_norm, all_norms, n=5, cutoff=0.7)
-        log.info("Fuzzy matches: %s", ratios)
         if ratios:
             matches = DF[DF['normalized_name'].isin(ratios)]
 
     if matches.empty:
-        log.warning("No match found after fuzzy matching for query: '%s'", query_norm)
         return 404, f"No data-points matching '{raw_condition}' found"
 
     results = []
@@ -96,10 +143,6 @@ def get_plan_value(raw_condition: str, plan_id: str):
                 "plan": plan_id,
                 "value": val
             })
-        else:
-            log.warning("Matched row found but value is NaN: %s", row['Data Point Name'])
-
-    log.info("Matched rows for plan '%s': %s", plan_id, results)
 
     if not results:
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
@@ -119,21 +162,18 @@ def wrap_response(status, body):
 
 def invoke_fallback(event_payload):
     try:
-        log.info("Invoking fallback Lambda with payload: %s", event_payload)
         resp = _lambda.invoke(
             FunctionName=FALLBACK_LAMBDA_NAME,
             InvocationType="RequestResponse",
             Payload=json.dumps(event_payload).encode()
         )
-        response_body = json.loads(resp['Payload'].read())
-        log.info("Fallback response: %s", response_body)
-        return wrap_response(200, response_body)
+        return wrap_response(200, json.loads(resp['Payload'].read()))
     except Exception as e:
         log.exception("Fallback invocation failed")
         return wrap_response(500, {"error": f"Fallback error: {e}"})
 
 def lambda_handler(event, _context):
-    log.info("Received event: %s", json.dumps(event))
+    log.info("Received: %s", json.dumps(event))
     try:
         raw = event.get("body") or event.get("prompt") or "{}"
         if isinstance(raw, (bytes, bytearray)):
@@ -149,12 +189,9 @@ def lambda_handler(event, _context):
 
         if not condition or not plan:
             missing = [k for k in ("condition", "plan") if not locals()[k]]
-            log.error("Missing required input: %s", missing)
             return wrap_response(400, {"error": f"Missing: {', '.join(missing)}"})
 
-        log.info("Processing condition='%s', plan='%s'", condition, plan)
         status, data = get_plan_value(condition, plan)
-
         if status == 200:
             return wrap_response(200, data)
         else:
@@ -170,7 +207,7 @@ def lambda_handler(event, _context):
             return invoke_fallback(fb_event)
 
     except Exception as e:
-        log.exception("Unhandled error in lambda_handler")
+        log.exception("Unhandled error")
         fb_event = {
             "body": json.dumps({
                 "parameters": [
