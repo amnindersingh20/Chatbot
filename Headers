@@ -1,50 +1,43 @@
-[ERROR]	2025-05-30T07:47:01.927Z		Failed to load CSV
-Traceback (most recent call last):
-  File "/var/task/lambda_function.py", line 51, in load_dataframe
-    df['normalized_name'] = df['Data Point Name'].apply(normalize)
-                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
-  File "/opt/python/pandas/core/series.py", line 4924, in apply
-    ).apply()
-      ~~~~~^^
-  File "/opt/python/pandas/core/apply.py", line 1427, in apply
-    return self.apply_standard()
-           ~~~~~~~~~~~~~~~~~~~^^
-  File "/opt/python/pandas/core/apply.py", line 1507, in apply_standard
-    mapped = obj._map_values(
-        mapper=curried, na_action=action, convert=self.convert_dtype
-    )
-  File "/opt/python/pandas/core/base.py", line 921, in _map_values
-    return algorithms.map_array(arr, mapper, na_action=na_action, convert=convert)
-           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/python/pandas/core/algorithms.py", line 1743, in map_array
-    return lib.map_infer(values, mapper, convert=convert)
-           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "lib.pyx", line 2972, in pandas._libs.lib.map_infer
-  File "/var/task/lambda_function.py", line 23, in normalize
-    return re.sub(r'[^a-z0-9]', '', text.lower())
-                                    ^^^^^^^^^^
-AttributeError: 'float' object has no attribute 'lower'
-START RequestId: d6d9a005-056d-49c4-a055-2ba585f3fc61 Version: $LATEST
-[INFO]	2025-05-30T07:47:01.947Z	d6d9a005-056d-49c4-a055-2ba585f3fc61	Received event: 
-{
-    "body": {
-        "parameters": [
-            {
-                "name": "condition",
-                "value": "Group ID"
-            },
-            {
-                "name": "plan",
-                "value": "1651"
-            },
-            {
-                "name": "plan",
-                "value": "1652"
-            },
-            {
-                "name": "plan",
-                "value": "1809"
-            }
-        ]
-    }
+constMsg={
+		"pageName": "Annual Enrollment - Medical Health Plan Election Page - AT&T",
+		"planId": 1000,
+		"populationType":"ATMGMT",
+		"customText1":"This is an example of custom text with some <strong>html</strong> formatting",
+		"customText2":"This is an example of custom text with some <strong>html</strong> formatting",
+		"customText3":"This is an example of custom text with some <strong>html</strong> formatting",
+		"customText4":"This is an example of custom text with some <strong>html</strong> formatting",
+		"cddList":[ 
+		{
+			"questionsId":"HC-FSA-AUTOMAX",
+			"questionLabel": "Sometimes the IRS will increase contribution limits for next year’s plan after the Annual Enrollment period is over. If you’ve elected the maximum contribution, would you like us to automatically increase your election to match the new contribution limit"
+		},
+		{}
+		],
+		"enrollmentDeadlineDate":"",
+		"availableOptions":[
+		{
+			"optionId":3500,
+			"optionDescription":"No Coverage",
+			"coverageAmount":""
+		},
+		{
+			"optionId":3501,
+			"optionDescription":"Medical Option 1234",
+			"coverageAmount":""
+		},
+		{
+			"optionId":3502,
+			"optionDescription":"Medical Option 9999",
+			"coverageAmount":""
+		}
+		],
+		"electedOption":	{
+			"optionId":3502,
+			"optionDescription":"Medical Option 9999"
+		},
+        "minimumContributionAmount":"",
+		"maximumContributionAmount":"",
+        "simplifiedEnrollmentEdits":"",
+        "simplifiedEnrollmentUsed":"",
+        "simplifiedEnrollmentEligible":""
 }
