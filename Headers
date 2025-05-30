@@ -1,17 +1,8 @@
-[
-    {
-        "plan": "1651",
-        "data": [
-            {
-                "condition": "annual out-of-pocket maximum - network",
-                "plan": "1651",
-                "value": "$4,200 Individual; $8,400 Family; Includes Annual Deductible; combined with MH/SUD; capped at $4,200 per Individual"
-            },
-            {
-                "condition": "annual out-of-pocket maximum - out-of-network",
-                "plan": "1651",
-                "value": "$12,600 Individual; $25,200 Family; Includes Annual Deductible; combined with MH/SUD; capped at $12,600 per Individual"
-            }
-        ]
-    }
-]
+{
+    "statusCode": 200,
+    "headers": {
+        "Content-Type": "application/json; charset=utf-8",
+        "Access-Control-Allow-Origin": "*"
+    },
+    "body": "{\n  \"message\": \"Yes, acupuncture is covered under plan 1809. The plan provides coverage for acupuncture services with some limitations:\\n\\n1. It is subject to 10% coinsurance after the annual deductible has been met.\\n2. Coverage is limited to 30 visits per calendar year.\\n3. The use of acupuncture as a surgical anesthetic does not count toward the 30-visit maximum.\",\n  \"citations\": [\n    {\n      \"source\": \"s3://pocbotck/20230623---SPD---ATT-Corp-Medical-Program---NIN-78-69032.pdf\",\n      \"text\": \"a diagnosis.          Fertility Services Not covered          Rehabilitation Services     Physical Therapy 10% Coinsurance after Annual Deductible          Occupational Therapy 10% Coinsurance after Annual Deductible          Speech Therapy 10% Coinsurance after Annual Deductible     Outpatient limited to 30 visits per calendar year     This session limitation does not apply to mental health diagnosis          Cardiac Rehabilitation Therapy     10% Coinsurance after Annual Deductible          Pulmonary Rehabilitation 10% Coinsurance after Annual Deductible          Post-Cochlear Implant Aural Therapy     10% Coinsurance after Annual Deductible     Outpatient limited to 30 visits per calendar year as part of Speech Therapy visit limit          Additional Services     Alternate Care     Acupuncture Services 10% Coinsurance after Annual Deductible     Limited to 30 visits per calendar year. The use of acupuncture as a surgical anesthetic does not count toward the 30-visit maximum.          Chiropractic Services 10% Coinsurance after Annual Deductible     Limited to 60 visits per calendar yearPage 101      Benefits Limitations and Exceptions     Additional Services     Durable Medical Equipment 10% Coinsurance          Hospice Care 10% Coinsurance after Annual Deductible     Limited to 210 days in a person's lifetime.\"\n    }\n  ]\n}"
+}
