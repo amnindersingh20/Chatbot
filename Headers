@@ -1,43 +1,17 @@
-constMsg={
-		"pageName": "Annual Enrollment - Medical Health Plan Election Page - AT&T",
-		"planId": 1000,
-		"populationType":"ATMGMT",
-		"customText1":"This is an example of custom text with some <strong>html</strong> formatting",
-		"customText2":"This is an example of custom text with some <strong>html</strong> formatting",
-		"customText3":"This is an example of custom text with some <strong>html</strong> formatting",
-		"customText4":"This is an example of custom text with some <strong>html</strong> formatting",
-		"cddList":[ 
-		{
-			"questionsId":"HC-FSA-AUTOMAX",
-			"questionLabel": "Sometimes the IRS will increase contribution limits for next year’s plan after the Annual Enrollment period is over. If you’ve elected the maximum contribution, would you like us to automatically increase your election to match the new contribution limit"
-		},
-		{}
-		],
-		"enrollmentDeadlineDate":"",
-		"availableOptions":[
-		{
-			"optionId":3500,
-			"optionDescription":"No Coverage",
-			"coverageAmount":""
-		},
-		{
-			"optionId":3501,
-			"optionDescription":"Medical Option 1234",
-			"coverageAmount":""
-		},
-		{
-			"optionId":3502,
-			"optionDescription":"Medical Option 9999",
-			"coverageAmount":""
-		}
-		],
-		"electedOption":	{
-			"optionId":3502,
-			"optionDescription":"Medical Option 9999"
-		},
-        "minimumContributionAmount":"",
-		"maximumContributionAmount":"",
-        "simplifiedEnrollmentEdits":"",
-        "simplifiedEnrollmentUsed":"",
-        "simplifiedEnrollmentEligible":""
-}
+[
+    {
+        "plan": "1651",
+        "data": [
+            {
+                "condition": "annual out-of-pocket maximum - network",
+                "plan": "1651",
+                "value": "$4,200 Individual; $8,400 Family; Includes Annual Deductible; combined with MH/SUD; capped at $4,200 per Individual"
+            },
+            {
+                "condition": "annual out-of-pocket maximum - out-of-network",
+                "plan": "1651",
+                "value": "$12,600 Individual; $25,200 Family; Includes Annual Deductible; combined with MH/SUD; capped at $12,600 per Individual"
+            }
+        ]
+    }
+]
