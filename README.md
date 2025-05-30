@@ -122,7 +122,7 @@
         }
 
         .message-bubble ul li::before {
-            content: "â€¢";
+            content: "•";
             color: #3498db;
             margin-right: 8px;
         }
@@ -310,11 +310,13 @@
                 }
 
                 let botReply = '';
-
+                
                 if (typeof data === 'string') {
                     botReply = data;
                 } else if (Array.isArray(data)) {
-                    botReply = data.map(item =>
+                    // Unpack nested `.data` array if present
+                    const rows = data[0]?.data ?? data;
+                    botReply = rows.map(item =>
                         `For "${item.condition}" under plan ${item.plan}, the value is: ${item.value}`
                     ).join('\n\n');
                 } else if (typeof data.message === 'string') {
