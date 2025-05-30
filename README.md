@@ -6,12 +6,11 @@ log = logging.getLogger()
 log.setLevel(logging.INFO)
 
 S3_BUCKET = "pocai"
-S3_KEY = "2025ing.csv"
+S3_KEY    = "2025ing.csv"
 FALLBACK_LAMBDA_NAME = "Poc1"
 
 _s3     = boto3.client('s3')
 _lambda = boto3.client('lambda')
-# _comprehend = boto3.client('comprehend')
 
 SYNONYMS = {
     r"\bco[\s\-]?pay(ment)?s?\b"          : "copayment",
@@ -25,35 +24,25 @@ def normalize(text: str) -> str:
 
 def strip_filler(text: str) -> str:
     text = text.lower().strip()
-    filler_patterns = [
-        r"\bwhat('?s)?\b",
-        r"\bwhat is\b",
-        r"\btell me\b",
-        r"\bgive me\b",
-        r"\bplease show\b",
-        r"\bhow much is\b",
-        r"\bis\b",
-        r"\bmy\b"
-    ]
-    for pattern in filler_patterns:
-        text = re.sub(pattern, '', text).strip()
-    return re.sub(r'\s+', ' ', text).strip()
+    fillers = [r"\bwhat('?s)?\b", r"\bwhat is\b", r"\btell me\b",
+               r"\bgive me\b", r"\bplease show\b", r"\bhow much is\b",
+               r"\bis\b", r"\bmy\b"]
+    for pat in fillers:
+        text = re.sub(pat, '', text).strip()
+    return re.sub(r'\s+', ' ', text)
 
 def expand_synonyms(text: str) -> str:
-    for pattern, repl in SYNONYMS.items():
-        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+    for pat, rep in SYNONYMS.items():
+        text = re.sub(pat, rep, text, flags=re.IGNORECASE)
     return text
 
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
-        df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')))
-        df.columns = df.columns.astype(str).str.strip()
-        if 'Data Point Name' not in df.columns:
-            raise KeyError("Missing 'Data Point Name'")
+        df  = pd.read_csv(StringIO(obj['Body'].read().decode()), dtype=str)
+        df.columns = df.columns.str.strip()
         df['Data Point Name'] = (
             df['Data Point Name']
-              .astype(str)
               .str.replace('–', '-', regex=False)
               .str.replace('\u200b', '', regex=False)
               .str.strip()
@@ -62,43 +51,24 @@ def load_dataframe():
         df['normalized_name'] = df['Data Point Name'].apply(normalize)
         return df
     except Exception:
-        log.exception("Failed to load CSV from S3")
+        log.exception("Failed to load CSV")
         return pd.DataFrame()
 
 DF = load_dataframe()
 
 def get_plan_value(raw_condition: str, plan_id: str):
-    plan_id   = str(plan_id).strip()
-    log.info("Original query: '%s'", raw_condition)
-
     stripped = strip_filler(raw_condition)
-    log.info("After strip_filler: '%s'", stripped)
-
-    # try:
-    #     resp = _comprehend.detect_entities(Text=stripped, LanguageCode='en')
-    #     entities = [e['Text'] for e in resp.get('Entities', []) if e['Score'] > 0.7]
-    #     if entities:
-    #         stripped = ' '.join(entities)
-    #     log.info("After Comprehend entity extraction: '%s'", stripped)
-    # except Exception as e:
-    #     log.warning("Comprehend failed: %s", e)
-
     expanded = expand_synonyms(stripped)
-    log.info("After expand_synonyms: '%s'", expanded)
-
     query_norm = normalize(expanded)
-    log.info("Normalized query: '%s'", query_norm)
 
     if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
         return 500, f"CSV missing required columns or plan '{plan_id}'"
 
     matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
-
     if matches.empty:
-        all_norms = DF['normalized_name'].tolist()
-        ratios = difflib.get_close_matches(query_norm, all_norms, n=5, cutoff=0.7)
-        if ratios:
-            matches = DF[DF['normalized_name'].isin(ratios)]
+        close = difflib.get_close_matches(query_norm, DF['normalized_name'].tolist(),
+                                          n=5, cutoff=0.7)
+        matches = DF[DF['normalized_name'].isin(close)] if close else matches
 
     if matches.empty:
         return 404, f"No data-points matching '{raw_condition}' found"
@@ -112,7 +82,6 @@ def get_plan_value(raw_condition: str, plan_id: str):
                 "plan": plan_id,
                 "value": val
             })
-
     if not results:
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
 
@@ -142,47 +111,59 @@ def invoke_fallback(event_payload):
         return wrap_response(500, {"error": f"Fallback error: {e}"})
 
 def lambda_handler(event, _context):
-    log.info("Received: \n%s", json.dumps(event))
-    try:
-        raw = event.get("body") or event.get("prompt") or "{}"
-        if isinstance(raw, (bytes, bytearray)):
-            raw = raw.decode()
-        payload = json.loads(raw) if isinstance(raw, str) else raw
+    log.info("Received event: %s", json.dumps(event))
 
-        params = payload.get("parameters") or []
-        if isinstance(params, dict):
-            params = [{"name": k, "value": v} for k, v in params.items()]
-        p = {d["name"]: d["value"] for d in params if "name" in d and "value" in d}
-        condition = p.get("condition") or payload.get("condition")
-        plan      = p.get("plan")      or payload.get("plan")
+    # 1. Pull raw body (might already be a dict)
+    raw = event.get("body") or event.get("prompt") or "{}"
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode()
+    payload = json.loads(raw) if isinstance(raw, str) else raw
 
-        if not condition or not plan:
-            missing = [k for k in ("condition", "plan") if not locals()[k]]
-            return wrap_response(400, {"error": f"Missing: {', '.join(missing)}"})
+    # 2. Extract parameters list
+    params = payload.get("parameters") or []
+    if isinstance(params, dict):
+        params = [{"name": k, "value": v} for k, v in params.items()]
 
+    # 3. Separate out condition + all plans
+    condition = None
+    plans     = []
+    for p in params:
+        n = p.get("name")
+        v = p.get("value")
+        if n == "condition":
+            condition = v
+        elif n == "plan":
+            plans.append(str(v).strip())
+
+    if not condition or not plans:
+        missing = []
+        if not condition: missing.append("condition")
+        if not plans:     missing.append("plan")
+        return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
+
+    # 4. Loop over each plan
+    composite = []
+    for plan in plans:
         status, data = get_plan_value(condition, plan)
-        if status == 200:
-            return wrap_response(200, data)
-        else:
-            log.warning("Primary lookup failed (%s). Invoking fallback.", status)
-            fb_event = {
-                "body": json.dumps({
-                    "parameters": [
-                        {"name": "condition", "value": condition},
-                        {"name": "plan",      "value": plan}
-                    ]
-                })
-            }
-            return invoke_fallback(fb_event)
 
-    except Exception as e:
-        log.exception("Unhandled error")
-        fb_event = {
-            "body": json.dumps({
-                "parameters": [
-                    {"name": "condition", "value": p.get("condition", "")},
-                    {"name": "plan",      "value": p.get("plan", "")}
-                ]
+        # --- transform 404 “no data-points” into “Not applicable” ---
+        if status == 404 and data.startswith("No data-points matching"):
+            composite.append({
+                "plan": plan,
+                "value": "Not applicable"
             })
-        }
-        return invoke_fallback(fb_event)
+            continue
+
+        if status == 200:
+            composite.append({
+                "plan": plan,
+                "data": data
+            })
+        else:
+            # other errors → fallback per-plan, or include error
+            composite.append({
+                "plan": plan,
+                "error": data
+            })
+
+    return wrap_response(200, composite)
