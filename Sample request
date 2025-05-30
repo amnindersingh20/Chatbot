@@ -147,12 +147,10 @@ def lambda_handler(event, _context):
     composite = []
     for plan in plans:
         status, data = get_plan_value(condition, plan)
-        if status == 404 and data.startswith("No data-points matching"):
-            composite.append({ "plan": plan, "value": "Not applicable" })
-            continue
-        if status == 200:
-            composite.append({ "plan": plan, "data": data })
-        else:
-            composite.append({ "plan": plan, "error": data })
+        if status != 200:
+            # On any non-200 response, invoke fallback
+            return invoke_fallback(event)
+        # Append successful result
+        composite.append({"plan": plan, "data": data})
 
     return wrap_response(200, composite)
