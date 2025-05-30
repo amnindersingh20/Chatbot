@@ -1,163 +1,158 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat Agent</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f0f0f0;
-        }
+import logging, json, re, difflib
+from io import StringIO
+import boto3, pandas as pd
 
-        .chat-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: white;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            padding: 20px;
-        }
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
-        .chat-history {
-            height: 500px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 10px;
-            margin-bottom: 20px;
-        }
+S3_BUCKET = "pi"
+S3_KEY    = "20ing.csv"
+FALLBACK_LAMBDA_NAME = "Pa1"
 
-        .message {
-            margin-bottom: 15px;
-            padding: 10px;
-            border-radius: 5px;
-        }
+_s3     = boto3.client('s3')
+_lambda = boto3.client('lambda')
 
-        .user-message {
-            background-color: #e3f2fd;
-            margin-left: 20%;
-        }
+SYNONYMS = {
+    r"\bco[\s\-]?pay(ment)?s?\b"          : "copayment",
+    r"\bco[\s\-]?insurance\b"             : "coinsurance",
+    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
+    r"\bdeductible(s)?\b"                 : "deductible"
+}
 
-        .bot-message {
-            background-color: #f5f5f5;
-            margin-right: 20%;
-        }
+def normalize(text: str) -> str:
+    text = str(text)
+    return re.sub(r'[^a-z0-9]', '', text.lower())
 
-        .input-container {
-            display: flex;
-            gap: 10px;
-        }
+def strip_filler(text: str) -> str:
+    text = text.lower().strip()
+    fillers = [
+        r"\bwhat('?s)?\b", r"\bwhat is\b", r"\btell me\b",
+        r"\bgive me\b", r"\bplease show\b", r"\bhow much is\b",
+        r"\bis\b", r"\bmy\b"
+    ]
+    for pat in fillers:
+        text = re.sub(pat, '', text).strip()
+    return re.sub(r'\s+', ' ', text)
 
-        input[type="text"] {
-            flex: 1;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-        }
+def expand_synonyms(text: str) -> str:
+    for pat, rep in SYNONYMS.items():
+        text = re.sub(pat, rep, text, flags=re.IGNORECASE)
+    return text
 
-        button {
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
+def load_dataframe():
+    try:
+        obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
+        df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
+        df.columns = df.columns.str.strip()
 
-        button:hover {
-            background-color: #0056b3;
-        }
+        if 'Data Point Name' not in df.columns:
+            raise KeyError("Missing 'Data Point Name'")
+        df['Data Point Name'] = df['Data Point Name'].astype(str)
 
-        .citation {
-            font-size: 0.8em;
-            color: #666;
-            margin-top: 5px;
-            padding-left: 10px;
-            border-left: 2px solid #007bff;
-        }
-    </style>
-</head>
-<body>
-    <div class="chat-container">
-        <div class="chat-history" id="chatHistory"></div>
-        <div class="input-container">
-            <input type="text" id="userInput" placeholder="Type your message...">
-            <button onclick="sendMessage()">Send</button>
-        </div>
-    </div>
+        df['Data Point Name'] = (
+            df['Data Point Name']
+              .str.replace('–', '-', regex=False)
+              .str.replace('\u200b', '', regex=False)
+              .str.strip()
+              .str.lower()
+        )
 
-    <script>
-        let sessionState = null;
-        let sessionId = null;
-        const apiGatewayUrl = 'YOUR_API_GATEWAY_URL'; // Replace with your API Gateway URL
+        df['normalized_name'] = df['Data Point Name'].apply(normalize)
+        return df
+    except Exception:
+        log.exception("Failed to load CSV")
+        return pd.DataFrame()
 
-        async function sendMessage() {
-            const userInput = document.getElementById('userInput');
-            const message = userInput.value.trim();
-            userInput.value = '';
+DF = load_dataframe()
 
-            if (!message) return;
+def get_plan_value(raw_condition: str, plan_id: str):
+    stripped = strip_filler(raw_condition)
+    expanded = expand_synonyms(stripped)
+    query_norm = normalize(expanded)
 
-            // Add user message to history
-            addMessageToHistory(message, 'user');
+    if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
+        return 500, f"CSV missing required columns or plan '{plan_id}'"
 
-            try {
-                const response = await fetch(apiGatewayUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        message: message,
-                        sessionId: sessionId,
-                        sessionState: sessionState
-                    })
-                });
+    matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
+    if matches.empty:
+        close = difflib.get_close_matches(query_norm,
+                                          DF['normalized_name'].tolist(),
+                                          n=5, cutoff=0.7)
+        matches = DF[DF['normalized_name'].isin(close)] if close else matches
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+    if matches.empty:
+        return 404, f"No data-points matching '{raw_condition}' found"
 
-                const data = await response.json();
-                
-                // Update session state
-                sessionState = data.sessionState;
-                sessionId = data.sessionId;
+    results = []
+    for _, row in matches.iterrows():
+        val = row.get(plan_id)
+        if pd.notna(val):
+            results.append({
+                "condition": row['Data Point Name'],
+                "plan": plan_id,
+                "value": val
+            })
+    if not results:
+        return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
+    return 200, results
 
-                // Add bot response to history
-                addMessageToHistory(data.message, 'bot', data.citations);
-                
-            } catch (error) {
-                console.error('Error:', error);
-                addMessageToHistory('Sorry, there was an error processing your request.', 'bot');
-            }
-        }
+def wrap_response(status, body):
+    return {
+        "statusCode": status,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "OPTIONS,POST"
+        },
+        "body": json.dumps(body)
+    }
 
-        function addMessageToHistory(message, sender, citations = []) {
-            const history = document.getElementById('chatHistory');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${sender}-message`;
-            
-            messageDiv.innerHTML = `
-                <div><strong>${sender === 'user' ? 'You' : 'Agent'}:</strong> ${message}</div>
-                ${citations.map(c => 
-                    `<div class="citation">Source: ${c.source}<br>${c.text}</div>`
-                ).join('')}
-            `;
+def invoke_fallback(event_payload):
+    try:
+        resp = _lambda.invoke(
+            FunctionName   = FALLBACK_LAMBDA_NAME,
+            InvocationType = "RequestResponse",
+            Payload        = json.dumps(event_payload).encode()
+        )
+        return wrap_response(200, json.loads(resp['Payload'].read()))
+    except Exception as e:
+        log.exception("Fallback invocation failed")
+        return wrap_response(500, {"error": f"Fallback error: {e}"})
 
-            history.appendChild(messageDiv);
-            history.scrollTop = history.scrollHeight;
-        }
+def lambda_handler(event, _context):
+    log.info("Received event: %s", json.dumps(event))
+    raw = event.get("body") or event.get("prompt") or "{}"
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode()
+    payload = json.loads(raw) if isinstance(raw, str) else raw
 
-        // Handle Enter key
-        document.getElementById('userInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
-    </script>
-</body>
-</html>
+    params = payload.get("parameters") or []
+    if isinstance(params, dict):
+        params = [{"name": k, "value": v} for k, v in params.items()]
+
+    condition = None
+    plans     = []
+    for p in params:
+        if p.get("name") == "condition":
+            condition = p.get("value")
+        elif p.get("name") == "plan":
+            plans.append(str(p.get("value")).strip())
+
+    if not condition or not plans:
+        missing = []
+        if not condition: missing.append("condition")
+        if not plans:     missing.append("plan")
+        return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
+
+    composite = []
+    for plan in plans:
+        status, data = get_plan_value(condition, plan)
+        if status == 404 and data.startswith("No data-points matching"):
+            composite.append({ "plan": plan, "value": "Not applicable" })
+            continue
+        if status == 200:
+            composite.append({ "plan": plan, "data": data })
+        else:
+            composite.append({ "plan": plan, "error": data })
+
+    return wrap_response(200, composite)
