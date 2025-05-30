@@ -20,13 +20,17 @@ SYNONYMS = {
 }
 
 def normalize(text: str) -> str:
+    # ensure we never call .lower() on a non-str
+    text = str(text)
     return re.sub(r'[^a-z0-9]', '', text.lower())
 
 def strip_filler(text: str) -> str:
     text = text.lower().strip()
-    fillers = [r"\bwhat('?s)?\b", r"\bwhat is\b", r"\btell me\b",
-               r"\bgive me\b", r"\bplease show\b", r"\bhow much is\b",
-               r"\bis\b", r"\bmy\b"]
+    fillers = [
+        r"\bwhat('?s)?\b", r"\bwhat is\b", r"\btell me\b",
+        r"\bgive me\b", r"\bplease show\b", r"\bhow much is\b",
+        r"\bis\b", r"\bmy\b"
+    ]
     for pat in fillers:
         text = re.sub(pat, '', text).strip()
     return re.sub(r'\s+', ' ', text)
@@ -39,8 +43,15 @@ def expand_synonyms(text: str) -> str:
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
-        df  = pd.read_csv(StringIO(obj['Body'].read().decode()), dtype=str)
+        df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
         df.columns = df.columns.str.strip()
+        
+        # --- FORCE string type before any .str operations ---
+        if 'Data Point Name' not in df.columns:
+            raise KeyError("Missing 'Data Point Name'")
+        df['Data Point Name'] = df['Data Point Name'].astype(str)
+
+        # now you can safely .str.replace and lower
         df['Data Point Name'] = (
             df['Data Point Name']
               .str.replace('–', '-', regex=False)
@@ -48,6 +59,7 @@ def load_dataframe():
               .str.strip()
               .str.lower()
         )
+
         df['normalized_name'] = df['Data Point Name'].apply(normalize)
         return df
     except Exception:
@@ -66,7 +78,8 @@ def get_plan_value(raw_condition: str, plan_id: str):
 
     matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
     if matches.empty:
-        close = difflib.get_close_matches(query_norm, DF['normalized_name'].tolist(),
+        close = difflib.get_close_matches(query_norm,
+                                          DF['normalized_name'].tolist(),
                                           n=5, cutoff=0.7)
         matches = DF[DF['normalized_name'].isin(close)] if close else matches
 
@@ -84,7 +97,6 @@ def get_plan_value(raw_condition: str, plan_id: str):
             })
     if not results:
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
-
     return 200, results
 
 def wrap_response(status, body):
@@ -112,28 +124,22 @@ def invoke_fallback(event_payload):
 
 def lambda_handler(event, _context):
     log.info("Received event: %s", json.dumps(event))
-
-    # 1. Pull raw body (might already be a dict)
     raw = event.get("body") or event.get("prompt") or "{}"
     if isinstance(raw, (bytes, bytearray)):
         raw = raw.decode()
     payload = json.loads(raw) if isinstance(raw, str) else raw
 
-    # 2. Extract parameters list
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
 
-    # 3. Separate out condition + all plans
     condition = None
     plans     = []
     for p in params:
-        n = p.get("name")
-        v = p.get("value")
-        if n == "condition":
-            condition = v
-        elif n == "plan":
-            plans.append(str(v).strip())
+        if p.get("name") == "condition":
+            condition = p.get("value")
+        elif p.get("name") == "plan":
+            plans.append(str(p.get("value")).strip())
 
     if not condition or not plans:
         missing = []
@@ -141,29 +147,15 @@ def lambda_handler(event, _context):
         if not plans:     missing.append("plan")
         return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
 
-    # 4. Loop over each plan
     composite = []
     for plan in plans:
         status, data = get_plan_value(condition, plan)
-
-        # --- transform 404 “no data-points” into “Not applicable” ---
         if status == 404 and data.startswith("No data-points matching"):
-            composite.append({
-                "plan": plan,
-                "value": "Not applicable"
-            })
+            composite.append({ "plan": plan, "value": "Not applicable" })
             continue
-
         if status == 200:
-            composite.append({
-                "plan": plan,
-                "data": data
-            })
+            composite.append({ "plan": plan, "data": data })
         else:
-            # other errors → fallback per-plan, or include error
-            composite.append({
-                "plan": plan,
-                "error": data
-            })
+            composite.append({ "plan": plan, "error": data })
 
     return wrap_response(200, composite)
