@@ -1,4 +1,8 @@
 {
-    "statusCode": 500,
-    "body": "{\"error\": \"Parameter validation failed:\\nUnknown parameter in input: \\\"promptSpecification\\\", must be one of: input, retrieveAndGenerateConfiguration, sessionConfiguration, sessionId\"}"
+  "body": {
+    "parameters": [
+      { "name": "condition", "value": "what are the changes for Rehired Eligible Former Employees effective Jan 1, 2025" },
+      { "name": "plan",      "value": "1651" }
+    ]
+  }
 }
