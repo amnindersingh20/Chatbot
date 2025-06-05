@@ -19,7 +19,6 @@ $output_format_instructions$
 
 def lambda_handler(event, context):
     try:
-
         body = json.loads(event['body']) if isinstance(event.get('body'), str) else event.get('body', {})
 
         params = { p['name']: p['value'] for p in body.get('parameters', []) }
@@ -28,7 +27,6 @@ def lambda_handler(event, context):
 
         input_prompt = f"What is the {condition} for plan {plan}?"
 
-      
         response = client_bedrock.retrieve_and_generate(
             input={"text": input_prompt},
             retrieveAndGenerateConfiguration={
@@ -43,10 +41,10 @@ def lambda_handler(event, context):
                         "vectorSearchConfiguration": {
                             "overrideSearchType": "HYBRID",
                             "numberOfResults": 10,
-                            'filter': {
-                                'equals': {
-                                    'key': 'type',
-                                    'value': 'midwest CWA'
+                            "filter": {
+                                "equals": {
+                                    "key": "type",
+                                    "value": "midwest CWA"
                                 }
                             }
                         }
@@ -62,9 +60,16 @@ def lambda_handler(event, context):
 
         completion = response['output']['text']
 
+        # Safely collect citations only when retrievedReferences is non‐empty
         citations = []
         for cit in response.get('citations', []):
-            ref = cit['retrievedReferences'][0]
+            refs = cit.get('retrievedReferences', [])
+            if not refs:
+                # If you want to skip outright:
+                continue
+
+            # Now refs[0] is safe
+            ref = refs[0]
             citations.append({
                 'source': ref['location']['s3Location']['uri'],
                 'text':   ref['content']['text']
@@ -79,7 +84,7 @@ def lambda_handler(event, context):
             'body': json.dumps({
                 'message':   completion,
                 'citations': citations
-            },indent=2)
+            }, indent=2)
         }
 
     except KeyError as e:
