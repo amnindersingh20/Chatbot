@@ -122,7 +122,7 @@
         }
 
         .message-bubble ul li::before {
-            content: "â€¢";
+            content: "•";
             color: #3498db;
             margin-right: 8px;
         }
@@ -185,6 +185,7 @@
     </div>
 
     <script>
+        // The same constMsg object you stored in sessionStorage earlier.
         const constMsg = {
             pageName: "Annual Enrollment - Medical Health Plan Election Page - AT&T",
             planId: 1000,
@@ -217,8 +218,9 @@
             simplifiedEnrollmentEligible: ""
         };
 
-        // Store in session
+        // Store constMsg in sessionStorage
         sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
+
         const messageRegistry = {
             suggested: new Set(),
             questions: new Set()
@@ -228,10 +230,8 @@
             const { questions, suggested_message } = event.data;
             const chatHistory = document.getElementById('chat-history');
 
-
             const cleanSuggested = suggested_message.trim();
             const cleanQuestions = questions.map(q => q.trim());
-
 
             if (cleanSuggested && !messageRegistry.suggested.has(cleanSuggested)) {
                 const suggestedDiv = document.createElement('div');
@@ -253,27 +253,40 @@
                 }
             });
 
-
             chatHistory.scrollTop = chatHistory.scrollHeight;
         });
-        const userHistory = JSON.parse(sessionStorage.getItem('userHistory')) || [];
-        // Retrieve constMsg from sessionStorage
+
+        // Retrieve constMsg from sessionStorage and parse it
         const constMsg2 = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
-        // Build plan map from optionId to optionDescription
+
+        // Build a map from plan ID to its description, including the electedOption
         const optionMap = {};
         if (Array.isArray(constMsg2.availableOptions)) {
             constMsg2.availableOptions.forEach(opt => {
                 optionMap[String(opt.optionId)] = opt.optionDescription;
             });
         }
-        // Extract all available optionIds as plans
-        const planIds = Object.keys(optionMap);
+        // Add electedOption into the same map so its description is known
+        if (constMsg2.electedOption && constMsg2.electedOption.optionId) {
+            optionMap[String(constMsg2.electedOption.optionId)] = constMsg2.electedOption.optionDescription;
+        }
+
+        // Extract all available optionIds (only for iterations)—we'll push electedOption separately
+        const availablePlanIds = Object.keys(constMsg2.availableOptions.reduce((acc, o) => {
+            acc[o.optionId] = true;
+            return acc;
+        }, {}));
+
+        // Grab the electedOption ID for later use
+        const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
 
         const API_URL = 'https://0hph.execute-api.us-east-1.amazonaws.com/Dev/chat';
         const chatHistory = document.getElementById('chat-history');
         const messageInput = document.getElementById('message-input');
         const typingIndicator = document.getElementById('typing-indicator');
         const errorMessage = document.getElementById('error-message');
+
+        // Re-populate any stored questions as clickable tiles
         const storedQuestions = JSON.parse(sessionStorage.getItem('questions')) || [];
         storedQuestions.forEach(question => {
             const questionTile = document.createElement('div');
@@ -289,6 +302,7 @@
                 sendMessage();
             }
         }
+
         function sendQuestion(question) {
             messageInput.value = question;
             sendMessage();
@@ -313,9 +327,21 @@
             appendMessage(text, true);
             typingIndicator.style.display = 'block';
 
-            // Build parameters array: one condition + one plan per optionId
+            // Build the parameters array:
+            //   1. One "condition" entry for the user question.
+            //   2. One "plan" entry for each availableOption.
+            //   3. One "plan" entry for the electedOption (so the backend can compute its value, too).
             const params = [{ name: 'condition', value: text }];
-            planIds.forEach(id => params.push({ name: 'plan', value: id }));
+
+            // Add each available plan
+            availablePlanIds.forEach(id => {
+                params.push({ name: 'plan', value: id });
+            });
+
+            // Add the elected plan ID (if present) as another "plan" parameter
+            if (electedPlanId) {
+                params.push({ name: 'plan', value: electedPlanId });
+            }
 
             try {
                 const response = await fetch(API_URL, {
@@ -326,30 +352,35 @@
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
                 let data = await response.json();
-                // unwrap nested body if needed
+                // If the backend wraps the array in a string, unwrap it
                 if (data.body && typeof data.body === 'string') {
-                    try { data = JSON.parse(data.body); } catch { };
+                    try {
+                        data = JSON.parse(data.body);
+                    } catch { }
                 }
 
+                // Build a single string with all of the returned values/errors
                 let reply = '';
                 if (Array.isArray(data)) {
                     reply = data.map(item => {
                         if (item.data) {
+                            // In case the backend returns a "data" array for multiple conditions
                             return item.data.map(d => {
                                 const desc = optionMap[String(d.plan)] || d.plan;
                                 return `For "${d.condition}" under "${desc}", the value is: ${d.value}`;
                             }).join('\n');
                         }
-                        if (item.value) {
+                        if (item.value !== undefined) {
+                            // Single value response
                             const desc = optionMap[String(item.plan)] || item.plan;
                             return `For "${text}" under "${desc}", the value is: ${item.value}`;
                         }
-                        {
-                            const desc = optionMap[String(item.plan)] || item.plan;
-                            return `For "${text}" under "${desc}", error: ${item.error}`;
-                        }
+                        // If there's an error field instead
+                        const desc = optionMap[String(item.plan)] || item.plan;
+                        return `For "${text}" under "${desc}", error: ${item.error}`;
                     }).join('\n\n');
                 } else {
+                    // If it's not an array, just stringify
                     reply = JSON.stringify(data);
                 }
 
