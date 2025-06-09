@@ -1,8 +1,7 @@
 {
-    "statusCode": 200,
-    "headers": {
-        "Content-Type": "application/json; charset=utf-8",
-        "Access-Control-Allow-Origin": "*"
-    },
-    "body": "{\n  \"message\": \"Sorry, I am unable to assist you with this request.\",\n  \"citations\": []\n}"
+  "body": "{\"parameters\": [\
+    {\"name\": \"condition\",      \"value\": \"What is my deductible\"},\
+    {\"name\": \"plan\",           \"value\": \"1651\"},\
+    {\"name\": \"plan\",           \"value\": \"1809\"}\
+  ]}"
 }
