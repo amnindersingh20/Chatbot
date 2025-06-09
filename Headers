@@ -1,11 +1,14 @@
-{
-  "errorMessage": "An error occurred (ValidationException) when calling the InvokeModel operation: Malformed input request: #: required key [prompt] not found#: required key [max_tokens_to_sample] not found#: extraneous key [inputs] is not permitted#: extraneous key [parameters] is not permitted, please reformat your input and try again.",
-  "errorType": "ValidationException",
-  "requestId": "e5ebfe44-af7c-41f5-a4b9-fad902cee92f",
-  "stackTrace": [
-    "  File \"/var/task/lambda_function.py\", line 203, in lambda_handler\n    summary = summarize_with_llm(composite)\n",
-    "  File \"/var/task/lambda_function.py\", line 130, in summarize_with_llm\n    resp = _bedrock.invoke_model(\n",
-    "  File \"/var/lang/lib/python3.13/site-packages/botocore/client.py\", line 569, in _api_call\n    return self._make_api_call(operation_name, kwargs)\n",
-    "  File \"/var/lang/lib/python3.13/site-packages/botocore/client.py\", line 1023, in _make_api_call\n    raise error_class(parsed_response, operation_name)\n"
-  ]
-}
+[ERROR]	2025-06-09T13:33:19.434Z	7f4b47b3-13b5-47b7-8bd0-76efc39d6b50	LLM summarization failed
+Traceback (most recent call last):
+  File "/var/task/lambda_function.py", line 132, in summarize_with_llm
+    resp = _bedrock.invoke_model(
+        modelId=BEDROCK_MODEL_ID,
+    ...<6 lines>...
+        accept="application/json"
+    )
+  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 569, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 1023, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: "claude-3-5-sonnet-20240620" is not supported on this API. Please use the Messages API instead.
