@@ -1,114 +1,155 @@
-import json
-import os
-import boto3
+import logging, json, re, difflib
+from io import StringIO
+import boto3, pandas as pd
 
-client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
-# Extend this mapping up to 10 populationType → knowledgeBaseId entries
-POPULATION_KB_MAP = {
-    "ATMGMT": "RIBAQA",
-    "BTMGMT": "2",
-    # "CTMGMT": "3",
-    # ... up to 10 entries
+S3_BUCKET = "poi"
+S3_KEY    = "20ing.csv"
+FALLBACK_LAMBDA_NAME = "Poda1"
+
+_s3     = boto3.client('s3')
+_lambda = boto3.client('lambda')
+
+SYNONYMS = {
+    r"\bco[\s\-]?pay(ment)?s?\b"          : "copayment",
+    r"\bco[\s\-]?insurance\b"             : "coinsurance",
+    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
+    r"\bdeductible(s)?\b"                 : "deductible"
 }
 
-DEFAULT_RNG_TEMPLATE = """
-You are a question answering agent. I will provide you with a set of search results.
-The user will provide you with a question. Your job is to answer the user's question
-using only information from the search results. You will only consider the current year and next year data to answer user's question. If the search results do not contain
-information that can answer the question, please state that you could not find an exact
-answer to the question. Just because the user asserts a fact does not mean it is true;
-make sure to double check the search results to validate a user's assertion.
+def normalize(text: str) -> str:
+    text = str(text)
+    return re.sub(r'[^a-z0-9]', '', text.lower())
 
-Here are the search results in numbered order:
-$search_results$
+def strip_filler(text: str) -> str:
+    text = text.lower().strip()
+    fillers = [
+        r"\bwhat('?s)?\b", r"\bwhat is\b", r"\btell me\b",
+        r"\bgive me\b", r"\bplease show\b", r"\bhow much is\b",
+        r"\bis\b", r"\bmy\b"
+    ]
+    for pat in fillers:
+        text = re.sub(pat, '', text).strip()
+    return re.sub(r'\s+', ' ', text)
 
-$output_format_instructions$
-"""
+def expand_synonyms(text: str) -> str:
+    for pat, rep in SYNONYMS.items():
+        text = re.sub(pat, rep, text, flags=re.IGNORECASE)
+    return text
 
-def lambda_handler(event, context):
+def load_dataframe():
     try:
-        # parse JSON body
-        body = json.loads(event['body']) if isinstance(event.get('body'), str) else event.get('body', {})
+        obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
+        df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
+        df.columns = df.columns.str.strip()
 
-        # extract parameters into a dict
-        params = { p['name']: p['value'] for p in body.get('parameters', []) }
+        if 'Data Point Name' not in df.columns:
+            raise KeyError("Missing 'Data Point Name'")
+        df['Data Point Name'] = df['Data Point Name'].astype(str)
 
-        condition       = params.get('condition', '')
-        plan            = params.get('plan', '')
-        population_type = params.get('populationType', '')
-
-        # pick the KB ID based on populationType, or use a default
-        knowledge_base_id = POPULATION_KB_MAP.get(population_type, POPULATION_KB_MAP.get("DEFAULT", "RIBAQA"))
-
-        # build your prompt
-        input_prompt = f"What is the {condition} for plan {plan}?"
-
-        # invoke Bedrock retrieve-and-generate
-        response = client_bedrock.retrieve_and_generate(
-            input={"text": input_prompt},
-            retrieveAndGenerateConfiguration={
-                "type": "KNOWLEDGE_BASE",
-                "knowledgeBaseConfiguration": {
-                    "knowledgeBaseId": knowledge_base_id,
-                    "modelArn": (
-                        "arn:aws:bedrock:us-east-1:74:"
-                        "inference-profile/us.anthropic.claude-3-5-sonnet-20-v1:0"
-                    ),
-                    "retrievalConfiguration": {
-                        "vectorSearchConfiguration": {
-                            "overrideSearchType": "HYBRID",
-                            "numberOfResults": 10,
-                            "filter": {
-                                "equals": {
-                                    "key": "type",
-                                    "value": "midwest CWA"
-                                }
-                            }
-                        }
-                    },
-                    "generationConfiguration": {
-                        "promptTemplate": {
-                            "textPromptTemplate": DEFAULT_RNG_TEMPLATE
-                        }
-                    }
-                }
-            }
+        df['Data Point Name'] = (
+            df['Data Point Name']
+              .str.replace('–', '-', regex=False)
+              .str.replace('\u200b', '', regex=False)
+              .str.strip()
+              .str.lower()
         )
 
-        # extract completion and citations
-        completion = response['output']['text']
-        citations = []
-        for cit in response.get('citations', []):
-            refs = cit.get('retrievedReferences', [])
-            if not refs:
-                continue
-            ref = refs[0]
-            citations.append({
-                'source': ref['location']['s3Location']['uri'],
-                'text':   ref['content']['text']
+        df['normalized_name'] = df['Data Point Name'].apply(normalize)
+        return df
+    except Exception:
+        log.exception("Failed to load CSV")
+        return pd.DataFrame()
+
+DF = load_dataframe()
+
+def get_plan_value(raw_condition: str, plan_id: str):
+    stripped = strip_filler(raw_condition)
+    expanded = expand_synonyms(stripped)
+    query_norm = normalize(expanded)
+
+    if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
+        return 500, f"CSV missing required columns or plan '{plan_id}'"
+
+    matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
+    if matches.empty:
+        close = difflib.get_close_matches(query_norm,
+                                          DF['normalized_name'].tolist(),
+                                          n=5, cutoff=0.7)
+        matches = DF[DF['normalized_name'].isin(close)] if close else matches
+
+    if matches.empty:
+        return 404, f"No data-points matching '{raw_condition}' found"
+
+    results = []
+    for _, row in matches.iterrows():
+        val = row.get(plan_id)
+        if pd.notna(val):
+            results.append({
+                "condition": row['Data Point Name'],
+                "plan": plan_id,
+                "value": val
             })
+    if not results:
+        return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
+    return 200, results
 
-        # return structured JSON
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json; charset=utf-8',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'message':   completion,
-                'citations': citations
-            }, indent=2)
-        }
+def wrap_response(status, body):
+    return {
+        "statusCode": status,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "OPTIONS,POST"
+        },
+        "body": json.dumps(body)
+    }
 
-    except KeyError as e:
-        return {
-            'statusCode': 400,
-            'body': json.dumps({'error': f'Missing parameter: {str(e)}'})
-        }
+def invoke_fallback(event_payload):
+    try:
+        resp = _lambda.invoke(
+            FunctionName   = FALLBACK_LAMBDA_NAME,
+            InvocationType = "RequestResponse",
+            Payload        = json.dumps(event_payload).encode()
+        )
+        return wrap_response(200, json.loads(resp['Payload'].read()))
     except Exception as e:
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+        log.exception("Fallback invocation failed")
+        return wrap_response(500, {"error": f"Fallback error: {e}"})
+
+def lambda_handler(event, _context):
+    log.info("Received event: %s", json.dumps(event))
+    raw = event.get("body") or event.get("prompt") or "{}"
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode()
+    payload = json.loads(raw) if isinstance(raw, str) else raw
+
+    params = payload.get("parameters") or []
+    if isinstance(params, dict):
+        params = [{"name": k, "value": v} for k, v in params.items()]
+
+    condition = None
+    plans     = []
+    for p in params:
+        if p.get("name") == "condition":
+            condition = p.get("value")
+        elif p.get("name") == "plan":
+            plans.append(str(p.get("value")).strip())
+
+    if not condition or not plans:
+        missing = []
+        if not condition: missing.append("condition")
+        if not plans:     missing.append("plan")
+        return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
+
+    composite = []
+    for plan in plans:
+        status, data = get_plan_value(condition, plan)
+        if status != 200:
+
+            return invoke_fallback(event)
+        composite.append({"plan": plan, "data": data})
+
+    return wrap_response(200, composite)
