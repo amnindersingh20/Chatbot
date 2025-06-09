@@ -1,7 +1,16 @@
 import json
+import os
 import boto3
 
 client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+
+# Extend this mapping up to 10 populationType → knowledgeBaseId entries
+POPULATION_KB_MAP = {
+    "ATMGMT": "RIBAQA",
+    "BTMGMT": "2",
+    # "CTMGMT": "3",
+    # ... up to 10 entries
+}
 
 DEFAULT_RNG_TEMPLATE = """
 You are a question answering agent. I will provide you with a set of search results.
@@ -19,22 +28,31 @@ $output_format_instructions$
 
 def lambda_handler(event, context):
     try:
+        # parse JSON body
         body = json.loads(event['body']) if isinstance(event.get('body'), str) else event.get('body', {})
 
+        # extract parameters into a dict
         params = { p['name']: p['value'] for p in body.get('parameters', []) }
-        condition = params.get('condition', '')
-        plan      = params.get('plan', '')
 
+        condition       = params.get('condition', '')
+        plan            = params.get('plan', '')
+        population_type = params.get('populationType', '')
+
+        # pick the KB ID based on populationType, or use a default
+        knowledge_base_id = POPULATION_KB_MAP.get(population_type, POPULATION_KB_MAP.get("DEFAULT", "RIBAQA"))
+
+        # build your prompt
         input_prompt = f"What is the {condition} for plan {plan}?"
 
+        # invoke Bedrock retrieve-and-generate
         response = client_bedrock.retrieve_and_generate(
             input={"text": input_prompt},
             retrieveAndGenerateConfiguration={
                 "type": "KNOWLEDGE_BASE",
                 "knowledgeBaseConfiguration": {
-                    "knowledgeBaseId": "RIBAQA",
+                    "knowledgeBaseId": knowledge_base_id,
                     "modelArn": (
-                        "arn:aws:bedrock:us-east-1:65374:"
+                        "arn:aws:bedrock:us-east-1:74:"
                         "inference-profile/us.anthropic.claude-3-5-sonnet-20-v1:0"
                     ),
                     "retrievalConfiguration": {
@@ -58,23 +76,20 @@ def lambda_handler(event, context):
             }
         )
 
+        # extract completion and citations
         completion = response['output']['text']
-
-        # Safely collect citations only when retrievedReferences is non‐empty
         citations = []
         for cit in response.get('citations', []):
             refs = cit.get('retrievedReferences', [])
             if not refs:
-                # If you want to skip outright:
                 continue
-
-            # Now refs[0] is safe
             ref = refs[0]
             citations.append({
                 'source': ref['location']['s3Location']['uri'],
                 'text':   ref['content']['text']
             })
 
+        # return structured JSON
         return {
             'statusCode': 200,
             'headers': {
