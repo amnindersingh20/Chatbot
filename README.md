@@ -10,19 +10,19 @@ log = logging.getLogger()
 log.setLevel(logging.INFO)
 
 S3_BUCKET = "poi"
-S3_KEY    = "20ing.csv"
+S3_KEY = "20ing.csv"
 FALLBACK_LAMBDA_NAME = "Poda1"
-BEDROCK_MODEL_ID = "anthropic.claude-v1"
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620"
 
-_s3     = boto3.client('s3')
+_s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
-_bedrock = boto3.client('bedrock-runtime')
+_bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 
 SYNONYMS = {
-    r"\bco[\s\-]?pay(ment)?s?\b"          : "copayment",
-    r"\bco[\s\-]?insurance\b"             : "coinsurance",
+    r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
+    r"\bco[\s\-]?insurance\b": "coinsurance",
     r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
-    r"\bdeductible(s)?\b"                 : "deductible"
+    r"\bdeductible(s)?\b": "deductible"
 }
 
 def normalize(text: str) -> str:
@@ -30,9 +30,10 @@ def normalize(text: str) -> str:
 
 def strip_filler(text: str) -> str:
     text = re.sub(r"[^\w\s]", "", text.lower().strip())
-    fillers = [r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b", r"\btell me\b",
-               r"\bgive me\b", r"\bplease show\b", r"\bhow much is\b",
-               r"\bis\b", r"\bmy\b"]
+    fillers = [
+        r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b", r"\btell me\b",
+        r"\bgive me\b", r"\bplease show\b", r"\bhow much is\b", r"\bis\b", r"\bmy\b"
+    ]
     for pat in fillers:
         text = re.sub(pat, '', text).strip()
     return re.sub(r'\s+', ' ', text)
@@ -45,16 +46,18 @@ def expand_synonyms(text: str) -> str:
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
-        df  = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
+        df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
         df.columns = df.columns.str.strip()
-        df['Data Point Name'] = (
-            df['Data Point Name'].astype(str)
-              .str.replace('–', '-', regex=False)
-              .str.replace('\u200b', '', regex=False)
-              .str.strip().str.lower()
-        )
+
+        if 'Data Point Name' not in df.columns:
+            raise KeyError("Missing 'Data Point Name' column")
+
+        df['Data Point Name'] = df['Data Point Name'].astype(str).str.replace('–', '-', regex=False)\
+                                                          .str.replace('\u200b', '', regex=False)\
+                                                          .str.strip().str.lower()
         df['normalized_name'] = df['Data Point Name'].apply(normalize)
         return df
+
     except Exception:
         log.exception("Failed to load CSV from S3")
         return pd.DataFrame()
@@ -62,18 +65,21 @@ def load_dataframe():
 DF = load_dataframe()
 
 def get_plan_value(raw_condition: str, plan_id: str):
-    stripped   = strip_filler(raw_condition)
-    expanded   = expand_synonyms(stripped)
+    stripped = strip_filler(raw_condition)
+    expanded = expand_synonyms(stripped)
     query_norm = normalize(expanded)
 
-    log.info("Lookup trace: raw=%r, stripped=%r, expanded=%r, norm=%r", raw_condition, stripped, expanded, query_norm)
+    log.info("Lookup trace: raw=%r → stripped=%r → expanded=%r → norm=%r", raw_condition, stripped, expanded, query_norm)
 
     if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
         return 500, f"CSV missing required columns or plan '{plan_id}'"
 
     matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
+    log.info("Exact matches: %d", len(matches))
+
     if matches.empty:
         close = difflib.get_close_matches(query_norm, DF['normalized_name'].tolist(), n=5, cutoff=0.7)
+        log.info("Fuzzy matches: %s", close)
         matches = DF[DF['normalized_name'].isin(close)] if close else matches
 
     if matches.empty:
@@ -83,11 +89,48 @@ def get_plan_value(raw_condition: str, plan_id: str):
     for _, row in matches.iterrows():
         val = row.get(plan_id)
         if pd.notna(val):
-            results.append({"condition": row['Data Point Name'], "plan": plan_id, "value": val})
+            results.append({
+                "condition": row['Data Point Name'],
+                "plan": plan_id,
+                "value": val
+            })
 
     if not results:
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
     return 200, results
+
+def summarize_with_claude35(composite_result: list) -> str:
+    try:
+        user_prompt = f"""
+Please summarize this CSV lookup result for a user asking about benefits coverage:
+
+{json.dumps(composite_result, indent=2)}
+
+Structure the summary like:
+- It mentions that the response for the available options is: ...
+- And the response for the elected options is: ...
+Keep the response concise and helpful.
+"""
+        response = _bedrock.invoke_model(
+            modelId=BEDROCK_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps({
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": user_prompt
+                    }
+                ],
+                "max_tokens": 512,
+                "temperature": 0.5
+            })
+        )
+        body = json.loads(response['body'].read())
+        return body['content'][0]['text']
+    except Exception:
+        log.exception("LLM summarization failed")
+        return None
 
 def wrap_response(status, body):
     return {
@@ -112,41 +155,9 @@ def invoke_fallback(event_payload):
         log.exception("Fallback invocation failed")
         return wrap_response(500, {"error": f"Fallback error: {e}"})
 
-def summarize_with_llm(results):
-    prompt_lines = ["Here is the plan information:"]
-    for item in results:
-        plan = item['plan']
-        for row in item['data']:
-            prompt_lines.append(f"Plan {plan} covers {row['condition']} as {row['value']}.")
-    prompt = "\n".join(prompt_lines)
-
-    full_prompt = f"""
-
-Human: {prompt}
-
-Summarize the available options and elected options separately.
-
-Assistant:"""
-
-    try:
-        resp = _bedrock.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            body=json.dumps({
-                "prompt": full_prompt,
-                "max_tokens_to_sample": 300,
-                "temperature": 0.5
-            }),
-            contentType="application/json",
-            accept="application/json"
-        )
-        output = json.loads(resp['body'].read())
-        return output.get("completion", "")
-    except Exception:
-        log.exception("LLM summarization failed")
-        return ""
-
 def lambda_handler(event, _context):
     log.info("Received event: %s", json.dumps(event))
+
     raw = event.get("body") or event.get("prompt") or "{}"
     if isinstance(raw, (bytes, bytearray)):
         raw = raw.decode()
@@ -159,6 +170,7 @@ def lambda_handler(event, _context):
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
+    log.info("Extracted parameters: %s", params)
 
     condition = None
     plans = []
@@ -167,8 +179,6 @@ def lambda_handler(event, _context):
             condition = p.get("value")
         elif p.get("name") == "plan":
             plans.append(str(p.get("value")).strip())
-
-    log.info("Condition: %r, Plans: %s", condition, plans)
 
     if not condition or not plans:
         missing = []
@@ -183,9 +193,9 @@ def lambda_handler(event, _context):
             return invoke_fallback(event)
         composite.append({"plan": plan, "data": data})
 
-    summary = summarize_with_llm(composite)
+    summary = summarize_with_claude35(composite)
 
     return wrap_response(200, {
-        "results": composite,
-        "summary": summary
+        "summary": summary,
+        "results": composite
     })
