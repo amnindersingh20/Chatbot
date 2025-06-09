@@ -115,28 +115,6 @@
             text-align: center;
         }
 
-        .message-bubble ol,
-        .message-bubble ul {
-            padding-left: 1.5em;
-            margin: 8px 0;
-        }
-
-        .message-bubble ul li::before {
-            content: "•";
-            color: #3498db;
-            margin-right: 8px;
-        }
-
-        .badge {
-            background-color: powderblue;
-            color: #000;
-            padding: 4px 8px;
-            text-align: center;
-            border-radius: 5px;
-            margin: 5px;
-            display: inline-block;
-        }
-
         .question-tile {
             background-color: #f0f0f0;
             border: 1px solid #ccc;
@@ -177,9 +155,7 @@
         <input type="text" id="message-input" placeholder="Ask your question" onkeypress="handleEnterKey(event)">
         <button id="send-button" onclick="sendMessage()">
             <svg width="40px" height="40px" viewBox="0 0 24 24" fill="none">
-                <path
-                    d="M7.75778 6.14799C6.84443 5.77187 6.0833 5.45843 5.49196 5.30702C4.91915 5.16036 4.18085 5.07761 3.63766 5.62862C3.09447 6.17962 3.18776 6.91666 3.34259 7.48732C3.50242 8.07644 3.8267 8.83302 4.21583 9.7409L4.86259 11.25H10C10.4142 11.25 10.75 11.5858 10.75 12C10.75 12.4142 10.4142 12.75 10 12.75H4.8626L4.21583 14.2591C3.8267 15.167 3.50242 15.9236 3.34259 16.5127C3.18776 17.0833 3.09447 17.8204 3.63766 18.3714C4.18085 18.9224 4.91915 18.8396 5.49196 18.693C6.0833 18.5416 6.84443 18.2281 7.75777 17.852L19.1997 13.1406C19.4053 13.0561 19.6279 12.9645 19.7941 12.867C19.944 12.779 20.3434 12.5192 20.3434 12C20.3434 11.4808 19.944 11.221 19.7941 11.133C19.6279 11.0355 19.4053 10.9439 19.1997 10.8594L7.75778 6.14799Z"
-                    fill="#000000" />
+                <path d="M7.75778 6.14799C6.84443 5.77187 6.0833 5.45843 5.49196 5.30702C4.91915 5.16036 4.18085 5.07761 3.63766 5.62862C3.09447 6.17962 3.18776 6.91666 3.34259 7.48732C3.50242 8.07644 3.8267 8.83302 4.21583 9.7409L4.86259 11.25H10C10.4142 11.25 10.75 11.5858 10.75 12C10.75 12.4142 10.4142 12.75 10 12.75H4.8626L4.21583 14.2591C3.8267 15.167 3.50242 15.9236 3.34259 16.5127C3.18776 17.0833 3.09447 17.8204 3.63766 18.3714C4.18085 18.9224 4.91915 18.8396 5.49196 18.693C6.0833 18.5416 6.84443 18.2281 7.75777 17.852L19.1997 13.1406C19.4053 13.0561 19.6279 12.9645 19.7941 12.867C19.944 12.779 20.3434 12.5192 20.3434 12C20.3434 11.4808 19.944 11.221 19.7941 11.133C19.6279 11.0355 19.4053 10.9439 19.1997 10.8594L7.75778 6.14799Z" fill="#000000"/>
             </svg>
         </button>
     </div>
@@ -198,8 +174,7 @@
                 {
                     questionsId: "HC-FSA-AUTOMAX",
                     questionLabel: "Sometimes the IRS will increase contribution limits for next year’s plan after the Annual Enrollment period is over. If you’ve elected the maximum contribution, would you like us to automatically increase your election to match the new contribution limit"
-                },
-                {}
+                }
             ],
             enrollmentDeadlineDate: "",
             availableOptions: [
@@ -210,26 +185,20 @@
             electedOption: {
                 optionId: 3502,
                 optionDescription: "Medical Option 9999"
-            },
-            minimumContributionAmount: "",
-            maximumContributionAmount: "",
-            simplifiedEnrollmentEdits: "",
-            simplifiedEnrollmentUsed: "",
-            simplifiedEnrollmentEligible: ""
+            }
         };
 
         // Store constMsg in sessionStorage
         sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
 
-        const messageRegistry = {
-            suggested: new Set(),
-            questions: new Set()
-        };
+        // Retrieve constMsg from sessionStorage and parse it
+        const constMsg2 = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
 
-        window.addEventListener('message', function (event) {
+        const messageRegistry = { suggested: new Set(), questions: new Set() };
+
+        window.addEventListener('message', event => {
             const { questions, suggested_message } = event.data;
             const chatHistory = document.getElementById('chat-history');
-
             const cleanSuggested = suggested_message.trim();
             const cleanQuestions = questions.map(q => q.trim());
 
@@ -238,17 +207,16 @@
                 suggestedDiv.className = 'suggested_messagep';
                 suggestedDiv.textContent = cleanSuggested;
                 chatHistory.appendChild(suggestedDiv);
-
                 messageRegistry.suggested.add(cleanSuggested);
             }
 
             cleanQuestions.forEach(question => {
                 if (!messageRegistry.questions.has(question)) {
-                    const questionTile = document.createElement('div');
-                    questionTile.className = 'question-tile';
-                    questionTile.textContent = question;
-                    questionTile.onclick = () => sendQuestion(question);
-                    chatHistory.appendChild(questionTile);
+                    const tile = document.createElement('div');
+                    tile.className = 'question-tile';
+                    tile.textContent = question;
+                    tile.onclick = () => sendQuestion(question);
+                    chatHistory.appendChild(tile);
                     messageRegistry.questions.add(question);
                 }
             });
@@ -256,139 +224,81 @@
             chatHistory.scrollTop = chatHistory.scrollHeight;
         });
 
-        // Retrieve constMsg from sessionStorage and parse it
-        const constMsg2 = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
-
-        // Build a map from plan ID to its description, including the electedOption
+        // Build plan ID → description map
         const optionMap = {};
         if (Array.isArray(constMsg2.availableOptions)) {
-            constMsg2.availableOptions.forEach(opt => {
-                optionMap[String(opt.optionId)] = opt.optionDescription;
-            });
+            constMsg2.availableOptions.forEach(o => { optionMap[String(o.optionId)] = o.optionDescription; });
         }
-        // Add electedOption into the same map so its description is known
-        if (constMsg2.electedOption && constMsg2.electedOption.optionId) {
+        if (constMsg2.electedOption) {
             optionMap[String(constMsg2.electedOption.optionId)] = constMsg2.electedOption.optionDescription;
         }
 
-        // Extract all available optionIds (only for iterations)—we'll push electedOption separately
-        const availablePlanIds = Object.keys(constMsg2.availableOptions.reduce((acc, o) => {
-            acc[o.optionId] = true;
-            return acc;
-        }, {}));
-
-        // Grab the electedOption ID for later use
+        const availablePlanIds = constMsg2.availableOptions.map(o => String(o.optionId));
         const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
 
         const API_URL = 'https://0hph.execute-api.us-east-1.amazonaws.com/Dev/chat';
-        const chatHistory = document.getElementById('chat-history');
-        const messageInput = document.getElementById('message-input');
-        const typingIndicator = document.getElementById('typing-indicator');
-        const errorMessage = document.getElementById('error-message');
 
-        // Re-populate any stored questions as clickable tiles
-        const storedQuestions = JSON.parse(sessionStorage.getItem('questions')) || [];
-        storedQuestions.forEach(question => {
-            const questionTile = document.createElement('div');
-            questionTile.className = 'question-tile';
-            questionTile.onclick = () => sendQuestion(question);
-            questionTile.textContent = question;
-            chatHistory.appendChild(questionTile);
-        });
-
-        function handleEnterKey(event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                sendMessage();
-            }
-        }
-
-        function sendQuestion(question) {
-            messageInput.value = question;
-            sendMessage();
-        }
-
-        function appendMessage(message, isUser) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            bubble.textContent = message;
-            messageDiv.appendChild(bubble);
-            chatHistory.appendChild(messageDiv);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
+        function handleEnterKey(evt) { if (evt.key==='Enter' && !evt.shiftKey) { evt.preventDefault(); sendMessage(); }}
+        function sendQuestion(q) { document.getElementById('message-input').value = q; sendMessage(); }
+        function appendMessage(msg,isUser){
+            const div=document.createElement('div');
+            div.className=`message ${isUser?'user-message':'bot-message'}`;
+            const bubble=document.createElement('div'); bubble.className='message-bubble'; bubble.textContent=msg;
+            div.appendChild(bubble); document.getElementById('chat-history').appendChild(div);
+            document.getElementById('chat-history').scrollTop=document.getElementById('chat-history').scrollHeight;
         }
 
         async function sendMessage() {
-            const text = messageInput.value.trim();
-            if (!text) return;
-            messageInput.value = '';
-            errorMessage.textContent = '';
-            appendMessage(text, true);
-            typingIndicator.style.display = 'block';
+            const inputEl=document.getElementById('message-input');
+            const text=inputEl.value.trim(); if(!text) return; inputEl.value='';
+            document.getElementById('error-message').textContent='';
+            appendMessage(text,true);
+            document.getElementById('typing-indicator').style.display='block';
 
-            // Build the parameters array:
-            //   1. One "condition" entry for the user question.
-            //   2. One "plan" entry for each availableOption.
-            //   3. One "plan" entry for the electedOption (so the backend can compute its value, too).
-            const params = [{ name: 'condition', value: text }];
-
-            // Add each available plan
-            availablePlanIds.forEach(id => {
-                params.push({ name: 'plan', value: id });
-            });
-
-            // Add the elected plan ID (if present) as another "plan" parameter
-            if (electedPlanId) {
-                params.push({ name: 'plan', value: electedPlanId });
-            }
+            // Build payload parameters
+            const params=[
+                { name: 'condition', value: text },
+                { name: 'populationType', value: constMsg2.populationType }
+            ];
+            // Add all plans
+            availablePlanIds.forEach(id => params.push({ name:'plan', value:id }));
+            if(electedPlanId) params.push({ name:'plan', value:electedPlanId });
 
             try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ parameters: params })
+                const res=await fetch(API_URL,{
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({ parameters: params })
                 });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                if(!res.ok) throw new Error(`HTTP ${res.status}`);
 
-                let data = await response.json();
-                // If the backend wraps the array in a string, unwrap it
-                if (data.body && typeof data.body === 'string') {
-                    try {
-                        data = JSON.parse(data.body);
-                    } catch { }
+                let data=await res.json();
+                if(data.body && typeof data.body==='string'){
+                    data=JSON.parse(data.body);
                 }
-
-                // Build a single string with all of the returned values/errors
-                let reply = '';
-                if (Array.isArray(data)) {
-                    reply = data.map(item => {
-                        if (item.data) {
-                            // In case the backend returns a "data" array for multiple conditions
-                            return item.data.map(d => {
-                                const desc = optionMap[String(d.plan)] || d.plan;
+                let reply='';
+                if(Array.isArray(data)){
+                    reply=data.map(item=>{
+                        if(item.data) {
+                            return item.data.map(d=>{
+                                const desc=optionMap[String(d.plan)]||d.plan;
                                 return `For "${d.condition}" under "${desc}", the value is: ${d.value}`;
                             }).join('\n');
                         }
-                        if (item.value !== undefined) {
-                            // Single value response
-                            const desc = optionMap[String(item.plan)] || item.plan;
-                            return `For "${text}" under "${desc}", the value is: ${item.value}`;
+                        if(item.value!==undefined){
+                            const desc=optionMap[String(item.plan)]||item.plan;
+                            return `For \"${text}\" under \"${desc}\", the value is: ${item.value}`;
                         }
-                        // If there's an error field instead
-                        const desc = optionMap[String(item.plan)] || item.plan;
-                        return `For "${text}" under "${desc}", error: ${item.error}`;
+                        const desc=optionMap[String(item.plan)]||item.plan;
+                        return `For \"${text}\" under \"${desc}\", error: ${item.error}`;
                     }).join('\n\n');
                 } else {
-                    // If it's not an array, just stringify
-                    reply = JSON.stringify(data);
+                    reply=JSON.stringify(data);
                 }
-
-                appendMessage(reply, false);
-            } catch (err) {
-                errorMessage.textContent = `Error: ${err.message}`;
+                appendMessage(reply,false);
+            } catch(e){
+                document.getElementById('error-message').textContent=`Error: ${e.message}`;
             } finally {
-                typingIndicator.style.display = 'none';
+                document.getElementById('typing-indicator').style.display='none';
             }
         }
     </script>
