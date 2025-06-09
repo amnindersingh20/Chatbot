@@ -1,7 +1,1 @@
-{
-  "body": "{\"parameters\": [\
-    {\"name\": \"condition\",      \"value\": \"What is my deductible\"},\
-    {\"name\": \"plan\",           \"value\": \"1651\"},\
-    {\"name\": \"plan\",           \"value\": \"1809\"}\
-  ]}"
-}
+The JSON syntax for the event isn't valid. Correct the JSON syntax and try saving again.
