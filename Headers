@@ -1,7 +1,1 @@
-'{
-    "body": "{\"parameters\": [
-      {\"name\":\"condition\",\"value\":\"What’s my deductible\"},
-      {\"name\":\"populationType\",\"value\":\"BTMGMT\"},
-      {\"name\":\"plan\",\"value\":\"1651\"}
-    ]}"
-  }'
+{"message":"For questions about AT&T benefits, you can call the AT&T Benefits Center at 1-877-722-0020 (for domestic calls) or +1-847-883-0866 (for international calls). Customer service representatives are available Monday through Friday, from 7 a.m. to 7 p.m. Central time.","citations":[{"source":"s3://pocbotam/20250114---SMM---ATT-West-Medical-Program-(FIMCO-Contributions)---NIN-78-74375.pdf","text":"Who How to Contact     AT&T Benefits Center Eligibility and Enrollment Vendor     877-722-0020 (domestic)     1-847-883-0866 (international)     Customer service representatives are available Monday through Friday, 7 a.m. to 7 p.m. Central time.     IVR System: Available 24 hours a day (except Sunday from 1 a.m. to noon Central time and periodically during the week for one hour between midnight and 5 a.m. for maintenance and updates).     att.com/benefitscenter"}]}
