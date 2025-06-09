@@ -12,11 +12,11 @@ log.setLevel(logging.INFO)
 S3_BUCKET = "poi"
 S3_KEY    = "20ing.csv"
 FALLBACK_LAMBDA_NAME = "Poda1"
-BEDROCK_MODEL_ID     = "your-bedrock-model-id"  # ← replace with your model ID
+BEDROCK_MODEL_ID     = "your-bedrock-model-id"  # ← replace
 
 _s3       = boto3.client('s3')
 _lambda   = boto3.client('lambda')
-_bedrock  = boto3.client('bedrock-runtime')    # or region-specific endpoint
+_bedrock  = boto3.client('bedrock-runtime')
 
 SYNONYMS = {
     r"\bco[\s\-]?pay(ment)?s?\b"          : "copayment",
@@ -109,25 +109,32 @@ def get_plan_value(raw_condition: str, plan_id: str):
     return 200, results
 
 def summarize_with_llm(composite):
-    # Build prompt
-    prompt_parts = ["I have CSV lookup results for several plans:"]
+    # 1) Build the prompt
+    lines = ["I have CSV lookup results for several plans:"]
     for c in composite:
-        prompt_parts.append(f"- Plan {c['plan']}: {json.dumps(c['data'])}")
-    prompt_parts.append("\nPlease give me a short summary in this format:")
-    prompt_parts.append("- Available options are: …")
-    prompt_parts.append("- Elected options are: …\n")
-    prompt = "\n".join(prompt_parts)
+        lines.append(f"- Plan {c['plan']}: {json.dumps(c['data'])}")
+    lines += [
+        "",
+        "Please give me a short summary in this format:",
+        "- Available options are: …",
+        "- Elected options are: …"
+    ]
+    prompt = "\n".join(lines)
 
-    # Call Bedrock
+    # 2) Wrap parameters under "parameters" and text under "inputs"
+    invocation_payload = {
+        "inputs":     prompt,
+        "parameters": {
+            "max_tokens_to_sample":  200,
+            "sampling_temperature":  0.2
+        }
+    }
+
     resp = _bedrock.invoke_model(
-        modelId    = BEDROCK_MODEL_ID,
-        contentType= "application/json",
-        accept     = "application/json",
-        body       = json.dumps({
-            "prompt":      prompt,
-            "maxTokens":   200,
-            "temperature": 0.2
-        })
+        modelId     = BEDROCK_MODEL_ID,
+        contentType = "application/json",
+        accept      = "application/json",
+        body        = json.dumps(invocation_payload)
     )
     body = json.loads(resp["body"])
     return body.get("completion", "")
@@ -159,7 +166,6 @@ def invoke_fallback(event_payload):
 def lambda_handler(event, _context):
     log.info("Received event: %s", json.dumps(event))
 
-    # Parse body
     raw = event.get("body") or event.get("prompt") or "{}"
     if isinstance(raw, (bytes, bytearray)):
         raw = raw.decode()
@@ -169,7 +175,6 @@ def lambda_handler(event, _context):
         log.exception("Failed to parse JSON body")
         return wrap_response(400, {"error": "Invalid JSON in body"})
 
-    # Extract parameters
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
@@ -190,7 +195,6 @@ def lambda_handler(event, _context):
         if not plans:     missing.append("plan")
         return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
 
-    # Perform CSV lookups
     composite = []
     for plan in plans:
         status, data = get_plan_value(condition, plan)
@@ -199,9 +203,7 @@ def lambda_handler(event, _context):
             return invoke_fallback(event)
         composite.append({"plan": plan, "data": data})
 
-    # Summarize only the CSV results with Bedrock
     summary = summarize_with_llm(composite)
-
     return wrap_response(200, {
         "rawResults": composite,
         "summary":    summary
