@@ -1,4 +1,7 @@
-{
-  "statusCode": 500,
-  "body": "{\"error\": \"list index out of range\"}"
-}
+'{
+    "body": "{\"parameters\": [
+      {\"name\":\"condition\",\"value\":\"What’s my deductible\"},
+      {\"name\":\"populationType\",\"value\":\"BTMGMT\"},
+      {\"name\":\"plan\",\"value\":\"1651\"}
+    ]}"
+  }'
