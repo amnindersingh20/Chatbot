@@ -161,7 +161,6 @@
     </div>
 
     <script>
-        // The same constMsg object you stored in sessionStorage earlier.
         const constMsg = {
             pageName: "Annual Enrollment - Medical Health Plan Election Page - AT&T",
             planId: 1000,
@@ -178,125 +177,96 @@
             ],
             enrollmentDeadlineDate: "",
             availableOptions: [
-                { optionId: 1650, optionDescription: "No Coverage", coverageAmount: "" },
-                { optionId: 1651, optionDescription: "Medical Option 1234", coverageAmount: "" },
-                { optionId: 1809, optionDescription: "Medical Option 9999", coverageAmount: "" }
+                { optionId: 1650, optionDescription: "No Coverage" },
+                { optionId: 1651, optionDescription: "Medical Option 1234" },
+                { optionId: 1809, optionDescription: "Medical Option 9999" }
             ],
-            electedOption: {
-                optionId: 3502,
-                optionDescription: "Medical Option 9999"
-            }
+            electedOption: { optionId: 3502, optionDescription: "Medical Option 9999" }
         };
-
-        // Store constMsg in sessionStorage
         sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
-
-        // Retrieve constMsg from sessionStorage and parse it
         const constMsg2 = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
-
         const messageRegistry = { suggested: new Set(), questions: new Set() };
-
         window.addEventListener('message', event => {
             const { questions, suggested_message } = event.data;
             const chatHistory = document.getElementById('chat-history');
-            const cleanSuggested = suggested_message.trim();
-            const cleanQuestions = questions.map(q => q.trim());
-
-            if (cleanSuggested && !messageRegistry.suggested.has(cleanSuggested)) {
-                const suggestedDiv = document.createElement('div');
-                suggestedDiv.className = 'suggested_messagep';
-                suggestedDiv.textContent = cleanSuggested;
-                chatHistory.appendChild(suggestedDiv);
-                messageRegistry.suggested.add(cleanSuggested);
+            if (suggested_message) {
+                const div = document.createElement('div');
+                div.className = 'suggested_messagep';
+                div.textContent = suggested_message.trim();
+                chatHistory.appendChild(div);
             }
-
-            cleanQuestions.forEach(question => {
-                if (!messageRegistry.questions.has(question)) {
+            questions.forEach(q => {
+                if (!messageRegistry.questions.has(q)) {
                     const tile = document.createElement('div');
                     tile.className = 'question-tile';
-                    tile.textContent = question;
-                    tile.onclick = () => sendQuestion(question);
+                    tile.textContent = q.trim();
+                    tile.onclick = () => sendQuestion(q);
                     chatHistory.appendChild(tile);
-                    messageRegistry.questions.add(question);
+                    messageRegistry.questions.add(q);
                 }
             });
-
             chatHistory.scrollTop = chatHistory.scrollHeight;
         });
-
-        // Build plan ID → description map
         const optionMap = {};
-        if (Array.isArray(constMsg2.availableOptions)) {
-            constMsg2.availableOptions.forEach(o => { optionMap[String(o.optionId)] = o.optionDescription; });
-        }
-        if (constMsg2.electedOption) {
-            optionMap[String(constMsg2.electedOption.optionId)] = constMsg2.electedOption.optionDescription;
-        }
-
+        constMsg2.availableOptions.forEach(o => optionMap[o.optionId] = o.optionDescription);
+        if (constMsg2.electedOption) optionMap[constMsg2.electedOption.optionId] = constMsg2.electedOption.optionDescription;
         const availablePlanIds = constMsg2.availableOptions.map(o => String(o.optionId));
         const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
-
         const API_URL = 'https://0hph.execute-api.us-east-1.amazonaws.com/Dev/chat';
 
-        function handleEnterKey(evt) { if (evt.key==='Enter' && !evt.shiftKey) { evt.preventDefault(); sendMessage(); }}
-        function sendQuestion(q) { document.getElementById('message-input').value = q; sendMessage(); }
-        function appendMessage(msg,isUser){
-            const div=document.createElement('div');
-            div.className=`message ${isUser?'user-message':'bot-message'}`;
-            const bubble=document.createElement('div'); bubble.className='message-bubble'; bubble.textContent=msg;
+        function handleEnterKey(e) { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }}
+        function sendQuestion(q) { document.getElementById('message-input').value=q; sendMessage(); }
+        function appendMessage(msg,isUser) {
+            const div = document.createElement('div');
+            div.className = `message ${isUser?'user-message':'bot-message'}`;
+            const bubble = document.createElement('div'); bubble.className='message-bubble'; bubble.textContent=msg;
             div.appendChild(bubble); document.getElementById('chat-history').appendChild(div);
             document.getElementById('chat-history').scrollTop=document.getElementById('chat-history').scrollHeight;
         }
 
         async function sendMessage() {
-            const inputEl=document.getElementById('message-input');
-            const text=inputEl.value.trim(); if(!text) return; inputEl.value='';
-            document.getElementById('error-message').textContent='';
-            appendMessage(text,true);
+            const inputEl = document.getElementById('message-input');
+            const text = inputEl.value.trim(); if (!text) return; inputEl.value='';
+            document.getElementById('error-message').textContent=''; appendMessage(text,true);
             document.getElementById('typing-indicator').style.display='block';
 
-            // Build payload parameters
-            const params=[
+            const params = [
                 { name: 'condition', value: text },
                 { name: 'populationType', value: constMsg2.populationType }
             ];
-            // Add all plans
-            availablePlanIds.forEach(id => params.push({ name:'plan', value:id }));
-            if(electedPlanId) params.push({ name:'plan', value:electedPlanId });
+            availablePlanIds.forEach(id => params.push({ name: 'plan', value: id }));
+            if(electedPlanId) params.push({ name: 'plan', value: electedPlanId });
 
             try {
-                const res=await fetch(API_URL,{
-                    method:'POST', headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({ parameters: params })
-                });
-                if(!res.ok) throw new Error(`HTTP ${res.status}`);
+                const res = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({parameters:params}) });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                let data = await res.json();
+                if (data.body && typeof data.body==='string') data = JSON.parse(data.body);
 
-                let data=await res.json();
-                if(data.body && typeof data.body==='string'){
-                    data=JSON.parse(data.body);
-                }
-                let reply='';
-                if(Array.isArray(data)){
-                    reply=data.map(item=>{
-                        if(item.data) {
-                            return item.data.map(d=>{
-                                const desc=optionMap[String(d.plan)]||d.plan;
+                let reply = '';
+                if (data && typeof data.message==='string') {
+                    reply = data.message;
+                } else if (Array.isArray(data)) {
+                    reply = data.map(item => {
+                        if (item.data) {
+                            return item.data.map(d => {
+                                const desc = optionMap[d.plan] || d.plan;
                                 return `For "${d.condition}" under "${desc}", the value is: ${d.value}`;
                             }).join('\n');
                         }
-                        if(item.value!==undefined){
-                            const desc=optionMap[String(item.plan)]||item.plan;
-                            return `For \"${text}\" under \"${desc}\", the value is: ${item.value}`;
+                        if (item.value!==undefined) {
+                            const desc = optionMap[item.plan] || item.plan;
+                            return `For "${text}" under "${desc}", the value is: ${item.value}`;
                         }
-                        const desc=optionMap[String(item.plan)]||item.plan;
-                        return `For \"${text}\" under \"${desc}\", error: ${item.error}`;
+                        const desc = optionMap[item.plan] || item.plan;
+                        return `For "${text}" under "${desc}", error: ${item.error}`;
                     }).join('\n\n');
                 } else {
-                    reply=JSON.stringify(data);
+                    reply = 'Sorry, I got an unexpected response.';
                 }
                 appendMessage(reply,false);
-            } catch(e){
-                document.getElementById('error-message').textContent=`Error: ${e.message}`;
+            } catch(err) {
+                document.getElementById('error-message').textContent = `Error: ${err.message}`;
             } finally {
                 document.getElementById('typing-indicator').style.display='none';
             }
