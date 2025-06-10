@@ -181,7 +181,7 @@
                 { optionId: 1651, optionDescription: "Medical Option 1234" },
                 { optionId: 1809, optionDescription: "Medical Option 9999" }
             ],
-            electedOption: { optionId: 3502, optionDescription: "Medical Option 9999" }
+            electedOption: { optionId: 9424, optionDescription: "Medical Option 9999" }
         };
         sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
         const constMsg2 = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
@@ -212,7 +212,7 @@
         if (constMsg2.electedOption) optionMap[constMsg2.electedOption.optionId] = constMsg2.electedOption.optionDescription;
         const availablePlanIds = constMsg2.availableOptions.map(o => String(o.optionId));
         const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
-        const API_URL = 'https://0hph.execute-api.us-east-1.amazonaws.com/Dev/chat';
+        const API_URL = 'https://0hh.execute-api.us-east-11.amazonaws.com/Dev/chat';
 
         function handleEnterKey(e) { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }}
         function sendQuestion(q) { document.getElementById('message-input').value=q; sendMessage(); }
