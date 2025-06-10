@@ -1,14 +1,11 @@
-[ERROR]	2025-06-09T13:33:19.434Z	7f4b47b3-13b5-47b7-8bd0-76efc39d6b50	LLM summarization failed
-Traceback (most recent call last):
-  File "/var/task/lambda_function.py", line 132, in summarize_with_llm
-    resp = _bedrock.invoke_model(
-        modelId=BEDROCK_MODEL_ID,
-    ...<6 lines>...
-        accept="application/json"
-    )
-  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 569, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 1023, in _make_api_call
-    raise error_class(parsed_response, operation_name)
-botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: "claude-3-5-sonnet-20240620" is not supported on this API. Please use the Messages API instead.
+f"""
+You are a friendly benefits advisor having a one-on-one chat with an employee who just asked about their plan coverage. 
+Based on the lookup results below, craft a warm, concise answer—just like an HR specialist would:
+  
+  {json.dumps(composite_result, indent=2)}
+  
+• Keep it short and to the point (imagine you’re texting them back).  
+• Use “you” and “your” to make it personal.  
+• Highlight only the most relevant details (don’t repeat every number).  
+• Offer to follow up if they have more questions.
+"""
