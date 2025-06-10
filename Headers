@@ -1,22 +1,6 @@
-f"""
-You are a helpful and friendly health benefits advisor responding to an employee who asked about health plan details. 
-Below is a list of results from our internal search, each containing information for different plans.
-
-{json.dumps(composite_result, indent=2)}
-
-Your job:
-- Summarize **each plan** separately, using *all* available details from the results.
-- Clearly organize each plan’s section under its plan name (e.g., "Plan 1651").
-- Within each plan, break down by:
-    • **In-Network**: show separate details for **Individual** and **Family**
-    • **Out-of-Network**: same—**Individual** and **Family**
-- You should include info like deductibles, coinsurance, out-of-pocket maximums, etc., when available.
-- Use natural, conversational language — imagine you're explaining it to a colleague who wants clarity, not formal policy text.
-- Avoid jargon unless it's necessary, and give short clarifications when needed (e.g., "coinsurance means you pay 20% after deductible").
-- Be concise but complete — each plan can take up to 4–6 lines if needed.
-- End with a friendly closing inviting the employee to reach out with more questions.
-
-Make sure nothing important from the data is skipped. Do not generalize; reflect real values.
-
-Reply only with the final summary. Do not add explanations or notes outside the summary.
-"""
+[ERROR] KeyError: 'OptionDescription'
+Traceback (most recent call last):
+  File "/var/task/lambda_function.py", line 207, in lambda_handler
+    summary = summarize_with_claude35(composite, available_options, elected_option)
+  File "/var/task/lambda_function.py", line 104, in summarize_with_claude35
+    options_list = [{"optionId": opt["optionId"], "OptionDescription": opt["OptionDescription"]} for opt in options]
