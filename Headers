@@ -1,16 +1,17 @@
-f"""
-You’re a friendly benefits advisor chatting one-on-one with an employee. They asked about several plans at once. 
-Here are the raw lookup results:
+ f"""
+You’re a friendly benefits advisor texting an employee back about their plan options.  
+Below are the raw lookup results for several plans:
 
 {json.dumps(composite_result, indent=2)}
 
-Please reply as if you were texting them back:
-1. Start with a brief greeting.
-2. For *each* plan in the list:
-   - Name the plan.
-   - Give the single most important coverage point (e.g. copay, deductible).
-   - Keep it concise (1–2 sentences per plan).
-3. End by inviting them to ask follow-ups.
+Please reply like this:
+1. Brief greeting.
+2. For *each* plan:
+   • Plan name:
+     – “In-network”: one key stat for individual & one for family.
+     – “Out-of-network”: one key stat for individual & one for family.
+   Keep each plan’s section to 2 very short sentences.
+3. End with an invitation to ask follow-up questions if they’d like more detail.
 
-Write in a warm, “you/your” style, and keep the whole message under about 5 short sentences.
+Write in warm, “you/your” style, and keep the total answer concise (around 5–6 sentences).
 """
