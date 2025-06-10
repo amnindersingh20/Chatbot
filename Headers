@@ -1,21 +1,87 @@
-f"""
-You are a helpful and friendly health benefits advisor. Your task is to present a detailed breakdown of health plan options.
-
-Here are the available options for the employee:
-{json.dumps(options_list, indent=2)}
-
-The employee selected this option:
-{elected_desc}
-
-Here is the detailed data retrieved for each plan:
-{json.dumps(composite_result, indent=2)}
-
-Your job is to create a clear, detailed comparison. Follow these instructions exactly:
-1.  Create a separate section for each health plan option using its full description (e.g., "Gold PPO Plan").
-2.  Clearly label the section for the plan the employee selected.
-3.  Within each plan's section, you **must** list every data point provided in the retrieved data. Do not summarize or omit any details.
-4.  Organize the details under "In-Network" and "Out-of-Network" subheadings.
-5.  Use clear, reader-friendly language. For example, instead of "in_network_deductible", write "In-Network Deductible".
-6.  Do not include the raw plan IDs in parentheses.
-7.  Conclude your response by asking if the user has more questions.
-"""
+{
+    "message": "Great! Let's go through your health benefit options, focusing on the plan you've chosen and the other available choices.\n\nElected Option: Medical Option 9999\n\nThis is the plan you've selected. Here's what it offers:\n\nIn-Network:\n- Individual Deductible: $1,800\n- Family Deductible: $3,600\n- These deductibles are combined with mental health/substance use disorder, prescription drugs, and CarePlus services.\n\nOut-of-Network:\n- Individual Deductible: $5,400\n- Family Deductible: $10,800\n- These deductibles are also combined with mental health/substance use disorder, prescription drugs, and CarePlus services.\n\nOther Available Options:\n\nNo Coverage\nThis option means you would not have health insurance coverage through this plan.\n\nMedical Option 1234\nThis plan offers:\n\nIn-Network:\n- Individual Deductible: $1,000 (capped at this amount)\n- Family Deductible: $2,000\n- These deductibles are combined with mental health/substance use disorder services.\n\nOut-of-Network:\n- Individual Deductible: $3,000 (capped at this amount)\n- Family Deductible: $6,000\n- These deductibles are also combined with mental health/substance use disorder services.\n\nIt's important to note that the plan you've chosen (Medical Option 9999) has higher deductibles than Medical Option 1234, especially for out-of-network services. However, your chosen plan might have other benefits that make it more suitable for your needs.\n\nDo you have any questions about these options or would you like more information about specific aspects of your chosen plan? I'm here to help you understand your coverage and make the most of your benefits.",
+    "availableOptions": [
+        {
+            "optionId": 1650,
+            "optionDescription": "No Coverage"
+        },
+        {
+            "optionId": 1651,
+            "optionDescription": "Medical Option 1234"
+        },
+        {
+            "optionId": 1809,
+            "optionDescription": "Medical Option 9999"
+        }
+    ],
+    "electedOption": {
+        "optionId": 9424,
+        "optionDescription": "Medical Option 9999"
+    },
+    "results": [
+        {
+            "optionId": "1650",
+            "optionDescription": "No Coverage",
+            "data": [
+                {
+                    "condition": "annual deductible - network",
+                    "plan": "1650",
+                    "value": "$1,800 Individual; $3,600 Family; combined with MH/SUD, Rx and CarePlus"
+                },
+                {
+                    "condition": "annual deductible - out-of-network",
+                    "plan": "1650",
+                    "value": "$5,400 Individual; $10,800 Family; combined with MH/SUD, Rx and CarePlus"
+                }
+            ]
+        },
+        {
+            "optionId": "1651",
+            "optionDescription": "Medical Option 1234",
+            "data": [
+                {
+                    "condition": "annual deductible - network",
+                    "plan": "1651",
+                    "value": "$1,000 Individual; $2,000 Family; combined with MH/SUD; capped at $1,000 per Individual"
+                },
+                {
+                    "condition": "annual deductible - out-of-network",
+                    "plan": "1651",
+                    "value": "$3,000 Individual; $6,000 Family; combined with MH/SUD; capped at $3,000 per Individual"
+                }
+            ]
+        },
+        {
+            "optionId": "1809",
+            "optionDescription": "Medical Option 9999",
+            "data": [
+                {
+                    "condition": "annual deductible - network",
+                    "plan": "1809",
+                    "value": "$1,800 Individual; $3,600 Family; combined with MH/SUD, Rx and CarePlus"
+                },
+                {
+                    "condition": "annual deductible - out-of-network",
+                    "plan": "1809",
+                    "value": "$5,400 Individual; $10,800 Family; combined with MH/SUD, Rx and CarePlus"
+                }
+            ]
+        },
+        {
+            "optionId": "9424",
+            "optionDescription": "Medical Option 9999",
+            "data": [
+                {
+                    "condition": "annual deductible - network",
+                    "plan": "9424",
+                    "value": "$1,000 Ind; $2,000 Ind+Spouse/Partner; $2,000 Ind+Child(ren); $2,000 Family; combined with MH/SUD and Rx; You pay 100% of the chrg for Cov. Srvs, excl Prev Care, before you meet AD"
+                },
+                {
+                    "condition": "annual deductible - out-of-network",
+                    "plan": "9424",
+                    "value": "Not Applicable"
+                }
+            ]
+        }
+    ]
+}
