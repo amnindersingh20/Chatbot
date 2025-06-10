@@ -214,37 +214,74 @@
         const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
         const API_URL = 'https://0hh.execute-api.us-east-11.amazonaws.com/Dev/chat';
 
-        function handleEnterKey(e) { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }}
-        function sendQuestion(q) { document.getElementById('message-input').value=q; sendMessage(); }
-        function appendMessage(msg,isUser) {
+        function handleEnterKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+        function sendQuestion(q) {
+            document.getElementById('message-input').value = q;
+            sendMessage();
+        }
+        function appendMessage(msg, isUser) {
             const div = document.createElement('div');
-            div.className = `message ${isUser?'user-message':'bot-message'}`;
-            const bubble = document.createElement('div'); bubble.className='message-bubble'; bubble.textContent=msg;
-            div.appendChild(bubble); document.getElementById('chat-history').appendChild(div);
-            document.getElementById('chat-history').scrollTop=document.getElementById('chat-history').scrollHeight;
+            div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = msg;
+            div.appendChild(bubble);
+            document.getElementById('chat-history').appendChild(div);
+            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
         }
 
         async function sendMessage() {
             const inputEl = document.getElementById('message-input');
-            const text = inputEl.value.trim(); if (!text) return; inputEl.value='';
-            document.getElementById('error-message').textContent=''; appendMessage(text,true);
-            document.getElementById('typing-indicator').style.display='block';
+            const text = inputEl.value.trim();
+            if (!text) return;
+            inputEl.value = '';
+            document.getElementById('error-message').textContent = '';
+            appendMessage(text, true);
+            document.getElementById('typing-indicator').style.display = 'block';
 
+            // Build parameters
             const params = [
                 { name: 'condition', value: text },
                 { name: 'populationType', value: constMsg2.populationType }
             ];
             availablePlanIds.forEach(id => params.push({ name: 'plan', value: id }));
-            if(electedPlanId) params.push({ name: 'plan', value: electedPlanId });
+            if (electedPlanId) params.push({ name: 'plan', value: electedPlanId });
+
+            // Full payload with all constMsg2 fields
+            const payload = {
+                parameters: params,
+                pageName: constMsg2.pageName,
+                planId: constMsg2.planId,
+                populationType: constMsg2.populationType,
+                customText1: constMsg2.customText1,
+                customText2: constMsg2.customText2,
+                customText3: constMsg2.customText3,
+                customText4: constMsg2.customText4,
+                cddList: constMsg2.cddList,
+                enrollmentDeadlineDate: constMsg2.enrollmentDeadlineDate,
+                availableOptions: constMsg2.availableOptions,
+                electedOption: constMsg2.electedOption
+            };
 
             try {
-                const res = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({parameters:params}) });
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 let data = await res.json();
-                if (data.body && typeof data.body==='string') data = JSON.parse(data.body);
+                if (data.body && typeof data.body === 'string') {
+                    data = JSON.parse(data.body);
+                }
 
                 let reply = '';
-                if (data && typeof data.message==='string') {
+                if (data && typeof data.message === 'string') {
                     reply = data.message;
                 } else if (Array.isArray(data)) {
                     reply = data.map(item => {
@@ -254,7 +291,7 @@
                                 return `For "${d.condition}" under "${desc}", the value is: ${d.value}`;
                             }).join('\n');
                         }
-                        if (item.value!==undefined) {
+                        if (item.value !== undefined) {
                             const desc = optionMap[item.plan] || item.plan;
                             return `For "${text}" under "${desc}", the value is: ${item.value}`;
                         }
@@ -264,11 +301,11 @@
                 } else {
                     reply = 'Sorry, I got an unexpected response.';
                 }
-                appendMessage(reply,false);
-            } catch(err) {
+                appendMessage(reply, false);
+            } catch (err) {
                 document.getElementById('error-message').textContent = `Error: ${err.message}`;
             } finally {
-                document.getElementById('typing-indicator').style.display='none';
+                document.getElementById('typing-indicator').style.display = 'none';
             }
         }
     </script>
