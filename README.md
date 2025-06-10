@@ -112,20 +112,23 @@ def summarize_with_claude35(composite_result: list, options: list, elected: dict
         })
     elected_desc = elected.get("optionDescription") if isinstance(elected, dict) else None
 
+    # Prompt instructs using 'available options' and omit raw plan IDs in parentheses
     prompt = f"""
 You are a helpful and friendly health benefits advisor.
-Available plan options:
+Here are the available options:
 {json.dumps(options_list, indent=2)}
-Employee elected option: {json.dumps(elected, indent=2)}
+The employee selected: {elected_desc}.
+
 Retrieved plan data:
 {json.dumps(composite_result, indent=2)}
 
 Your job:
-- Summarize each plan separately, labeling sections by its optionDescription.
-- Clearly indicate the elected plan and alternatives.
-- Within each plan, separate In-Network (Individual, Family) and Out-of-Network (Individual, Family).
+- Summarize each available option as its own section, using its optionDescription.
+- Clearly mark which option was selected and which are other available options.
+- Within each section, organize In-Network (Individual, Family) and Out-of-Network (Individual, Family).
 - Include details like deductibles, coinsurance, out-of-pocket maximums, etc.
-- Use conversational language and end with a friendly closing inviting questions.
+- Do not display plan IDs in parentheses after the description.
+- Use conversational, reader-friendly language and end with a call for further questions.
 """
     try:
         response = _bedrock.invoke_model(
@@ -201,7 +204,6 @@ def lambda_handler(event, _context):
         if not plans: missing.append("plan")
         return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
 
-    # Map plan IDs to descriptions
     plan_desc_map = {str(opt.get("optionId")): opt.get("optionDescription") for opt in available_options}
     if isinstance(elected_option, dict):
         plan_desc_map[str(elected_option.get("optionId"))] = elected_option.get("optionDescription")
