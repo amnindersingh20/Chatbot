@@ -10,9 +10,9 @@ log = logging.getLogger()
 log.setLevel(logging.INFO)
 
 S3_BUCKET = "poai"
-S3_KEY = "2025ng.csv"
+S3_KEY = "2ting.csv"
 FALLBACK_LAMBDA_NAME = "Poda1"
-BEDROCK_MODEL_ID = "anthropic.claude-3-5-v1:0"
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
 _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
@@ -102,14 +102,26 @@ def get_plan_value(raw_condition: str, plan_id: str):
 def summarize_with_claude35(composite_result: list) -> str:
     try:
         user_prompt = f"""
-Please summarize this CSV lookup result for a user asking about benefits coverage:
+You are a helpful and friendly health benefits advisor responding to an employee who asked about health plan details. 
+Below is a list of results from our internal search, each containing information for different plans.
 
 {json.dumps(composite_result, indent=2)}
 
-Structure the summary like:
-- It mentions that the response for the available options is: ...
-- And the response for the elected options is: ...
-Keep the response concise and helpful.
+Your job:
+- Summarize **each plan** separately, using *all* available details from the results.
+- Clearly organize each plan’s section under its plan name (e.g., "Plan 1651").
+- Within each plan, break down by:
+    • **In-Network**: show separate details for **Individual** and **Family**
+    • **Out-of-Network**: same—**Individual** and **Family**
+- You should include info like deductibles, coinsurance, out-of-pocket maximums, etc., when available.
+- Use natural, conversational language — imagine you're explaining it to a colleague who wants clarity, not formal policy text.
+- Avoid jargon unless it's necessary, and give short clarifications when needed (e.g., "coinsurance means you pay 20% after deductible").
+- Be concise but complete — each plan can take up to 4–6 lines if needed.
+- End with a friendly closing inviting the employee to reach out with more questions.
+
+Make sure nothing important from the data is skipped. Do not generalize; reflect real values.
+
+Reply only with the final summary. Do not add explanations or notes outside the summary.
 """
         response = _bedrock.invoke_model(
             modelId=BEDROCK_MODEL_ID,
@@ -123,7 +135,7 @@ Keep the response concise and helpful.
                         "content": user_prompt
                     }
                 ],
-                "max_tokens": 200,
+                "max_tokens": 600,
                 "temperature": 0.5
             })
         )
@@ -197,6 +209,6 @@ def lambda_handler(event, _context):
     summary = summarize_with_claude35(composite)
 
     return wrap_response(200, {
-        "summary": summary,
+        "message": summary,
         "results": composite
     })
