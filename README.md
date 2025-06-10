@@ -52,10 +52,12 @@ def load_dataframe():
         if 'Data Point Name' not in df.columns:
             raise KeyError("Missing 'Data Point Name' column")
 
-        df['Data Point Name'] = df['Data Point Name'].astype(str) \
-            .str.replace('–', '-', regex=False)\
-            .str.replace('\u200b', '', regex=False)\
+        df['Data Point Name'] = (
+            df['Data Point Name'].astype(str)
+            .str.replace('–', '-', regex=False)
+            .str.replace('\u200b', '', regex=False)
             .str.strip().str.lower()
+        )
         df['normalized_name'] = df['Data Point Name'].apply(normalize)
         return df
 
@@ -100,23 +102,30 @@ def get_plan_value(raw_condition: str, plan_id: str):
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
     return 200, results
 
-def summarize_with_claude35(composite_result: list, options: list, elected: str) -> str:
-    # Build context with available options and the elected choice
-    options_list = [{"planId": opt["planId"], "OptionDescription": opt["OptionDescription"]} for opt in options]
+def summarize_with_claude35(composite_result: list, options: list, elected: dict) -> str:
+    # Build options list with correct key casing
+    options_list = []
+    for opt in options:
+        options_list.append({
+            "optionId": opt.get("optionId"),
+            "optionDescription": opt.get("optionDescription")
+        })
+    elected_desc = elected.get("optionDescription") if isinstance(elected, dict) else None
+
     prompt = f"""
 You are a helpful and friendly health benefits advisor.
-We have the following available plan options:
+Available plan options:
 {json.dumps(options_list, indent=2)}
-The employee has elected option: {elected}.
-Below is the list of retrieved plan data:
+Employee elected option: {json.dumps(elected, indent=2)}
+Retrieved plan data:
 {json.dumps(composite_result, indent=2)}
 
 Your job:
-- Summarize each plan separately, labeling sections by its OptionDescription.
-- Clearly show which plan is elected and which are alternatives.
-- Within each plan section, break down In-Network (Individual, Family) and Out-of-Network (Individual, Family).
+- Summarize each plan separately, labeling sections by its optionDescription.
+- Clearly indicate the elected plan and alternatives.
+- Within each plan, separate In-Network (Individual, Family) and Out-of-Network (Individual, Family).
 - Include details like deductibles, coinsurance, out-of-pocket maximums, etc.
-- Use natural, conversational language. End with a friendly closing inviting more questions.
+- Use conversational language and end with a friendly closing inviting questions.
 """
     try:
         response = _bedrock.invoke_model(
@@ -171,12 +180,10 @@ def lambda_handler(event, _context):
         log.exception("Failed to parse JSON body")
         return wrap_response(400, {"error": "Invalid JSON in body"})
 
-    # Extract parameters
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
 
-    # Extract condition, plan IDs, options, and elected choice
     condition = None
     plans = []
     for p in params:
@@ -195,7 +202,9 @@ def lambda_handler(event, _context):
         return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
 
     # Map plan IDs to descriptions
-    plan_desc_map = {opt["planId"]: opt.get("OptionDescription", opt["planId"]) for opt in available_options}
+    plan_desc_map = {str(opt.get("optionId")): opt.get("optionDescription") for opt in available_options}
+    if isinstance(elected_option, dict):
+        plan_desc_map[str(elected_option.get("optionId"))] = elected_option.get("optionDescription")
 
     composite = []
     for plan in plans:
@@ -203,12 +212,11 @@ def lambda_handler(event, _context):
         if status != 200:
             return invoke_fallback(event)
         composite.append({
-            "planId": plan,
-            "OptionDescription": plan_desc_map.get(plan, plan),
+            "optionId": plan,
+            "optionDescription": plan_desc_map.get(plan, plan),
             "data": data
         })
 
-    # Generate summary using Claude
     summary = summarize_with_claude35(composite, available_options, elected_option)
 
     return wrap_response(200, {
