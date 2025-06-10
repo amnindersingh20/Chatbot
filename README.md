@@ -52,9 +52,10 @@ def load_dataframe():
         if 'Data Point Name' not in df.columns:
             raise KeyError("Missing 'Data Point Name' column")
 
-        df['Data Point Name'] = df['Data Point Name'].astype(str).str.replace('–', '-', regex=False)\
-                                                          .str.replace('\u200b', '', regex=False)\
-                                                          .str.strip().str.lower()
+        df['Data Point Name'] = df['Data Point Name'].astype(str) \
+            .str.replace('–', '-', regex=False)\
+            .str.replace('\u200b', '', regex=False)\
+            .str.strip().str.lower()
         df['normalized_name'] = df['Data Point Name'].apply(normalize)
         return df
 
@@ -99,42 +100,32 @@ def get_plan_value(raw_condition: str, plan_id: str):
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
     return 200, results
 
-def summarize_with_claude35(composite_result: list) -> str:
-    try:
-        user_prompt = f"""
-You are a helpful and friendly health benefits advisor responding to an employee who asked about health plan details. 
-Below is a list of results from our internal search, each containing information for different plans.
-
+def summarize_with_claude35(composite_result: list, options: list, elected: str) -> str:
+    # Build context with available options and the elected choice
+    options_list = [{"planId": opt["planId"], "OptionDescription": opt["OptionDescription"]} for opt in options]
+    prompt = f"""
+You are a helpful and friendly health benefits advisor.
+We have the following available plan options:
+{json.dumps(options_list, indent=2)}
+The employee has elected option: {elected}.
+Below is the list of retrieved plan data:
 {json.dumps(composite_result, indent=2)}
 
 Your job:
-- Summarize **each plan** separately, using *all* available details from the results.
-- Clearly organize each plan’s section under its plan name (e.g., "Plan 1651").
-- Within each plan, break down by:
-    • **In-Network**: show separate details for **Individual** and **Family**
-    • **Out-of-Network**: same—**Individual** and **Family**
-- You should include info like deductibles, coinsurance, out-of-pocket maximums, etc., when available.
-- Use natural, conversational language — imagine you're explaining it to a colleague who wants clarity, not formal policy text.
-- Avoid jargon unless it's necessary, and give short clarifications when needed (e.g., "coinsurance means you pay 20% after deductible").
-- Be concise but complete — each plan can take up to 4–6 lines if needed.
-- End with a friendly closing inviting the employee to reach out with more questions.
-
-Make sure nothing important from the data is skipped. Do not generalize; reflect real values.
-
-Reply only with the final summary. Do not add explanations or notes outside the summary.
+- Summarize each plan separately, labeling sections by its OptionDescription.
+- Clearly show which plan is elected and which are alternatives.
+- Within each plan section, break down In-Network (Individual, Family) and Out-of-Network (Individual, Family).
+- Include details like deductibles, coinsurance, out-of-pocket maximums, etc.
+- Use natural, conversational language. End with a friendly closing inviting more questions.
 """
+    try:
         response = _bedrock.invoke_model(
             modelId=BEDROCK_MODEL_ID,
             contentType="application/json",
             accept="application/json",
             body=json.dumps({
                 "anthropic_version": "bedrock-2023-05-31",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": user_prompt
-                    }
-                ],
+                "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 600,
                 "temperature": 0.5
             })
@@ -180,11 +171,12 @@ def lambda_handler(event, _context):
         log.exception("Failed to parse JSON body")
         return wrap_response(400, {"error": "Invalid JSON in body"})
 
+    # Extract parameters
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
-    log.info("Extracted parameters: %s", params)
 
+    # Extract condition, plan IDs, options, and elected choice
     condition = None
     plans = []
     for p in params:
@@ -193,22 +185,35 @@ def lambda_handler(event, _context):
         elif p.get("name") == "plan":
             plans.append(str(p.get("value")).strip())
 
+    available_options = payload.get("availableOptions", [])
+    elected_option = payload.get("electedOption")
+
     if not condition or not plans:
         missing = []
         if not condition: missing.append("condition")
         if not plans: missing.append("plan")
         return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
 
+    # Map plan IDs to descriptions
+    plan_desc_map = {opt["planId"]: opt.get("OptionDescription", opt["planId"]) for opt in available_options}
+
     composite = []
     for plan in plans:
         status, data = get_plan_value(condition, plan)
         if status != 200:
             return invoke_fallback(event)
-        composite.append({"plan": plan, "data": data})
+        composite.append({
+            "planId": plan,
+            "OptionDescription": plan_desc_map.get(plan, plan),
+            "data": data
+        })
 
-    summary = summarize_with_claude35(composite)
+    # Generate summary using Claude
+    summary = summarize_with_claude35(composite, available_options, elected_option)
 
     return wrap_response(200, {
         "message": summary,
+        "availableOptions": available_options,
+        "electedOption": elected_option,
         "results": composite
     })
