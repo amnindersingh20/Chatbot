@@ -9,10 +9,10 @@ import pandas as pd
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-S3_BUCKET = "poi"
-S3_KEY = "20ing.csv"
+S3_BUCKET = "poai"
+S3_KEY = "2025ng.csv"
 FALLBACK_LAMBDA_NAME = "Poda1"
-BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620"
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-v1:0"
 
 _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
@@ -116,13 +116,14 @@ Keep the response concise and helpful.
             contentType="application/json",
             accept="application/json",
             body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
                 "messages": [
                     {
                         "role": "user",
                         "content": user_prompt
                     }
                 ],
-                "max_tokens": 512,
+                "max_tokens": 200,
                 "temperature": 0.5
             })
         )
