@@ -212,7 +212,7 @@
         if (constMsg2.electedOption) optionMap[constMsg2.electedOption.optionId] = constMsg2.electedOption.optionDescription;
         const availablePlanIds = constMsg2.availableOptions.map(o => String(o.optionId));
         const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
-        const API_URL = 'https://0hh.execute-api.us-east-11.amazonaws.com/Dev/chat';
+        const API_URL = 'https://0hh.execute-api.us-east-1.amazonaws.com/Dev/chat';
 
         function handleEnterKey(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -256,13 +256,7 @@
             const payload = {
                 parameters: params,
                 pageName: constMsg2.pageName,
-                planId: constMsg2.planId,
                 populationType: constMsg2.populationType,
-                customText1: constMsg2.customText1,
-                customText2: constMsg2.customText2,
-                customText3: constMsg2.customText3,
-                customText4: constMsg2.customText4,
-                cddList: constMsg2.cddList,
                 enrollmentDeadlineDate: constMsg2.enrollmentDeadlineDate,
                 availableOptions: constMsg2.availableOptions,
                 electedOption: constMsg2.electedOption
