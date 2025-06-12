@@ -1,59 +1,53 @@
-const constMsg={
-		"pageName": "Annual Enrollment - Medical - AT&T",
-		"planId": "1000",
-		"populationType":"ATMGMT",
-		"customText1":"<p><i><b>Provider disclaimer:</b> Note: If you or your dependent(s) use a provider outside of your local area, and they are listed as out-of-network here, you can check with that carrier to confirm their network status in that plan option.</i></p><p>Choose the right medical plan option for you!</p><p>To receive a personalized review of your medical plan options, consider using resources available to you, like the Medical Plan Option Evaluator located on your Annual Enrollment home page.</p><p>To create a list of in-network doctors select <b>Find a Doctor.</b></p><p>   <ol><li>Use <b>Find Doctors</b> button to search and save your physicians (select 'Add Favorites ' on the search site).</li><li>Use the drop down to assign the in-network physicians to you and your dependents.</li></ol>",
-		"customText2":"",
-		"customText3":"",
-		"customText4":"",
-		"cddList":[], 		
-		"enrollmentDeadlineDate":"",
-		"availableOptions":[
-		{
-			"optionId":9960,
-			"optionDescription":"No Coverage",
-			"coverageAmount":""
-		},
-		{
-			"optionId":1284,
-			"optionDescription":"Low Deductible Select",
-			"coverageAmount":""
-		},
-		{
-			"optionId":14512,
-			"optionDescription":"Kaiser S Cal High Ded Plan",
-			"coverageAmount":""
-		},
-		{
-			"optionId":1276,
-			"optionDescription":"High Deductible Select",
-			"coverageAmount":""
-		},
-		{
-			"optionId":1273,
-			"optionDescription":"High Deductible Broad",
-			"coverageAmount":""
-		},
-		{
-			"optionId":11020,
-			"optionDescription":"Kaiser South California Plan",
-			"coverageAmount":""
-		}
-		],
-		"electedOption":	{
-			"optionId":1284,
-			"optionDescription":"Low Deductible Select"
-		},
-		"currentCoverageOption": {
-			"currentCoverageOptionID":"",
-			"currentCoverageDescription":""
-		},
-        "minimumContributionAmount":"",
-		"maximumContributionAmount":"",
-        "simpAEReviseStatus":"",        
-        "simplifiedEnrollmentEligible":"eligible",
-		"enrollmentFollowUps": {
-			"title":"",
-			"body":""
-		}
+{
+  "body": {
+    "parameters": [
+      { "name": "condition", "value": "deductible" },
+      { "name": "plan",      "value": "9960"      },
+      { "name": "plan",      "value": "1284"      },
+      { "name": "plan",      "value": "14512"     },
+      { "name": "plan",      "value": "1276"      },
+      { "name": "plan",      "value": "1273"      },
+      { "name": "plan",      "value": "11020"     },
+      { "name": "plan",      "value": "1284"      }
+    ],
+    "pageName":             "Annual Enrollment - Medical - AT&T",
+    "populationType":       "ATMGMT",
+    "enrollmentDeadlineDate":"",
+    "availableOptions": [
+      {
+        "optionId": 9960,
+        "optionDescription": "No Coverage",
+        "coverageAmount": ""
+      },
+      {
+        "optionId": 1284,
+        "optionDescription": "Low Deductible Select",
+        "coverageAmount": ""
+      },
+      {
+        "optionId": 14512,
+        "optionDescription": "Kaiser S Cal High Ded Plan",
+        "coverageAmount": ""
+      },
+      {
+        "optionId": 1276,
+        "optionDescription": "High Deductible Select",
+        "coverageAmount": ""
+      },
+      {
+        "optionId": 1273,
+        "optionDescription": "High Deductible Broad",
+        "coverageAmount": ""
+      },
+      {
+        "optionId": 11020,
+        "optionDescription": "Kaiser South California Plan",
+        "coverageAmount": ""
+      }
+    ],
+    "electedOption": {
+      "optionId": 1284,
+      "optionDescription": "Low Deductible Select"
+    }
+  }
 }
