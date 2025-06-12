@@ -1,17 +1,28 @@
 {
-  "body": "{\"parameters\":[\
-{\"name\":\"condition\",\"value\":\"deductible\"},\
-{\"name\":\"plan\",\"value\":\"1276\"},\
-{\"name\":\"plan\",\"value\":\"1284\"}\
-],\
-\"pageName\":\"Annual Enrollment - Medical - AT&T\",\
-\"populationType\":\"ATMGMT\",\
-\"enrollmentDeadlineDate\":\"\",\
-\"availableOptions\":[\
-  {\"optionId\":1276,\"optionDescription\":\"High Deductible Select\",\"coverageAmount\":\"\"},\
-  {\"optionId\":1284,\"optionDescription\":\"Low Deductible Select\",\"coverageAmount\":\"\"}\
-],\
-\"electedOption\":\
-  {\"optionId\":1284,\"optionDescription\":\"Low Deductible Select\"}\
-}"
+  "body": {
+    "parameters": [
+      { "name": "condition", "value": "deductible" },
+      { "name": "plan",      "value": "1276"      },
+      { "name": "plan",      "value": "1284"      }
+    ],
+    "pageName":             "Annual Enrollment - Medical - AT&T",
+    "populationType":       "ATMGMT",
+    "enrollmentDeadlineDate":"",
+    "availableOptions": [
+      {
+        "optionId": 1276,
+        "optionDescription": "High Deductible Select",
+        "coverageAmount": ""
+      },
+      {
+        "optionId": 1284,
+        "optionDescription": "Low Deductible Select",
+        "coverageAmount": ""
+      }
+    ],
+    "electedOption": {
+      "optionId": 1284,
+      "optionDescription": "Low Deductible Select"
+    }
+  }
 }
