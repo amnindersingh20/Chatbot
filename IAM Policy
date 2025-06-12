@@ -1,135 +1,17 @@
-import json
-import boto3
-from botocore.config import Config
-import traceback
- 
-# Initialize Bedrock agent client
-bedrock_agent = boto3.client(
-    'bedrock-agent-runtime',
-    region_name='us-east-1',
-    config=Config(read_timeout=45)
-)
- 
-# Initialize Bedrock model client
-client_bedrock = boto3.client('bedrock-runtime')
- 
-def lambda_handler(event, context):
-    try:
-        # Parse input with error checking
-        body = json.loads(event.get('body', '{}'))
-        user_input = body.get('message') or body.get('prompt')  # Handle both keys
-       
-        if not user_input:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing message/prompt in request body'})
-            }
- 
-        # Generate session ID if not provided
-        session_id = body.get('sessionId', context.aws_request_id)
- 
-        # Invoke primary agent
-        response = bedrock_agent.invoke_agent(
-            agentId='Your ID',  # Replace with actual ID
-            agentAliasId='Your Alias',  # Replace with actual alias
-            sessionId=session_id,
-            inputText=user_input
-        )
- 
-        completion = ""
-        citations = []
-       
-        for event in response['completion']:
-            chunk = event['chunk']
-            completion += chunk['bytes'].decode('utf-8')
-           
-            if 'citations' in chunk:
-                for citation in chunk['citations']:
-                    citations.append({
-                        'source': citation['retrievedReferences'][0]['location']['s3Location']['uri'],
-                        'text': citation['retrievedReferences'][0]['content']['text']
-                    })
- 
-        # Evaluate response quality
-        if is_graceful_response(completion):
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({
-                    'message': completion,
-                    'citations': citations,
-                    'sessionId': session_id
-                })
-            }
-        else:
-            # Fallback to secondary Bedrock model
-            client_bedrockrequest = client_bedrock.invoke_model(
-                contentType='application/json',
-                accept='application/json',
-                modelId='Your ModelID'
-                body=json.dumps({
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 200,
-                    "top_k": 250,
-                    "stop_sequences": [],
-                    "temperature": 0.9,
-                    "top_p": 0.999,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": user_input
-                                }
-                            ]
-                        }
-                    ]
-                })
-            )
-           
-            client_bedrock_byte = client_bedrockrequest['body'].read()
-            client_bedrock_string = json.loads(client_bedrock_byte)
- 
-            # Debugging: Print the structure of the response
-            print("Bedrock Model Response:", json.dumps(client_bedrock_string, indent=2))
- 
-            # Extract the final response
-            client_final_response = client_bedrock_string.get('content', [{}])[0].get('text', 'No response')
- 
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'message': client_final_response,
-                    'sessionId': session_id
-                })
-            }
- 
-    except Exception as e:
-        # Log full error details
-        print(f"Error: {str(e)}")
-        traceback.print_exc()
-       
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': str(e),
-                'stackTrace': traceback.format_exc()
-            })
-        }
- 
-def is_graceful_response(response):
-    # List of phrases indicating a non-graceful response
-    non_graceful_phrases = [
-        "Based on the provided search results"
-    ]
-   
-    # Check if any of the non-graceful phrases are in the response
-    for phrase in non_graceful_phrases:
-        if phrase in response:
-            return False
-    return True
- 
+{
+  "body": "{\"parameters\":[\
+{\"name\":\"condition\",\"value\":\"deductible\"},\
+{\"name\":\"plan\",\"value\":\"1276\"},\
+{\"name\":\"plan\",\"value\":\"1284\"}\
+],\
+\"pageName\":\"Annual Enrollment - Medical - AT&T\",\
+\"populationType\":\"ATMGMT\",\
+\"enrollmentDeadlineDate\":\"\",\
+\"availableOptions\":[\
+  {\"optionId\":1276,\"optionDescription\":\"High Deductible Select\",\"coverageAmount\":\"\"},\
+  {\"optionId\":1284,\"optionDescription\":\"Low Deductible Select\",\"coverageAmount\":\"\"}\
+],\
+\"electedOption\":\
+  {\"optionId\":1284,\"optionDescription\":\"Low Deductible Select\"}\
+}"
+}
