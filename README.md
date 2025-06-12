@@ -5,18 +5,21 @@ import difflib
 from io import StringIO
 import boto3
 import pandas as pd
+import io
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-S3_BUCKET = "poai"
-S3_KEY = "2ting.csv"
-FALLBACK_LAMBDA_NAME = "Poda1"
+S3_BUCKET = "pocbotai"
+S3_KEY = "2025 Medical SI HPCC for Chatbot Testing.csv"
+FALLBACK_LAMBDA_NAME = "Poc_Bot_lambda1"
 BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
 _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
 _bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+
+memory_store = {}  # In-memory session store
 
 SYNONYMS = {
     r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
@@ -102,50 +105,62 @@ def get_plan_value(raw_condition: str, plan_id: str):
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
     return 200, results
 
-def summarize_with_claude35(composite_result: list, options: list, elected: dict) -> str:
-    # Build options list with correct key casing
-    options_list = []
-    for opt in options:
-        options_list.append({
-            "optionId": opt.get("optionId"),
-            "optionDescription": opt.get("optionDescription")
-        })
+def summarize_with_claude35_streaming(session_id: str, composite_result: list, options: list, elected: dict) -> str:
+    options_list = [
+        {"optionId": opt.get("optionId"), "optionDescription": opt.get("optionDescription")}
+        for opt in options
+    ]
     elected_desc = elected.get("optionDescription") if isinstance(elected, dict) else None
 
-    # Prompt instructs using 'available options' and omit raw plan IDs in parentheses
     prompt = f"""
 You are a helpful and friendly health benefits advisor.
 Here are the available options:
 {json.dumps(options_list, indent=2)}
-The employee selected: {elected_desc}.
+The employee elected: {elected_desc}.
 
 Retrieved plan data:
 {json.dumps(composite_result, indent=2)}
 
 Your job:
 - Summarize each available option as its own section, using its optionDescription.
-- Clearly mark which option was selected and which are other available options.
+- Clearly mark which option was elected and which are other available options.
 - Within each section, organize In-Network (Individual, Family) and Out-of-Network (Individual, Family).
 - Include details like deductibles, coinsurance, out-of-pocket maximums, etc.
 - Do not display plan IDs in parentheses after the description.
+- Do not display that you asked to summarize.
 - Use conversational, reader-friendly language and end with a call for further questions.
 """
+
+    # Retrieve or initialize conversation history
+    messages = memory_store.get(session_id, [])
+    messages.append({
+        "role": "user",
+        "content": [{"text": prompt}]
+    })
+
     try:
-        response = _bedrock.invoke_model(
+        stream = _bedrock.converse_stream(
             modelId=BEDROCK_MODEL_ID,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 600,
-                "temperature": 0.5
-            })
+            messages=messages
         )
-        body = json.loads(response['body'].read())
-        return body['content'][0]['text']
+
+        output = io.StringIO()
+        for event in stream["stream"]:
+            chunk = event.get("chunk", {})
+            content = chunk.get("bytes", b"").decode("utf-8")
+            if content:
+                output.write(content)
+
+        assistant_reply = output.getvalue()
+        messages.append({
+            "role": "assistant",
+            "content": [{"text": assistant_reply}]
+        })
+        memory_store[session_id] = messages
+
+        return assistant_reply
     except Exception:
-        log.exception("LLM summarization failed")
+        log.exception("Streaming summarization failed")
         return None
 
 def wrap_response(status, body):
@@ -197,6 +212,7 @@ def lambda_handler(event, _context):
 
     available_options = payload.get("availableOptions", [])
     elected_option = payload.get("electedOption")
+    session_id = payload.get("sessionId", "default-session")
 
     if not condition or not plans:
         missing = []
@@ -213,17 +229,4 @@ def lambda_handler(event, _context):
         status, data = get_plan_value(condition, plan)
         if status != 200:
             return invoke_fallback(event)
-        composite.append({
-            "optionId": plan,
-            "optionDescription": plan_desc_map.get(plan, plan),
-            "data": data
-        })
-
-    summary = summarize_with_claude35(composite, available_options, elected_option)
-
-    return wrap_response(200, {
-        "message": summary,
-        "availableOptions": available_options,
-        "electedOption": elected_option,
-        "results": composite
-    })
+        composite
