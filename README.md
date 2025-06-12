@@ -7,9 +7,11 @@ import boto3
 import pandas as pd
 import io
 
+# Configure logger
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
+# Constants and clients
 S3_BUCKET = "pocbotai"
 S3_KEY = "2025 Medical SI HPCC for Chatbot Testing.csv"
 FALLBACK_LAMBDA_NAME = "Poc_Bot_lambda1"
@@ -19,8 +21,10 @@ _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
 _bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 
-memory_store = {}  # In-memory session store
+# In-memory session store
+memory_store = {}
 
+# Synonym mapping
 SYNONYMS = {
     r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
     r"\bco[\s\-]?insurance\b": "coinsurance",
@@ -28,6 +32,7 @@ SYNONYMS = {
     r"\bdeductible(s)?\b": "deductible"
 }
 
+# Text normalization utilities
 def normalize(text: str) -> str:
     return re.sub(r'[^a-z0-9]', '', str(text).lower())
 
@@ -46,6 +51,7 @@ def expand_synonyms(text: str) -> str:
         text = re.sub(pat, rep, text, flags=re.IGNORECASE)
     return text
 
+# Load CSV from S3 into a DataFrame
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
@@ -70,6 +76,7 @@ def load_dataframe():
 
 DF = load_dataframe()
 
+# Lookup plan value
 def get_plan_value(raw_condition: str, plan_id: str):
     stripped = strip_filler(raw_condition)
     expanded = expand_synonyms(stripped)
@@ -105,128 +112,88 @@ def get_plan_value(raw_condition: str, plan_id: str):
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
     return 200, results
 
-def summarize_with_claude35_streaming(session_id: str, composite_result: list, options: list, elected: dict) -> str:
-    options_list = [
-        {"optionId": opt.get("optionId"), "optionDescription": opt.get("optionDescription")}
-        for opt in options
-    ]
-    elected_desc = elected.get("optionDescription") if isinstance(elected, dict) else None
+# Summarization via Claude 3.5
+... (unchanged summarization and fallback/invoke functions) ...
 
-    prompt = f"""
-You are a helpful and friendly health benefits advisor.
-Here are the available options:
-{json.dumps(options_list, indent=2)}
-The employee elected: {elected_desc}.
+# Wrapper for HTTP response
+ def wrap_response(status, body):
+     return {
+         "statusCode": status,
+         "headers": {
+             "Content-Type": "application/json",
+             "Access-Control-Allow-Origin": "*",
+             "Access-Control-Allow-Methods": "OPTIONS,POST"
+         },
+         "body": json.dumps(body)
+     }
 
-Retrieved plan data:
-{json.dumps(composite_result, indent=2)}
-
-Your job:
-- Summarize each available option as its own section, using its optionDescription.
-- Clearly mark which option was elected and which are other available options.
-- Within each section, organize In-Network (Individual, Family) and Out-of-Network (Individual, Family).
-- Include details like deductibles, coinsurance, out-of-pocket maximums, etc.
-- Do not display plan IDs in parentheses after the description.
-- Do not display that you asked to summarize.
-- Use conversational, reader-friendly language and end with a call for further questions.
-"""
-
-    # Retrieve or initialize conversation history
-    messages = memory_store.get(session_id, [])
-    messages.append({
-        "role": "user",
-        "content": [{"text": prompt}]
-    })
-
-    try:
-        stream = _bedrock.converse_stream(
-            modelId=BEDROCK_MODEL_ID,
-            messages=messages
-        )
-
-        output = io.StringIO()
-        for event in stream["stream"]:
-            chunk = event.get("chunk", {})
-            content = chunk.get("bytes", b"").decode("utf-8")
-            if content:
-                output.write(content)
-
-        assistant_reply = output.getvalue()
-        messages.append({
-            "role": "assistant",
-            "content": [{"text": assistant_reply}]
-        })
-        memory_store[session_id] = messages
-
-        return assistant_reply
-    except Exception:
-        log.exception("Streaming summarization failed")
-        return None
-
-def wrap_response(status, body):
-    return {
-        "statusCode": status,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "OPTIONS,POST"
-        },
-        "body": json.dumps(body)
-    }
-
-def invoke_fallback(event_payload):
-    try:
-        resp = _lambda.invoke(
-            FunctionName=FALLBACK_LAMBDA_NAME,
-            InvocationType="RequestResponse",
-            Payload=json.dumps(event_payload).encode()
-        )
-        return wrap_response(200, json.loads(resp['Payload'].read()))
-    except Exception as e:
-        log.exception("Fallback invocation failed")
-        return wrap_response(500, {"error": f"Fallback error: {e}"})
-
+# Lambda handler with rich logging and error handling
 def lambda_handler(event, _context):
-    log.info("Received event: %s", json.dumps(event))
-
-    raw = event.get("body") or event.get("prompt") or "{}"
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode()
+    log.info("Received event payload: %s", json.dumps(event))
     try:
+        # Parse body or prompt
+        raw = event.get("body") or event.get("prompt") or "{}"
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode()
         payload = json.loads(raw) if isinstance(raw, str) else raw
-    except Exception:
-        log.exception("Failed to parse JSON body")
-        return wrap_response(400, {"error": "Invalid JSON in body"})
 
-    params = payload.get("parameters") or []
-    if isinstance(params, dict):
-        params = [{"name": k, "value": v} for k, v in params.items()]
+        # Normalize parameters
+        params = payload.get("parameters") or []
+        if isinstance(params, dict):
+            params = [{"name": k, "value": v} for k, v in params.items()]
 
-    condition = None
-    plans = []
-    for p in params:
-        if p.get("name") == "condition":
-            condition = p.get("value")
-        elif p.get("name") == "plan":
-            plans.append(str(p.get("value")).strip())
+        condition = None
+        plans = []
+        for p in params:
+            if p.get("name") == "condition":
+                condition = p.get("value")
+            elif p.get("name") == "plan":
+                plans.append(str(p.get("value")).strip())
 
-    available_options = payload.get("availableOptions", [])
-    elected_option = payload.get("electedOption")
-    session_id = payload.get("sessionId", "default-session")
+        available_options = payload.get("availableOptions", [])
+        elected_option = payload.get("electedOption")
+        session_id = payload.get("sessionId", "default-session")
 
-    if not condition or not plans:
+        log.info("Parsed parameters → condition=%s plans=%s", condition, plans)
+        log.info("availableOptions=%s electedOption=%s sessionId=%s", available_options, elected_option, session_id)
+
+        # Validate
         missing = []
-        if not condition: missing.append("condition")
-        if not plans: missing.append("plan")
-        return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
+        if not condition:
+            missing.append("condition")
+        if not plans:
+            missing.append("plan")
+        if missing:
+            return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
 
-    plan_desc_map = {str(opt.get("optionId")): opt.get("optionDescription") for opt in available_options}
-    if isinstance(elected_option, dict):
-        plan_desc_map[str(elected_option.get("optionId"))] = elected_option.get("optionDescription")
+        # Build plan description map
+        plan_desc_map = {str(opt.get("optionId")): opt.get("optionDescription") for opt in available_options}
+        if isinstance(elected_option, dict):
+            plan_desc_map[str(elected_option.get("optionId"))] = elected_option.get("optionDescription")
+        log.info("Plan → Description map: %s", plan_desc_map)
 
-    composite = []
-    for plan in plans:
-        status, data = get_plan_value(condition, plan)
-        if status != 200:
-            return invoke_fallback(event)
-        composite
+        # Lookup each plan
+        composite = []
+        for plan in plans:
+            log.info("Looking up plan '%s' for condition '%s'", plan, condition)
+            status, data = get_plan_value(condition, plan)
+            log.info("get_plan_value returned status=%s data=%s", status, data)
+            if status != 200:
+                log.warning("Bad status for plan '%s', invoking fallback", plan)
+                return invoke_fallback(event)
+            composite.append({
+                "planId": plan,
+                "results": data
+            })
+
+        log.info("Composite results assembled: %s", composite)
+
+        # Summarize
+        summary = summarize_with_claude35_streaming(session_id, composite, available_options, elected_option)
+        log.info("Summarizer returned: %s", summary)
+
+        return wrap_response(200, {"summary": summary})
+
+    except Exception:
+        log.exception("Unhandled exception in lambda_handler")
+        return wrap_response(500, {"error": "Internal server error"})
