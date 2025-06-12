@@ -1,133 +1,346 @@
-import logging
-import json
-import re
-import difflib
-from io import StringIO
-import boto3
-import pandas as pd
+<!DOCTYPE html>
+<html>
 
-log = logging.getLogger()
-log.setLevel(logging.DEBUG)   # now log DEBUG-level messages
+<head>
+    <title>AI Enrollment Chatbot</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #fff;
+        }
 
-S3_BUCKET = "pocbotai"
-S3_KEY = "2025 Medical SI HPCC for Chatbot Testing2.csv"
-FALLBACK_LAMBDA_NAME = "Poc_Bot_lambda1"
-BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        #chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 0;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 120px);
+        }
 
-_s3 = boto3.client('s3')
-_lambda = boto3.client('lambda')
-_bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+        #chat-history {
+            overflow-y: auto;
+            padding: 10px;
+            background: transparent;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
 
-SYNONYMS = {
-    r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
-    r"\bco[\s\-]?insurance\b":      "coinsurance",
-    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
-    r"\bdeductible(s)?\b":          "deductible"
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+        }
+
+        .user-message {
+            justify-content: flex-end;
+        }
+
+        .bot-message {
+            justify-content: flex-start;
+        }
+
+        .message-bubble {
+            max-width: 100%;
+            padding: 12px 14px;
+            border-radius: 15px;
+            word-break: break-word;
+            white-space: pre-wrap;
+            font-size: 14px;
+        }
+
+        .user-message .message-bubble {
+            background: #007bff;
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+
+        .bot-message .message-bubble {
+            background: #e9ecef;
+            color: #212529;
+            border-bottom-left-radius: 5px;
+        }
+
+        #input-container {
+            display: inline-flex;
+            padding: 2%;
+            background: #fff;
+            position: fixed;
+            bottom: 0;
+            width: 96%;
+            margin: 0;
+        }
+
+        #message-input:focus {
+            border-color: #007bff;
+        }
+
+        #message-input {
+            padding: 15px 60px 15px 8px;
+            width: 100%;
+            border: 2px solid #ababab;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        #send-button {
+            padding: 2px 15px;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            position: absolute;
+            right: 30px;
+            top: 28%;
+        }
+
+        .typing-indicator {
+            display: none;
+            padding: 10px;
+            font-style: italic;
+            color: #6c757d;
+        }
+
+        .error-message {
+            color: #dc3545;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .question-tile {
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+            font-size: 14px;
+            margin: 5px 0;
+            cursor: pointer;
+            transition: background-color 0.3s, box-shadow 0.3s;
+        }
+
+        .suggested_messagep {
+            padding: 0;
+            margin: 0;
+            font-style: italic;
+            font-weight: 500;
+        }
+
+        .question-tile:hover {
+            background-color: #e0e0e0;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .question-tile:active {
+            background-color: #d0d0d0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chat-container">
+        <div id="chat-history"></div>
+        <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
+    </div>
+
+    <div class="error-message" id="error-message"></div>
+    <div id="input-container">
+        <input type="text" id="message-input" placeholder="Ask your question" onkeypress="handleEnterKey(event)">
+        <button id="send-button" onclick="sendMessage()">
+            <svg width="40px" height="40px" viewBox="0 0 24 24" fill="none">
+                <path d="M7.75778 6.14799C6.84443 5.77187 6.0833 5.45843 5.49196 5.30702C4.91915 5.16036 4.18085 5.07761 3.63766 5.62862C3.09447 6.17962 3.18776 6.91666 3.34259 7.48732C3.50242 8.07644 3.8267 8.83302 4.21583 9.7409L4.86259 11.25H10C10.4142 11.25 10.75 11.5858 10.75 12C10.75 12.4142 10.4142 12.75 10 12.75H4.8626L4.21583 14.2591C3.8267 15.167 3.50242 15.9236 3.34259 16.5127C3.18776 17.0833 3.09447 17.8204 3.63766 18.3714C4.18085 18.9224 4.91915 18.8396 5.49196 18.693C6.0833 18.5416 6.84443 18.2281 7.75777 17.852L19.1997 13.1406C19.4053 13.0561 19.6279 12.9645 19.7941 12.867C19.944 12.779 20.3434 12.5192 20.3434 12C20.3434 11.4808 19.944 11.221 19.7941 11.133C19.6279 11.0355 19.4053 10.9439 19.1997 10.8594L7.75778 6.14799Z" fill="#000000"/>
+            </svg>
+        </button>
+    </div>
+
+    <script>
+        const constMsg={
+		"pageName": "Annual Enrollment - Medical - AT&T",
+		"planId": "1000",
+		"populationType":"ATMGMT",
+		"customText1":"<p><i><b>Provider disclaimer:</b> Note: If you or your dependent(s) use a provider outside of your local area, and they are listed as out-of-network here, you can check with that carrier to confirm their network status in that plan option.</i></p><p>Choose the right medical plan option for you!</p><p>To receive a personalized review of your medical plan options, consider using resources available to you, like the Medical Plan Option Evaluator located on your Annual Enrollment home page.</p><p>To create a list of in-network doctors select <b>Find a Doctor.</b></p><p>   <ol><li>Use <b>Find Doctors</b> button to search and save your physicians (select 'Add Favorites ' on the search site).</li><li>Use the drop down to assign the in-network physicians to you and your dependents.</li></ol>",
+		"customText2":"",
+		"customText3":"",
+		"customText4":"",
+		"cddList":[], 		
+		"enrollmentDeadlineDate":"",
+		"availableOptions":[
+		{
+			"optionId":9960,
+			"optionDescription":"No Coverage",
+			"coverageAmount":""
+		},
+		{
+			"optionId":1284,
+			"optionDescription":"Low Deductible Select",
+			"coverageAmount":""
+		},
+		{
+			"optionId":14512,
+			"optionDescription":"Kaiser S Cal High Ded Plan",
+			"coverageAmount":""
+		},
+		{
+			"optionId":1276,
+			"optionDescription":"High Deductible Select",
+			"coverageAmount":""
+		},
+		{
+			"optionId":1273,
+			"optionDescription":"High Deductible Broad",
+			"coverageAmount":""
+		},
+		{
+			"optionId":11020,
+			"optionDescription":"Kaiser South California Plan",
+			"coverageAmount":""
+		}
+		],
+		"electedOption":	{
+			"optionId":1284,
+			"optionDescription":"Low Deductible Select"
+		},
+		"currentCoverageOption": {
+			"currentCoverageOptionID":"",
+			"currentCoverageDescription":""
+		},
+        "minimumContributionAmount":"",
+		"maximumContributionAmount":"",
+        "simpAEReviseStatus":"",        
+        "simplifiedEnrollmentEligible":"eligible",
+		"enrollmentFollowUps": {
+			"title":"",
+			"body":""
+		}
 }
+    
+        sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
+        const constMsg2 = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
+        const messageRegistry = { suggested: new Set(), questions: new Set() };
+        window.addEventListener('message', event => {
+            const { questions, suggested_message } = event.data;
+            const chatHistory = document.getElementById('chat-history');
+            if (suggested_message) {
+                const div = document.createElement('div');
+                div.className = 'suggested_messagep';
+                div.textContent = suggested_message.trim();
+                chatHistory.appendChild(div);
+            }
+            questions.forEach(q => {
+                if (!messageRegistry.questions.has(q)) {
+                    const tile = document.createElement('div');
+                    tile.className = 'question-tile';
+                    tile.textContent = q.trim();
+                    tile.onclick = () => sendQuestion(q);
+                    chatHistory.appendChild(tile);
+                    messageRegistry.questions.add(q);
+                }
+            });
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        });
+        const optionMap = {};
+        constMsg2.availableOptions.forEach(o => optionMap[o.optionId] = o.optionDescription);
+        if (constMsg2.electedOption) optionMap[constMsg2.electedOption.optionId] = constMsg2.electedOption.optionDescription;
+        const availablePlanIds = constMsg2.availableOptions.map(o => String(o.optionId));
+        const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
+        const API_URL = 'https://0hph.execute-api.us-east-1.amazonaws.com/Dev/chat';
 
-def normalize(text: str) -> str:
-    return re.sub(r'[^a-z0-9]', '', str(text).lower())
+        function handleEnterKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+        function sendQuestion(q) {
+            document.getElementById('message-input').value = q;
+            sendMessage();
+        }
+        function appendMessage(msg, isUser) {
+            const div = document.createElement('div');
+            div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = msg;
+            div.appendChild(bubble);
+            document.getElementById('chat-history').appendChild(div);
+            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
+        }
 
-def strip_filler(text: str) -> str:
-    text = re.sub(r"[^\w\s]", "", text.lower().strip())
-    fillers = [
-        r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b", r"\btell me\b",
-        r"\bgive me\b", r"\bplease show\b", r"\bhow much is\b",
-        r"\bis\b", r"\bmy\b"
-    ]
-    for pat in fillers:
-        text = re.sub(pat, '', text).strip()
-    return re.sub(r'\s+', ' ', text)
+        async function sendMessage() {
+            const inputEl = document.getElementById('message-input');
+            const text = inputEl.value.trim();
+            if (!text) return;
+            inputEl.value = '';
+            document.getElementById('error-message').textContent = '';
+            appendMessage(text, true);
+            document.getElementById('typing-indicator').style.display = 'block';
 
-def expand_synonyms(text: str) -> str:
-    for pat, rep in SYNONYMS.items():
-        text = re.sub(pat, rep, text, flags=re.IGNORECASE)
-    return text
+            // Build parameters
+            const params = [
+                { name: 'condition', value: text },
+                { name: 'populationType', value: constMsg2.populationType }
+            ];
+            availablePlanIds.forEach(id => params.push({ name: 'plan', value: id }));
+            if (electedPlanId) params.push({ name: 'plan', value: electedPlanId });
 
-def load_dataframe():
-    try:
-        log.debug("Loading CSV from S3: %s/%s", S3_BUCKET, S3_KEY)
-        obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
-        df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
-        df.columns = df.columns.str.strip()
-        log.debug("Raw columns: %s", df.columns.tolist())
+            // Full payload with all constMsg2 fields
+            const payload = {
+                parameters: params,
+                pageName: constMsg2.pageName,
+                populationType: constMsg2.populationType,
+                enrollmentDeadlineDate: constMsg2.enrollmentDeadlineDate,
+                availableOptions: constMsg2.availableOptions,
+                electedOption: constMsg2.electedOption
+            };
 
-        if 'Data Point Name' not in df.columns:
-            raise KeyError("Missing 'Data Point Name' column")
+            try {
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                let data = await res.json();
+                if (data.body && typeof data.body === 'string') {
+                    data = JSON.parse(data.body);
+                }
 
-        # normalize the Data Point Name column
-        df['Data Point Name'] = (
-            df['Data Point Name']
-              .str.replace('–', '-', regex=False)
-              .str.replace('\u200b', '', regex=False)
-              .str.strip()
-              .str.lower()
-        )
-        df['normalized_name'] = df['Data Point Name'].apply(normalize)
-        log.debug("Sample normalized names: %s", df['normalized_name'].head().tolist())
-        return df
+                let reply = '';
+                if (data && typeof data.message === 'string') {
+                    reply = data.message;
+                } else if (Array.isArray(data)) {
+                    reply = data.map(item => {
+                        if (item.data) {
+                            return item.data.map(d => {
+                                const desc = optionMap[d.plan] || d.plan;
+                                return `For "${d.condition}" under "${desc}", the value is: ${d.value}`;
+                            }).join('\n');
+                        }
+                        if (item.value !== undefined) {
+                            const desc = optionMap[item.plan] || item.plan;
+                            return `For "${text}" under "${desc}", the value is: ${item.value}`;
+                        }
+                        const desc = optionMap[item.plan] || item.plan;
+                        return `For "${text}" under "${desc}", error: ${item.error}`;
+                    }).join('\n\n');
+                } else {
+                    reply = 'Sorry, I got an unexpected response.';
+                }
+                appendMessage(reply, false);
+            } catch (err) {
+                document.getElementById('error-message').textContent = `Error: ${err.message}`;
+            } finally {
+                document.getElementById('typing-indicator').style.display = 'none';
+            }
+        }
+    </script>
+</body>
 
-    except Exception as e:
-        log.exception("Failed to load CSV from S3")
-        return pd.DataFrame()
-
-DF = load_dataframe()
-
-def get_plan_value(raw_condition: str, plan_id: str):
-    stripped    = strip_filler(raw_condition)
-    expanded    = expand_synonyms(stripped)
-    query_norm  = normalize(expanded)
-
-    log.debug("Lookup trace: raw=%r → stripped=%r → expanded=%r → norm=%r",
-              raw_condition, stripped, expanded, query_norm)
-
-    # check that the DataFrame and column exist
-    if DF.empty:
-        log.error("DataFrame is empty – CSV probably failed to load")
-        return 500, "Internal error loading plan data"
-
-    log.debug("Checking that plan '%s' is in columns: %s", plan_id, plan_id in DF.columns)
-    if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
-        log.error("Required column missing (Data Point Name or %s)", plan_id)
-        return 500, f"CSV missing required columns or plan '{plan_id}'"
-
-    # try exact substring match (no regex)
-    matches = DF[DF['normalized_name'].str.contains(re.escape(query_norm), na=False, regex=True)]
-    log.debug("Exact-substring matches count: %d", len(matches))
-
-    # log any exact equality matches
-    eq_matches = DF[DF['normalized_name'] == query_norm]
-    log.debug("Exact equality matches count: %d", len(eq_matches))
-
-    if matches.empty:
-        # fallback to fuzzy
-        all_names = DF['normalized_name'].tolist()
-        close = difflib.get_close_matches(query_norm, all_names, n=5, cutoff=0.7)
-        log.debug("Fuzzy candidates for '%s': %s", query_norm, close)
-        matches = DF[DF['normalized_name'].isin(close)] if close else matches
-
-    if matches.empty:
-        log.warning("No data-points matching '%s' found at all", raw_condition)
-        return 404, f"No data-points matching '{raw_condition}' found"
-
-    # inspect values
-    results = []
-    for idx, row in matches.iterrows():
-        val = row.get(plan_id)
-        log.debug("Row #%s: condition=%s → raw value=%r", idx, row['Data Point Name'], val)
-        if pd.notna(val):
-            results.append({
-                "condition": row['Data Point Name'],
-                "plan": plan_id,
-                "value": val
-            })
-        else:
-            log.debug("Value for plan '%s' on row '%s' is empty/NaN", plan_id, row['Data Point Name'])
-
-    if not results:
-        log.error("Matched condition rows, but no non-null values under plan '%s'", plan_id)
-        return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
-
-    return 200, results
-
-# … rest of your code unchanged …
+</html>
