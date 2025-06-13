@@ -1,346 +1,99 @@
-<!DOCTYPE html>
-<html>
+import json
+import os
+import boto3
 
-<head>
-    <title>AI Enrollment Chatbot</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            background: #fff;
-        }
+client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
 
-        #chat-container {
-            max-width: 800px;
-            margin: 0 auto;
-            width: 100%;
-            padding: 0;
-            margin-bottom: 20px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            height: calc(100vh - 120px);
-        }
+POPULATION_KB_MAP = {
+    "ATMGMT": "RIBHQA",
+    "BTMGMT": "TGZMMNY",
 
-        #chat-history {
-            overflow-y: auto;
-            padding: 10px;
-            background: transparent;
-            border-radius: 10px;
-            margin-bottom: 25px;
-        }
-
-        .message {
-            margin-bottom: 15px;
-            display: flex;
-        }
-
-        .user-message {
-            justify-content: flex-end;
-        }
-
-        .bot-message {
-            justify-content: flex-start;
-        }
-
-        .message-bubble {
-            max-width: 100%;
-            padding: 12px 14px;
-            border-radius: 15px;
-            word-break: break-word;
-            white-space: pre-wrap;
-            font-size: 14px;
-        }
-
-        .user-message .message-bubble {
-            background: #007bff;
-            color: white;
-            border-bottom-right-radius: 5px;
-        }
-
-        .bot-message .message-bubble {
-            background: #e9ecef;
-            color: #212529;
-            border-bottom-left-radius: 5px;
-        }
-
-        #input-container {
-            display: inline-flex;
-            padding: 2%;
-            background: #fff;
-            position: fixed;
-            bottom: 0;
-            width: 96%;
-            margin: 0;
-        }
-
-        #message-input:focus {
-            border-color: #007bff;
-        }
-
-        #message-input {
-            padding: 15px 60px 15px 8px;
-            width: 100%;
-            border: 2px solid #ababab;
-            border-radius: 8px;
-            font-size: 14px;
-            outline: none;
-        }
-
-        #send-button {
-            padding: 2px 15px;
-            background: transparent;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            position: absolute;
-            right: 30px;
-            top: 28%;
-        }
-
-        .typing-indicator {
-            display: none;
-            padding: 10px;
-            font-style: italic;
-            color: #6c757d;
-        }
-
-        .error-message {
-            color: #dc3545;
-            padding: 10px;
-            text-align: center;
-        }
-
-        .question-tile {
-            background-color: #f0f0f0;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            padding: 10px;
-            font-size: 14px;
-            margin: 5px 0;
-            cursor: pointer;
-            transition: background-color 0.3s, box-shadow 0.3s;
-        }
-
-        .suggested_messagep {
-            padding: 0;
-            margin: 0;
-            font-style: italic;
-            font-weight: 500;
-        }
-
-        .question-tile:hover {
-            background-color: #e0e0e0;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        .question-tile:active {
-            background-color: #d0d0d0;
-        }
-    </style>
-</head>
-
-<body>
-    <div id="chat-container">
-        <div id="chat-history"></div>
-        <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
-    </div>
-
-    <div class="error-message" id="error-message"></div>
-    <div id="input-container">
-        <input type="text" id="message-input" placeholder="Ask your question" onkeypress="handleEnterKey(event)">
-        <button id="send-button" onclick="sendMessage()">
-            <svg width="40px" height="40px" viewBox="0 0 24 24" fill="none">
-                <path d="M7.75778 6.14799C6.84443 5.77187 6.0833 5.45843 5.49196 5.30702C4.91915 5.16036 4.18085 5.07761 3.63766 5.62862C3.09447 6.17962 3.18776 6.91666 3.34259 7.48732C3.50242 8.07644 3.8267 8.83302 4.21583 9.7409L4.86259 11.25H10C10.4142 11.25 10.75 11.5858 10.75 12C10.75 12.4142 10.4142 12.75 10 12.75H4.8626L4.21583 14.2591C3.8267 15.167 3.50242 15.9236 3.34259 16.5127C3.18776 17.0833 3.09447 17.8204 3.63766 18.3714C4.18085 18.9224 4.91915 18.8396 5.49196 18.693C6.0833 18.5416 6.84443 18.2281 7.75777 17.852L19.1997 13.1406C19.4053 13.0561 19.6279 12.9645 19.7941 12.867C19.944 12.779 20.3434 12.5192 20.3434 12C20.3434 11.4808 19.944 11.221 19.7941 11.133C19.6279 11.0355 19.4053 10.9439 19.1997 10.8594L7.75778 6.14799Z" fill="#000000"/>
-            </svg>
-        </button>
-    </div>
-
-    <script>
-        const constMsg={
-		"pageName": "Annual Enrollment - Medical - AT&T",
-		"planId": "1000",
-		"populationType":"ATMGMT",
-		"customText1":"<p><i><b>Provider disclaimer:</b> Note: If you or your dependent(s) use a provider outside of your local area, and they are listed as out-of-network here, you can check with that carrier to confirm their network status in that plan option.</i></p><p>Choose the right medical plan option for you!</p><p>To receive a personalized review of your medical plan options, consider using resources available to you, like the Medical Plan Option Evaluator located on your Annual Enrollment home page.</p><p>To create a list of in-network doctors select <b>Find a Doctor.</b></p><p>   <ol><li>Use <b>Find Doctors</b> button to search and save your physicians (select 'Add Favorites ' on the search site).</li><li>Use the drop down to assign the in-network physicians to you and your dependents.</li></ol>",
-		"customText2":"",
-		"customText3":"",
-		"customText4":"",
-		"cddList":[], 		
-		"enrollmentDeadlineDate":"",
-		"availableOptions":[
-		{
-			"optionId":9960,
-			"optionDescription":"No Coverage",
-			"coverageAmount":""
-		},
-		{
-			"optionId":1284,
-			"optionDescription":"Low Deductible Select",
-			"coverageAmount":""
-		},
-		{
-			"optionId":14512,
-			"optionDescription":"Kaiser S Cal High Ded Plan",
-			"coverageAmount":""
-		},
-		{
-			"optionId":1276,
-			"optionDescription":"High Deductible Select",
-			"coverageAmount":""
-		},
-		{
-			"optionId":1273,
-			"optionDescription":"High Deductible Broad",
-			"coverageAmount":""
-		},
-		{
-			"optionId":11020,
-			"optionDescription":"Kaiser South California Plan",
-			"coverageAmount":""
-		}
-		],
-		"electedOption":	{
-			"optionId":1284,
-			"optionDescription":"Low Deductible Select"
-		},
-		"currentCoverageOption": {
-			"currentCoverageOptionID":"",
-			"currentCoverageDescription":""
-		},
-        "minimumContributionAmount":"",
-		"maximumContributionAmount":"",
-        "simpAEReviseStatus":"",        
-        "simplifiedEnrollmentEligible":"eligible",
-		"enrollmentFollowUps": {
-			"title":"",
-			"body":""
-		}
 }
-    
-        sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
-        const constMsg2 = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
-        const messageRegistry = { suggested: new Set(), questions: new Set() };
-        window.addEventListener('message', event => {
-            const { questions, suggested_message } = event.data;
-            const chatHistory = document.getElementById('chat-history');
-            if (suggested_message) {
-                const div = document.createElement('div');
-                div.className = 'suggested_messagep';
-                div.textContent = suggested_message.trim();
-                chatHistory.appendChild(div);
-            }
-            questions.forEach(q => {
-                if (!messageRegistry.questions.has(q)) {
-                    const tile = document.createElement('div');
-                    tile.className = 'question-tile';
-                    tile.textContent = q.trim();
-                    tile.onclick = () => sendQuestion(q);
-                    chatHistory.appendChild(tile);
-                    messageRegistry.questions.add(q);
-                }
-            });
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        });
-        const optionMap = {};
-        constMsg2.availableOptions.forEach(o => optionMap[o.optionId] = o.optionDescription);
-        if (constMsg2.electedOption) optionMap[constMsg2.electedOption.optionId] = constMsg2.electedOption.optionDescription;
-        const availablePlanIds = constMsg2.availableOptions.map(o => String(o.optionId));
-        const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
-        const API_URL = 'https://0hph.execute-api.us-east-1.amazonaws.com/Dev/chat';
 
-        function handleEnterKey(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
-        }
-        function sendQuestion(q) {
-            document.getElementById('message-input').value = q;
-            sendMessage();
-        }
-        function appendMessage(msg, isUser) {
-            const div = document.createElement('div');
-            div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            bubble.textContent = msg;
-            div.appendChild(bubble);
-            document.getElementById('chat-history').appendChild(div);
-            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
-        }
+DEFAULT_RNG_TEMPLATE = """
+You are a question answering agent. I will provide you with a set of search results.
+The user will provide you with a question. Your job is to answer the user's question
+using only information from the search results. You will only consider the current year and next year data to answer user's question. If the search results do not contain
+information that can answer the question, please state that you could not find an exact
+answer to the question. Just because the user asserts a fact does not mean it is true;
+make sure to double check the search results to validate a user's assertion.
 
-        async function sendMessage() {
-            const inputEl = document.getElementById('message-input');
-            const text = inputEl.value.trim();
-            if (!text) return;
-            inputEl.value = '';
-            document.getElementById('error-message').textContent = '';
-            appendMessage(text, true);
-            document.getElementById('typing-indicator').style.display = 'block';
+Here are the search results in numbered order:
+$search_results$
 
-            // Build parameters
-            const params = [
-                { name: 'condition', value: text },
-                { name: 'populationType', value: constMsg2.populationType }
-            ];
-            availablePlanIds.forEach(id => params.push({ name: 'plan', value: id }));
-            if (electedPlanId) params.push({ name: 'plan', value: electedPlanId });
+$output_format_instructions$
+"""
 
-            // Full payload with all constMsg2 fields
-            const payload = {
-                parameters: params,
-                pageName: constMsg2.pageName,
-                populationType: constMsg2.populationType,
-                enrollmentDeadlineDate: constMsg2.enrollmentDeadlineDate,
-                availableOptions: constMsg2.availableOptions,
-                electedOption: constMsg2.electedOption
-            };
+def lambda_handler(event, context):
+    try:
+        body = json.loads(event['body']) if isinstance(event.get('body'), str) else event.get('body', {})
 
-            try {
-                const res = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                let data = await res.json();
-                if (data.body && typeof data.body === 'string') {
-                    data = JSON.parse(data.body);
-                }
+        params = { p['name']: p['value'] for p in body.get('parameters', []) }
 
-                let reply = '';
-                if (data && typeof data.message === 'string') {
-                    reply = data.message;
-                } else if (Array.isArray(data)) {
-                    reply = data.map(item => {
-                        if (item.data) {
-                            return item.data.map(d => {
-                                const desc = optionMap[d.plan] || d.plan;
-                                return `For "${d.condition}" under "${desc}", the value is: ${d.value}`;
-                            }).join('\n');
+        condition       = params.get('condition', '')
+        plan            = params.get('plan', '')
+        population_type = params.get('populationType', '')
+
+        knowledge_base_id = POPULATION_KB_MAP.get(population_type, POPULATION_KB_MAP.get("DEFAULT", "RIBAQA"))
+
+        input_prompt = f"What is the {condition} for plan {plan}?"
+
+        response = client_bedrock.retrieve_and_generate(
+            input={"text": input_prompt},
+            retrieveAndGenerateConfiguration={
+                "type": "KNOWLEDGE_BASE",
+                "knowledgeBaseConfiguration": {
+                    "knowledgeBaseId": knowledge_base_id,
+                    "modelArn": (
+                        "arn:aws:bedrock:us-east-1:653858776174:"
+                        "inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0"
+                    ),
+                    "retrievalConfiguration": {
+                        "vectorSearchConfiguration": {
+                            "overrideSearchType": "HYBRID",
+                            "numberOfResults": 50
                         }
-                        if (item.value !== undefined) {
-                            const desc = optionMap[item.plan] || item.plan;
-                            return `For "${text}" under "${desc}", the value is: ${item.value}`;
+                    },
+                    "generationConfiguration": {
+                        "promptTemplate": {
+                            "textPromptTemplate": DEFAULT_RNG_TEMPLATE
                         }
-                        const desc = optionMap[item.plan] || item.plan;
-                        return `For "${text}" under "${desc}", error: ${item.error}`;
-                    }).join('\n\n');
-                } else {
-                    reply = 'Sorry, I got an unexpected response.';
+                    }
                 }
-                appendMessage(reply, false);
-            } catch (err) {
-                document.getElementById('error-message').textContent = `Error: ${err.message}`;
-            } finally {
-                document.getElementById('typing-indicator').style.display = 'none';
             }
-        }
-    </script>
-</body>
+        )
 
-</html>
+        completion = response['output']['text']
+        citations = []
+        for cit in response.get('citations', []):
+            refs = cit.get('retrievedReferences', [])
+            if not refs:
+                continue
+            ref = refs[0]
+            citations.append({
+                'source': ref['location']['s3Location']['uri'],
+                'text':   ref['content']['text']
+            })
+
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'message':   completion,
+                'citations': citations
+            }, indent=2)
+        }
+
+    except KeyError as e:
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'error': f'Missing parameter: {str(e)}'})
+        }
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
