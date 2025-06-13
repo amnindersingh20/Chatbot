@@ -65,11 +65,24 @@ def lambda_handler(event, context):
 
         kb_id = POPULATION_KB_MAP.get(population_type, POPULATION_KB_MAP.get('DEFAULT', 'RIBAQA'))
 
+        # Build option list, skipping any "no coverage" entries
         lines = []
         for opt in available_options:
-            desc = opt.get('optionDescription', '')
+            desc = opt.get('optionDescription', '').strip()
+            # Skip options with "no coverage"
+            if desc.lower() == 'no coverage':
+                log.info(f"Skipping option '{desc}' due to no coverage")
+                continue
             tag = '[ELECTED] ' if elected_option and opt.get('optionId') == elected_option.get('optionId') else ''
             lines.append(f"* {tag}{desc}")
+
+        if not lines:
+            return {
+                'statusCode': 200,
+                'headers': {'Content-Type': 'application/json; charset=utf-8','Access-Control-Allow-Origin': '*'},
+                'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
+            }
+
         option_list_block = "\n".join(lines)
 
         final_prompt = (
@@ -100,7 +113,6 @@ def lambda_handler(event, context):
                             'textPromptTemplate': final_prompt
                         }
                     },
-                    
                 }
             }
         )
