@@ -188,6 +188,7 @@ def lambda_handler(event, _context):
         if not plans:     missing.append("plan")
         return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
 
+    # Map optionId -> optionDescription
     plan_desc_map = {
         str(opt.get("optionId")): opt.get("optionDescription")
         for opt in available_options
@@ -197,13 +198,18 @@ def lambda_handler(event, _context):
 
     composite = []
     for plan in plans:
+        desc = plan_desc_map.get(plan, "").strip()
+        # Skip "no coverage" descriptions
+        if desc.lower() == "no coverage":
+            log.info(f"Skipping plan {plan} ('{desc}') due to no coverage")
+            continue
         status, data = get_plan_value(condition, plan)
         if status != 200:
             fallback_body = {
                 "parameters": [
-                    {"name": "condition",           "value": condition},
-                    {"name": "optionDescription",   "value": plan_desc_map.get(plan, plan)},
-                    {"name": "populationType",      "value": payload.get("populationType")}
+                    {"name": "condition",         "value": condition},
+                    {"name": "optionDescription","value": desc or plan},
+                    {"name": "populationType",    "value": payload.get("populationType")}
                 ],
                 "availableOptions": available_options,
                 "electedOption":    elected_option
@@ -212,9 +218,13 @@ def lambda_handler(event, _context):
 
         composite.append({
             "optionId":          plan,
-            "optionDescription": plan_desc_map.get(plan, plan),
+            "optionDescription": desc,
             "data":              data
         })
+
+    # If all plans were skipped
+    if not composite:
+        return wrap_response(200, {"message": "No applicable plans to process.", "results": []})
 
     summary = summarize_with_claude35(composite, available_options, elected_option)
     return wrap_response(200, {
