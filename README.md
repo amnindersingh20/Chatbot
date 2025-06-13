@@ -198,10 +198,13 @@ def lambda_handler(event, _context):
     composite = []
     for plan in plans:
         desc = plan_desc_map.get(plan, "").strip()
-
-        if desc.lower() == "no coverage":
-            log.info(f"Skipping plan {plan} ('{desc}') due to no coverage")
+        # Debug: log the raw repr to catch hidden chars or variations
+        log.info("Plan %s description repr: %r", plan, desc)
+        # Skip any description containing the phrase 'no coverage' (case-insensitive)
+        if re.search(r"\bno\s+coverage\b", desc, flags=re.IGNORECASE):
+            log.info("Skipping plan %s because its description matches 'no coverage': %r", plan, desc)
             continue
+
         status, data = get_plan_value(condition, plan)
         if status != 200:
             fallback_body = {
