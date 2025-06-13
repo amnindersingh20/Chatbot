@@ -45,6 +45,9 @@ OUTPUT_FORMAT_INSTRUCTIONS = (
     "- If you can’t find it in the retrieval results, say \"I couldn’t find that.\""
 )
 
+# Read max tokens from environment or default
+DEFAULT_MAX_TOKENS = int(os.getenv('MAX_TOKENS', '1024'))
+
 
 def lambda_handler(event, context):
     try:
@@ -86,7 +89,7 @@ def lambda_handler(event, context):
             .replace('$output_format_instructions$', OUTPUT_FORMAT_INSTRUCTIONS)
         )
 
-        # Call Bedrock with non-empty input.text and fully resolved prompt
+        # Call Bedrock with non-empty input.text, fully resolved prompt, and max tokens
         response = client_bedrock.retrieve_and_generate(
             input={'text': condition},
             retrieveAndGenerateConfiguration={
@@ -106,7 +109,8 @@ def lambda_handler(event, context):
                     'generationConfiguration': {
                         'promptTemplate': {
                             'textPromptTemplate': final_prompt
-                        }
+                        },
+                        'maxTokens': DEFAULT_MAX_TOKENS
                     }
                 }
             }
