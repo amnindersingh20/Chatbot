@@ -1,16 +1,1 @@
-{
-  "body": {
-    "parameters": [
-      { "name": "condition",       "value": "deductible" },
-      { "name": "populationType",  "value": "ATMGMT"    }
-    ],
-    "availableOptions": [
-      { "optionId": 1, "optionDescription": "Silver Plus PPO" },
-      { "optionId": 2, "optionDescription": "Gold Value EPO" }
-    ],
-    "electedOption": {
-      "optionId": 2,
-      "optionDescription": "Gold Value EPO"
-    }
-  }
-}
+{"parameters":[{"name":"condition","value":"what is the cost for prescription drugs"},{"name":"plan","value":"1284"},{"name":"plan","value":"14512"},{"name":"plan","value":"1276"},{"name":"plan","value":"1273"},{"name":"plan","value":"11020"},{"name":"plan","value":"1284"}],"pageName":"Annual Enrollment - Medical - AT&T","populationType":"ATMGMT","enrollmentDeadlineDate":"","availableOptions":[{"optionId":1284,"optionDescription":"Low Deductible Select","coverageAmount":""},{"optionId":14512,"optionDescription":"Kaiser S Cal High Ded Plan","coverageAmount":""},{"optionId":1276,"optionDescription":"High Deductible Select","coverageAmount":""},{"optionId":1273,"optionDescription":"High Deductible Broad","coverageAmount":""},{"optionId":11020,"optionDescription":"Kaiser South California Plan","coverageAmount":""}],"electedOption":{"optionId":1284,"optionDescription":"Low Deductible Select"}}
