@@ -45,7 +45,6 @@ OUTPUT_FORMAT_INSTRUCTIONS = (
 
 DEFAULT_MAX_TOKENS = int(os.getenv('MAX_TOKENS', '1024'))
 
-
 def lambda_handler(event, context):
     try:
         raw_body = event.get('body', {})
@@ -77,7 +76,7 @@ def lambda_handler(event, context):
         if not lines:
             return {
                 'statusCode': 200,
-                'headers': {'Content-Type': 'application/json; charset=utf-8','Access-Control-Allow-Origin': '*'},
+                'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
                 'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
             }
 
@@ -88,10 +87,11 @@ def lambda_handler(event, context):
             .replace('{condition}', condition)
             .replace('$option_list$', option_list_block)
             .replace('$output_format_instructions$', OUTPUT_FORMAT_INSTRUCTIONS)
+            .replace('$search_results$', '{retrieved_results}')  # ✅ Critical fix for citations
         )
 
         response = client_bedrock.retrieve_and_generate(
-            input={'text': condition},
+            input={'text': ''},  # ✅ Let promptTemplate control the prompt
             retrieveAndGenerateConfiguration={
                 'type': 'KNOWLEDGE_BASE',
                 'knowledgeBaseConfiguration': {
@@ -110,29 +110,28 @@ def lambda_handler(event, context):
                         'promptTemplate': {
                             'textPromptTemplate': final_prompt
                         }
-                    },
+                    }
                 }
             }
         )
 
         answer = response['output']['text']
         citations = []
+
+        # ✅ Loop through all retrieved references in citations
         for cit in response.get('citations', []):
-            refs = cit.get('retrievedReferences', [])
-            if not refs:
-                continue
-            ref = refs[0]
-            citations.append({
-                'source': ref['location']['s3Location']['uri'],
-                'text': ref['content']['text']
-            })
+            for ref in cit.get('retrievedReferences', []):
+                citations.append({
+                    'source': ref['location']['s3Location']['uri'],
+                    'text': ref['content']['text']
+                })
 
         return {
             'statusCode': 200,
-            'headers': {'Content-Type': 'application/json; charset=utf-8','Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'message': answer,'citations': citations}, indent=2)
+            'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
         }
 
     except Exception as e:
         log.exception("Bedrock retrieve_and_generate failed")
-        return {'statusCode': 500,'body': json.dumps({'error': str(e)})}
+        return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
