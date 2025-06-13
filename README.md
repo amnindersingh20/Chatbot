@@ -1,140 +1,225 @@
-import json
-import os
-import boto3
 import logging
+import json
+import re
+import difflib
+from io import StringIO
+import boto3
+import pandas as pd
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+S3_BUCKET = "pocbotai"
+S3_KEY = "2025 Medical HPCC Combined.csv"
+FALLBACK_LAMBDA_NAME = "Poc_lda_ChabotFallback"
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
-POPULATION_KB_MAP = {
-    "ATMGMT": "RIBHZRVAQA",
-    "BTMGMT": "TGZMV97MNY"
+_s3      = boto3.client('s3')
+_lambda  = boto3.client('lambda')
+_bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+
+SYNONYMS = {
+    r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
+    r"\bco[\s\-]?insurance\b":    "coinsurance",
+    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
+    r"\bdeductible(s)?\b":         "deductible"
 }
 
-BATCH_RNG_TEMPLATE = """
-You are a question answering agent. I will provide you with a set of search results
-and a list of benefit plan options. The user has a question about one data point.
-Your job is to:
-  - Use only the retrieval results to answer the question.
-  - Cover the current year and next year data.
-  - If you can’t find an exact answer, say you couldn’t find it.
-  - For the *elected* option, give a detailed explanation (deductibles, coinsurance, OOP max, etc.).
-  - For *other* options, give a 2–3 sentence summary.
-Do **not** mention plan IDs—use only their human descriptions.
+def normalize(text: str) -> str:
+    return re.sub(r'[^a-z0-9]', '', str(text).lower())
 
-Search results:
-$search_results$
+def strip_filler(text: str) -> str:
+    text = re.sub(r"[^\w\s]", "", text.lower().strip())
+    fillers = [
+        r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b", r"\btell me\b",
+        r"\bgive me\b", r"\bplease show\b", r"\bhow much is\b", r"\bis\b", r"\bmy\b"
+    ]
+    for pat in fillers:
+        text = re.sub(pat, '', text).strip()
+    return re.sub(r'\s+', ' ', text)
 
-Options:
-$option_list$
+def expand_synonyms(text: str) -> str:
+    for pat, rep in SYNONYMS.items():
+        text = re.sub(pat, rep, text, flags=re.IGNORECASE)
+    return text
 
-Question:
-What is the {condition} for each of these options?
-
-Answer format instructions:
-$output_format_instructions$
-"""
-
-OUTPUT_FORMAT_INSTRUCTIONS = (
-    "- For the elected option, include detailed deductibles, coinsurance, OOP max, etc.\n"
-    "- For other options, give a 2–3 sentence summary.\n"
-    "- If you can’t find it in the retrieval results, say \"I couldn’t find that.\""
-)
-
-DEFAULT_MAX_TOKENS = int(os.getenv('MAX_TOKENS', '1024'))
-
-
-def lambda_handler(event, context):
+def load_dataframe():
     try:
-        raw_body = event.get('body', {})
-        body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
-
-        params = {p['name']: p['value'] for p in body.get('parameters', [])}
-        condition = params.get('condition', '').strip()
-        population_type = params.get('populationType', '')
-        available_options = body.get('availableOptions', [])
-        elected_option = body.get('electedOption', {})
-
-        if not condition or not available_options:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing condition or availableOptions'})
-            }
-
-        kb_id = POPULATION_KB_MAP.get(population_type, POPULATION_KB_MAP.get('DEFAULT', 'RIBAQA'))
-
-        # Build option list, skipping any "no coverage" entries
-        lines = []
-        for opt in available_options:
-            desc = opt.get('optionDescription', '').strip()
-            # Skip options with "no coverage"
-            if desc.lower() == 'no coverage':
-                log.info(f"Skipping option '{desc}' due to no coverage")
-                continue
-            tag = '[ELECTED] ' if elected_option and opt.get('optionId') == elected_option.get('optionId') else ''
-            lines.append(f"* {tag}{desc}")
-
-        if not lines:
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json; charset=utf-8','Access-Control-Allow-Origin': '*'},
-                'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
-            }
-
-        option_list_block = "\n".join(lines)
-
-        final_prompt = (
-            BATCH_RNG_TEMPLATE
-            .replace('{condition}', condition)
-            .replace('$option_list$', option_list_block)
-            .replace('$output_format_instructions$', OUTPUT_FORMAT_INSTRUCTIONS)
+        obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
+        df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
+        df.columns = df.columns.str.strip()
+        df['Data Point Name'] = (
+            df['Data Point Name'].astype(str)
+              .str.replace('–', '-', regex=False)
+              .str.replace('\u200b', '', regex=False)
+              .str.strip().str.lower()
         )
+        df['normalized_name'] = df['Data Point Name'].apply(normalize)
+        return df
+    except Exception:
+        log.exception("Failed to load CSV from S3")
+        return pd.DataFrame()
 
-        response = client_bedrock.retrieve_and_generate(
-            input={'text': condition},
-            retrieveAndGenerateConfiguration={
-                'type': 'KNOWLEDGE_BASE',
-                'knowledgeBaseConfiguration': {
-                    'knowledgeBaseId': kb_id,
-                    'modelArn': (
-                        'arn:aws:bedrock:us-east-1:653858776174:'
-                        'inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0'
-                    ),
-                    'retrievalConfiguration': {
-                        'vectorSearchConfiguration': {
-                            'overrideSearchType': 'HYBRID',
-                            'numberOfResults': 30
-                        }
-                    },
-                    'generationConfiguration': {
-                        'promptTemplate': {
-                            'textPromptTemplate': final_prompt
-                        }
-                    },
-                }
-            }
+DF = load_dataframe()
+
+def get_plan_value(raw_condition: str, plan_id: str):
+    stripped    = strip_filler(raw_condition)
+    expanded    = expand_synonyms(stripped)
+    query_norm  = normalize(expanded)
+    log.info("Lookup trace: raw=%r → stripped=%r → expanded=%r → norm=%r",
+             raw_condition, stripped, expanded, query_norm)
+
+    if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
+        return 500, f"CSV missing required columns or plan '{plan_id}'"
+
+    matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
+    if matches.empty:
+        close = difflib.get_close_matches(
+            query_norm, DF['normalized_name'].tolist(), n=5, cutoff=0.7
         )
+        matches = DF[DF['normalized_name'].isin(close)] if close else matches
 
-        answer = response['output']['text']
-        citations = []
-        for cit in response.get('citations', []):
-            refs = cit.get('retrievedReferences', [])
-            if not refs:
-                continue
-            ref = refs[0]
-            citations.append({
-                'source': ref['location']['s3Location']['uri'],
-                'text': ref['content']['text']
+    if matches.empty:
+        return 404, f"No data-points matching '{raw_condition}' found"
+
+    results = []
+    for _, row in matches.iterrows():
+        val = row.get(plan_id)
+        if pd.notna(val):
+            results.append({
+                "condition": row['Data Point Name'],
+                "plan": plan_id,
+                "value": val
             })
 
-        return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/json; charset=utf-8','Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'message': answer,'citations': citations}, indent=2)
-        }
+    if not results:
+        return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
+    return 200, results
 
+def summarize_with_claude35(composite_result: list, options: list, elected: dict) -> str:
+    options_list = [
+        {"optionId": opt["optionId"], "optionDescription": opt["optionDescription"]}
+        for opt in options
+    ]
+    elected_desc = (elected or {}).get("optionDescription")
+    prompt = f"""
+You are a helpful and friendly health benefits advisor.
+Here are the available options:
+{json.dumps(options_list, indent=2)}
+The employee elected: {elected_desc}.
+
+Retrieved plan data:
+{json.dumps(composite_result, indent=2)}
+
+Your job:
+- Summarize each available option as its own section, using its optionDescription.
+- Clearly mark which option was elected and which are other available options.
+- Within each section, organize In-Network (Individual, Family) and Out-of-Network (Individual, Family).
+- Include details like deductibles, coinsurance, out-of-pocket maximums, etc.
+- Do not display plan IDs in parentheses after the description.
+- Do not display that you asked to summarize.
+- Use conversational, reader-friendly language and end with a call for further questions.
+"""
+    try:
+        response = _bedrock.invoke_model(
+            modelId=BEDROCK_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 600,
+                "temperature": 0.5
+            })
+        )
+        body = json.loads(response['body'].read())
+        return body['content'][0]['text']
+    except Exception:
+        log.exception("LLM summarization failed")
+        return None
+
+def wrap_response(status, body):
+    return {
+        "statusCode": status,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "OPTIONS,POST"
+        },
+        "body": json.dumps(body)
+    }
+
+def invoke_fallback(event_payload):
+    try:
+        resp = _lambda.invoke(
+            FunctionName=FALLBACK_LAMBDA_NAME,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(event_payload).encode()
+        )
+        return wrap_response(200, json.loads(resp['Payload'].read()))
     except Exception as e:
-        log.exception("Bedrock retrieve_and_generate failed")
-        return {'statusCode': 500,'body': json.dumps({'error': str(e)})}
+        log.exception("Fallback invocation failed")
+        return wrap_response(500, {"error": f"Fallback error: {e}"})
+
+def lambda_handler(event, _context):
+    log.info("Received event: %s", json.dumps(event))
+
+    raw = event.get("body") or event.get("prompt") or "{}"
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode()
+    try:
+        payload = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        log.exception("Failed to parse JSON body")
+        return wrap_response(400, {"error": "Invalid JSON in body"})
+
+    params = payload.get("parameters") or []
+    if isinstance(params, dict):
+        params = [{"name": k, "value": v} for k, v in params.items()]
+    condition = next((p["value"] for p in params if p["name"]=="condition"), None)
+    plans     = [str(p["value"]).strip() for p in params if p["name"]=="plan"]
+
+    available_options = payload.get("availableOptions", [])
+    elected_option    = payload.get("electedOption")
+
+    if not condition or not plans:
+        missing = []
+        if not condition: missing.append("condition")
+        if not plans:     missing.append("plan")
+        return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
+
+    plan_desc_map = {
+        str(opt.get("optionId")): opt.get("optionDescription")
+        for opt in available_options
+    }
+    if isinstance(elected_option, dict):
+        plan_desc_map[str(elected_option.get("optionId"))] = elected_option.get("optionDescription")
+
+    composite = []
+    for plan in plans:
+        status, data = get_plan_value(condition, plan)
+        if status != 200:
+            fallback_body = {
+                "parameters": [
+                    {"name": "condition",           "value": condition},
+                    {"name": "optionDescription",   "value": plan_desc_map.get(plan, plan)},
+                    {"name": "populationType",      "value": payload.get("populationType")}
+                ],
+                "availableOptions": available_options,
+                "electedOption":    elected_option
+            }
+            return invoke_fallback({ "body": json.dumps(fallback_body) })
+
+        composite.append({
+            "optionId":          plan,
+            "optionDescription": plan_desc_map.get(plan, plan),
+            "data":              data
+        })
+
+    summary = summarize_with_claude35(composite, available_options, elected_option)
+    return wrap_response(200, {
+        "message":          summary,
+        "availableOptions": available_options,
+        "electedOption":    elected_option,
+        "results":          composite
+    })
