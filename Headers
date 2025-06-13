@@ -14,15 +14,15 @@ S3_KEY = "2025 Medical SI HPCC for Chatbot Testing.csv"
 FALLBACK_LAMBDA_NAME = "Poc_Bot_lambda1"
 BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
-_s3 = boto3.client('s3')
-_lambda = boto3.client('lambda')
+_s3      = boto3.client('s3')
+_lambda  = boto3.client('lambda')
 _bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 
 SYNONYMS = {
     r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
-    r"\bco[\s\-]?insurance\b": "coinsurance",
+    r"\bco[\s\-]?insurance\b":    "coinsurance",
     r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
-    r"\bdeductible(s)?\b": "deductible"
+    r"\bdeductible(s)?\b":         "deductible"
 }
 
 def normalize(text: str) -> str:
@@ -48,19 +48,14 @@ def load_dataframe():
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
         df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
         df.columns = df.columns.str.strip()
-
-        if 'Data Point Name' not in df.columns:
-            raise KeyError("Missing 'Data Point Name' column")
-
         df['Data Point Name'] = (
             df['Data Point Name'].astype(str)
-            .str.replace('–', '-', regex=False)
-            .str.replace('\u200b', '', regex=False)
-            .str.strip().str.lower()
+              .str.replace('–', '-', regex=False)
+              .str.replace('\u200b', '', regex=False)
+              .str.strip().str.lower()
         )
         df['normalized_name'] = df['Data Point Name'].apply(normalize)
         return df
-
     except Exception:
         log.exception("Failed to load CSV from S3")
         return pd.DataFrame()
@@ -68,21 +63,20 @@ def load_dataframe():
 DF = load_dataframe()
 
 def get_plan_value(raw_condition: str, plan_id: str):
-    stripped = strip_filler(raw_condition)
-    expanded = expand_synonyms(stripped)
-    query_norm = normalize(expanded)
-
-    log.info("Lookup trace: raw=%r → stripped=%r → expanded=%r → norm=%r", raw_condition, stripped, expanded, query_norm)
+    stripped    = strip_filler(raw_condition)
+    expanded    = expand_synonyms(stripped)
+    query_norm  = normalize(expanded)
+    log.info("Lookup trace: raw=%r → stripped=%r → expanded=%r → norm=%r",
+             raw_condition, stripped, expanded, query_norm)
 
     if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
         return 500, f"CSV missing required columns or plan '{plan_id}'"
 
     matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
-    log.info("Exact matches: %d", len(matches))
-
     if matches.empty:
-        close = difflib.get_close_matches(query_norm, DF['normalized_name'].tolist(), n=5, cutoff=0.7)
-        log.info("Fuzzy matches: %s", close)
+        close = difflib.get_close_matches(
+            query_norm, DF['normalized_name'].tolist(), n=5, cutoff=0.7
+        )
         matches = DF[DF['normalized_name'].isin(close)] if close else matches
 
     if matches.empty:
@@ -103,14 +97,11 @@ def get_plan_value(raw_condition: str, plan_id: str):
     return 200, results
 
 def summarize_with_claude35(composite_result: list, options: list, elected: dict) -> str:
-    options_list = []
-    for opt in options:
-        options_list.append({
-            "optionId": opt.get("optionId"),
-            "optionDescription": opt.get("optionDescription")
-        })
-    elected_desc = elected.get("optionDescription") if isinstance(elected, dict) else None
-
+    options_list = [
+        {"optionId": opt["optionId"], "optionDescription": opt["optionDescription"]}
+        for opt in options
+    ]
+    elected_desc = (elected or {}).get("optionDescription")
     prompt = f"""
 You are a helpful and friendly health benefits advisor.
 Here are the available options:
@@ -173,6 +164,7 @@ def invoke_fallback(event_payload):
 def lambda_handler(event, _context):
     log.info("Received event: %s", json.dumps(event))
 
+    # Parse incoming payload
     raw = event.get("body") or event.get("prompt") or "{}"
     if isinstance(raw, (bytes, bytearray)):
         raw = raw.decode()
@@ -182,47 +174,58 @@ def lambda_handler(event, _context):
         log.exception("Failed to parse JSON body")
         return wrap_response(400, {"error": "Invalid JSON in body"})
 
+    # Extract condition & plan IDs
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
-
-    condition = None
-    plans = []
-    for p in params:
-        if p.get("name") == "condition":
-            condition = p.get("value")
-        elif p.get("name") == "plan":
-            plans.append(str(p.get("value")).strip())
+    condition = next((p["value"] for p in params if p["name"]=="condition"), None)
+    plans     = [str(p["value"]).strip() for p in params if p["name"]=="plan"]
 
     available_options = payload.get("availableOptions", [])
-    elected_option = payload.get("electedOption")
+    elected_option    = payload.get("electedOption")
 
     if not condition or not plans:
         missing = []
         if not condition: missing.append("condition")
-        if not plans: missing.append("plan")
+        if not plans:     missing.append("plan")
         return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
 
-    plan_desc_map = {str(opt.get("optionId")): opt.get("optionDescription") for opt in available_options}
+    # Build map of plan‑ID → description
+    plan_desc_map = {
+        str(opt.get("optionId")): opt.get("optionDescription")
+        for opt in available_options
+    }
     if isinstance(elected_option, dict):
         plan_desc_map[str(elected_option.get("optionId"))] = elected_option.get("optionDescription")
 
+    # For each plan, try the CSV lookup
     composite = []
     for plan in plans:
         status, data = get_plan_value(condition, plan)
         if status != 200:
-            return invoke_fallback(event)
+            # on failure, rebuild payload to pass DESCRIPTION to fallback
+            fallback_body = {
+                "parameters": [
+                    {"name": "condition",           "value": condition},
+                    {"name": "optionDescription",   "value": plan_desc_map.get(plan, plan)},
+                    {"name": "populationType",      "value": payload.get("populationType")}
+                ],
+                "availableOptions": available_options,
+                "electedOption":    elected_option
+            }
+            return invoke_fallback({ "body": json.dumps(fallback_body) })
+
         composite.append({
-            "optionId": plan,
+            "optionId":          plan,
             "optionDescription": plan_desc_map.get(plan, plan),
-            "data": data
+            "data":              data
         })
 
+    # All lookups succeeded—summarize and respond
     summary = summarize_with_claude35(composite, available_options, elected_option)
-
     return wrap_response(200, {
-        "message": summary,
+        "message":          summary,
         "availableOptions": available_options,
-        "electedOption": elected_option,
-        "results": composite
+        "electedOption":    elected_option,
+        "results":          composite
     })
