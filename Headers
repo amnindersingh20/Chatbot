@@ -1,4 +1,4 @@
-"""
+PROMPT_INSTRUCTIONS = """
 You are a question answering agent. I will provide you with a list of benefit plan options and a question.
 Your job is to use the retrieved search results to answer the question about the provided options.
 
