@@ -11,10 +11,8 @@ client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
 POPULATION_KB_MAP = {
     "ATMGMT": "RIBHZRVAQA",
     "BTMGMT": "TGZMV97MNY"
-
 }
 DEFAULT_KB_ID = "RIBHZRVAQA"
-
 
 PROMPT_INSTRUCTIONS = """
 You are a question‑answering agent. You will be given a list of benefit‑plan options and a question.
@@ -78,16 +76,11 @@ def lambda_handler(event, context):
 
         option_list_block = "\n".join(lines)
 
-        final_input_text = f"""
-{PROMPT_INSTRUCTIONS}
+        # Build input text with instructions at top, no leading/trailing whitespace
+        final_input_text = PROMPT_INSTRUCTIONS.strip() + "\n\n" + \
+            "Here are the benefit plan options:\n" + option_list_block + "\n\n" + \
+            "Here is the user's question:\n" + f"What is the {condition} for each of these options?"
 
-Here are the benefit plan options:
-{option_list_block}
-
-Here is the user's question:
-What is the {condition} for each of these options?
-"""
-        
         log.info(f"Final input text for Bedrock:\n{final_input_text}")
 
         response = client_bedrock.retrieve_and_generate(
@@ -105,19 +98,21 @@ What is the {condition} for each of these options?
                             'numberOfResults': 60
                         }
                     }
+                },
+                # Force deterministic output and enough tokens for full structure
+                'generationConfiguration': {
+                    'maxTokens': 1024,
+                    'temperature': 0.0,
+                    'topP': 1.0
                 }
             }
         )
 
         answer = response['output']['text']
         citations = []
-        
 
         for cit in response.get('citations', []):
             retrieved_refs = cit.get('retrievedReferences', [])
-            if not retrieved_refs:
-                continue
-
             for ref in retrieved_refs:
                 if 'location' in ref and 's3Location' in ref['location'] and 'content' in ref:
                     citations.append({
