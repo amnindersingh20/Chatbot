@@ -1,6 +1,4 @@
-- Acupuncture services have a $50 Co-Pay per office visit
-- Coverage is limited to 15 visits per calendar year Acupuncture is covered under this plan. The coverage details are:
-- 30% Coinsurance after Annual Deductible
-- Limited to 15 visits per calendar year High Deductible Broad: This plan offers coverage for acupuncture with 30% coinsurance after meeting the annual deductible, limited to 15 visits per year. It provides both in-network and out-of-network coverage options.
-
-For the other plans (High Deductible Select, Kaiser S Cal High Ded Plan, and Kaiser South California Plan), I don't have enough information from the search results to provide accurate summaries regarding their acupuncture coverage.
+{
+  "statusCode": 500,
+  "body": "{\"error\": \"Parameter validation failed:\\nUnknown parameter in retrieveAndGenerateConfiguration: \\\"generationConfiguration\\\", must be one of: externalSourcesConfiguration, knowledgeBaseConfiguration, type\"}"
+}
