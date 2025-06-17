@@ -1,5 +1,4 @@
 import json
-import os
 import boto3
 import logging
 
@@ -15,21 +14,21 @@ POPULATION_KB_MAP = {
 DEFAULT_KB_ID = "RIBHZRVAQA"
 
 PROMPT_INSTRUCTIONS = """
-You are a question‑answering agent. You will be given a list of benefit‑plan options and a question.
+You are a question-answering agent. You will be given a list of benefit-plan options and a question.
 Your job is to use only the provided retrieval results to answer the question about the provided options.
 
 Strict rules:
- - Always pull data for next year’s plans by default—unless the user explicitly asks for current‑year details when multiple years are available.
- - If next‑year data is not available, fall back to current‑year information.
+ - Always pull data for next year’s plans by default—unless the user explicitly asks for current-year details when multiple years are available.
+ - If next-year data is not available, fall back to current-year information.
  - If you cannot find an exact answer for a plan feature in the retrievals, state: “I couldn’t find that.”
- - Do not mention plan IDs—use only each plan’s human‑readable description.
+ - Do not mention plan IDs—use only each plan’s human-readable description.
 
 Answer format:
- - Organize your response into clearly labeled sections (e.g., **In‑Network**, **Out‑of‑Network**, **Option Summaries**, etc.).
+ - Organize your response into clearly labeled sections (e.g., **In-Network**, **Out-of-Network**, **Option Summaries**, etc.).
  - For every plan option except the one marked **[ELECTED]**, provide a concise 2–3 sentence summary under its own heading.
- - For the **[ELECTED]** option, include a focused breakdown of its **deductible**, **coinsurance**, and **out‑of‑pocket maximum**.
+ - For the **[ELECTED]** option, include a focused breakdown of its **deductible**, **coinsurance**, and **out-of-pocket maximum**.
 
-Targeted follow‑ups:
+Targeted follow-ups:
  - If the user’s question calls out a specific option by name, answer only for that option.
 
 Use this structure on every response to keep plan comparisons clean, consistent, and easy to scan.
@@ -56,17 +55,22 @@ def lambda_handler(event, context):
         kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
         log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
 
-        lines = []
+        # Separate elected and available lists
+        available_list = []
+        elected_desc = None
+
         for opt in available_options:
             desc = opt.get('optionDescription', '').strip()
             if desc.lower() == 'no coverage':
                 log.info(f"Skipping option '{desc}' due to no coverage")
                 continue
 
-            tag = '[ELECTED] ' if elected_option and opt.get('optionId') == elected_option.get('optionId') else ''
-            lines.append(f"* {tag}{desc}")
+            if elected_option and opt.get('optionId') == elected_option.get('optionId'):
+                elected_desc = desc
+            else:
+                available_list.append(desc)
 
-        if not lines:
+        if not elected_desc and not available_list:
             log.info("No applicable options to process after filtering.")
             return {
                 'statusCode': 200,
@@ -74,15 +78,26 @@ def lambda_handler(event, context):
                 'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
             }
 
-        option_list_block = "\n".join(lines)
+        # Build markdown blocks
+        blocks = []
+        if elected_desc:
+            blocks.append(f"**Elected Option:** {elected_desc}")
 
-        # Build input text with instructions at top, no leading/trailing whitespace
+        if available_list:
+            blocks.append("**Available Options:**")
+            for desc in available_list:
+                blocks.append(f"- {desc}")
+
+        option_list_block = "\n\n".join(blocks)
+
+        # Compose final prompt without leading blank lines
         final_input_text = PROMPT_INSTRUCTIONS.strip() + "\n\n" + \
             "Here are the benefit plan options:\n" + option_list_block + "\n\n" + \
             "Here is the user's question:\n" + f"What is the {condition} for each of these options?"
 
         log.info(f"Final input text for Bedrock:\n{final_input_text}")
 
+        # Invoke Bedrock with deterministic settings
         response = client_bedrock.retrieve_and_generate(
             input={'text': final_input_text},
             retrieveAndGenerateConfiguration={
@@ -90,35 +105,34 @@ def lambda_handler(event, context):
                 'knowledgeBaseConfiguration': {
                     'knowledgeBaseId': kb_id,
                     'modelArn': (
-                        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0'
+                        'arn:aws:bedrock:us-east-1::foundation-model/'  
+                        'anthropic.claude-3-5-sonnet-20240620-v1:0'
                     ),
                     'retrievalConfiguration': {
                         'vectorSearchConfiguration': {
                             'overrideSearchType': 'HYBRID',
                             'numberOfResults': 60
                         }
+                    },
+                    'generationConfiguration': {
+                        'maxTokens': 1024,
+                        'temperature': 0.0,
+                        'topP': 1.0
                     }
-                },
-                # Force deterministic output and enough tokens for full structure
-                'generationConfiguration': {
-                    'maxTokens': 1024,
-                    'temperature': 0.0,
-                    'topP': 1.0
                 }
             }
         )
 
+        # Extract answer and citations
         answer = response['output']['text']
         citations = []
-
         for cit in response.get('citations', []):
-            retrieved_refs = cit.get('retrievedReferences', [])
-            for ref in retrieved_refs:
-                if 'location' in ref and 's3Location' in ref['location'] and 'content' in ref:
-                    citations.append({
-                        'source': ref['location']['s3Location']['uri'],
-                        'text': ref['content']['text']
-                    })
+            for ref in cit.get('retrievedReferences', []):
+                loc = ref.get('location', {})
+                content = ref.get('content', {}).get('text')
+                uri = loc.get('s3Location', {}).get('uri')
+                if uri and content:
+                    citations.append({'source': uri, 'text': content})
                 else:
                     log.warning(f"Skipping malformed reference: {ref}")
 
