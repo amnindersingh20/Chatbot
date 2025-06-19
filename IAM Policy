@@ -31,6 +31,9 @@
     </div>
 
     <script>
+        // API endpoint
+        const API_URL = 'https://0ph.execute-api.us-east-1.amazonaws.com/Dev/chat';
+
         // Three distinct constMsg objects for each population type
         const constMsg1 = {
             populationType: "AMGMT99",
@@ -56,25 +59,42 @@
             electedOption: {}
         };
 
-        let activeConstMsg = constMsg1; // Default
+        let activeConstMsg = constMsg1; // Default selection
 
+        // Update activeConstMsg on radio change
         document.querySelectorAll('input[name="populationType"]').forEach(radio => {
             radio.addEventListener('change', e => {
                 switch (e.target.value) {
-                    case "AMGMT99":
-                        activeConstMsg = constMsg1;
-                        break;
-                    case "BLKACTIVE":
-                        activeConstMsg = constMsg2;
-                        break;
-                    case "MWTIBEWACTIVE":
-                        activeConstMsg = constMsg3;
-                        break;
+                    case "AMGMT99": activeConstMsg = constMsg1; break;
+                    case "BLKACTIVE": activeConstMsg = constMsg2; break;
+                    case "MWTIBEWACTIVE": activeConstMsg = constMsg3; break;
                 }
                 sessionStorage.setItem("constMsg", JSON.stringify(activeConstMsg));
             });
         });
 
+        // Handle Enter key for single-line submit
+        function handleEnterKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // Utility to append messages to chat
+        function appendMessage(msg, isUser) {
+            const container = document.getElementById('chat-history');
+            const div = document.createElement('div');
+            div.className = 'message ' + (isUser ? 'user-message' : 'bot-message');
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = msg;
+            div.appendChild(bubble);
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Send user message to API
         async function sendMessage() {
             const inputEl = document.getElementById('message-input');
             const text = inputEl.value.trim();
@@ -84,6 +104,7 @@
             appendMessage(text, true);
             document.getElementById('typing-indicator').style.display = 'block';
 
+            // Build parameters array
             const params = [
                 { name: 'condition', value: text },
                 { name: 'populationType', value: activeConstMsg.populationType }
@@ -92,6 +113,7 @@
                 params.push({ name: 'plan', value: String(opt.optionId) });
             });
 
+            // Construct full payload
             const payload = {
                 parameters: params,
                 pageName: activeConstMsg.pageName,
@@ -107,7 +129,11 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                // handle response as before
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                // Assuming API returns { message: '...' }
+                const reply = data.message || 'No response';
+                appendMessage(reply, false);
             } catch (err) {
                 document.getElementById('error-message').textContent = `Error: ${err.message}`;
             } finally {
@@ -118,3 +144,4 @@
 </body>
 
 </html>
+
