@@ -1,154 +1,8 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-    <title>AI Enrollment Chatbot</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            background: #fff;
-        }
-
-        #chat-container {
-            max-width: 800px;
-            margin: 0 auto;
-            width: 100%;
-            padding: 0;
-            margin-bottom: 20px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            height: calc(100vh - 120px);
-        }
-
-        #chat-history {
-            overflow-y: auto;
-            padding: 10px;
-            background: transparent;
-            border-radius: 10px;
-            margin-bottom: 25px;
-        }
-
-        .message {
-            margin-bottom: 15px;
-            display: flex;
-        }
-
-        .user-message {
-            justify-content: flex-end;
-        }
-
-        .bot-message {
-            justify-content: flex-start;
-        }
-
-        .message-bubble {
-            max-width: 100%;
-            padding: 12px 14px;
-            border-radius: 15px;
-            word-break: break-word;
-            white-space: pre-wrap;
-            font-size: 14px;
-        }
-
-        .user-message .message-bubble {
-            background: #007bff;
-            color: white;
-            border-bottom-right-radius: 5px;
-        }
-
-        .bot-message .message-bubble {
-            background: #e9ecef;
-            color: #212529;
-            border-bottom-left-radius: 5px;
-        }
-
-        #input-container {
-            display: inline-flex;
-            padding: 2%;
-            background: #fff;
-            position: fixed;
-            bottom: 0;
-            width: 96%;
-            margin: 0;
-        }
-
-        #message-input:focus {
-            border-color: #007bff;
-        }
-
-        #message-input {
-            padding: 15px 60px 15px 8px;
-            width: 100%;
-            border: 2px solid #ababab;
-            border-radius: 8px;
-            font-size: 14px;
-            outline: none;
-        }
-
-        #send-button {
-            padding: 2px 15px;
-            background: transparent;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            position: absolute;
-            right: 30px;
-            top: 28%;
-        }
-
-        .typing-indicator {
-            display: none;
-            padding: 10px;
-            font-style: italic;
-            color: #6c757d;
-        }
-
-        .error-message {
-            color: #dc3545;
-            padding: 10px;
-            text-align: center;
-        }
-
-        .question-tile {
-            background-color: #f0f0f0;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            padding: 10px;
-            font-size: 14px;
-            margin: 5px 0;
-            cursor: pointer;
-            transition: background-color 0.3s, box-shadow 0.3s;
-        }
-
-        .suggested_messagep {
-            padding: 0;
-            margin: 0;
-            font-style: italic;
-            font-weight: 500;
-        }
-
-        .question-tile:hover {
-            background-color: #e0e0e0;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        .question-tile:active {
-            background-color: #d0d0d0;
-        }
-    </style>
-</head>
-
 <body>
     <form action="">
         <label for="populationType1"><input type="radio" id="populationType1" name="populationType" value="AMGMT99">AMGMT99</label>
-        <label for="populationType2"><input type="radio" id="populationType2" name="populationType" value="BLKACTIVE">BLKACTIVE</label>  
-        <label for="populationType3"><input type="radio" id="populationType3" name="populationType" value="MWTIBEWACTIVE">MWTIBEWACTIVE</label> 
+        <label for="populationType2"><input type="radio" id="populationType2" name="populationType" value="BLKACTIVE">BLKACTIVE</label>
+        <label for="populationType3"><input type="radio" id="populationType3" name="populationType" value="MWTIBEWACTIVE">MWTIBEWACTIVE</label>
     </form>
     <div id="chat-container">
         <div id="chat-history"></div>
@@ -166,81 +20,46 @@
     </div>
 
     <script>
-        const constMsg={
-		"pageName": "Annual Enrollment - Medical - AT&T",
-		"planId": "1000",
-		"populationType": "",
-		"customText1":"<p><i><b>Provider disclaimer:</b> Note: If you or your dependent(s) use a provider outside of your local area, and they are listed as out-of-network here, you can check with that carrier to confirm their network status in that plan option.</i></p><p>Choose the right medical plan option for you!</p><p>To receive a personalized review of your medical plan options, consider using resources available to you, like the Medical Plan Option Evaluator located on your Annual Enrollment home page.</p><p>To create a list of in-network doctors select <b>Find a Doctor.</b></p><p>   <ol><li>Use <b>Find Doctors</b> button to search and save your physicians (select 'Add Favorites ' on the search site).</li><li>Use the drop down to assign the in-network physicians to you and your dependents.</li></ol>",
-		"customText2":"",
-		"customText3":"",
-		"customText4":"",
-		"cddList":[], 		
-		"enrollmentDeadlineDate":"",
-		"availableOptions":[
-		{
-		 	"optionId":9960,
-			"optionDescription":"No Coverage",
-		 	"coverageAmount":""
-		},
-		{
-			"optionId":1284,
-			"optionDescription":"Low Deductible Select",
-			"coverageAmount":""
-		},
-		{
-			"optionId":14512,
-			"optionDescription":"Kaiser S Cal High Ded Plan",
-			"coverageAmount":""
-		},
-		{
-			"optionId":1276,
-			"optionDescription":"High Deductible Select",
-			"coverageAmount":""
-		},
-		{
-			"optionId":1273,
-			"optionDescription":"High Deductible Broad",
-			"coverageAmount":""
-		},
-		{
-			"optionId":11020,
-			"optionDescription":"Kaiser South California Plan",
-			"coverageAmount":""
-		}
-		],
-		"electedOption":	{
-			"optionId":1284,
-			"optionDescription":"Low Deductible Select"
-		},
-		"currentCoverageOption": {
-			"currentCoverageOptionID":"",
-			"currentCoverageDescription":""
-		},
-        "minimumContributionAmount":"",
-		"maximumContributionAmount":"",
-        "simpAEReviseStatus":"",        
-        "simplifiedEnrollmentEligible":"eligible",
-		"enrollmentFollowUps": {
-			"title":"",
-			"body":""
-		}
-}
-    sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
-        console.log('constMsg:', constMsg);
-        
-		 // Update constMsg when a radio button is selected
+        // single source of truth
+        let constMsg = {
+            pageName: "Annual Enrollment - Medical - AT&T",
+            planId: "1000",
+            populationType: "",
+            customText1: "<p><i><b>Provider disclaimer:</b> Note: If you or your dependent(s) use a provider outside of your local area, and they are listed as out-of-network here, you can check with that carrier to confirm their network status in that plan option.</i></p><p>Choose the right medical plan option for you!</p><p>To receive a personalized review of your medical plan options, consider using resources available to you, like the Medical Plan Option Evaluator located on your Annual Enrollment home page.</p><p>To create a list of in-network doctors select <b>Find a Doctor.</b></p><p>   <ol><li>Use <b>Find Doctors</b> button to search and save your physicians (select 'Add Favorites ' on the search site).</li><li>Use the drop down to assign the in-network physicians to you and your dependents.</li></ol>",
+            customText2: "",
+            customText3: "",
+            customText4: "",
+            cddList: [],
+            enrollmentDeadlineDate: "",
+            availableOptions: [
+                { optionId: 9960, optionDescription: "No Coverage", coverageAmount: "" },
+                { optionId: 1284, optionDescription: "Low Deductible Select", coverageAmount: "" },
+                { optionId: 14512, optionDescription: "Kaiser S Cal High Ded Plan", coverageAmount: "" },
+                { optionId: 1276, optionDescription: "High Deductible Select", coverageAmount: "" },
+                { optionId: 1273, optionDescription: "High Deductible Broad", coverageAmount: "" },
+                { optionId: 11020, optionDescription: "Kaiser South California Plan", coverageAmount: "" }
+            ],
+            electedOption: { optionId: 1284, optionDescription: "Low Deductible Select" },
+            currentCoverageOption: { currentCoverageOptionID: "", currentCoverageDescription: "" },
+            minimumContributionAmount: "",
+            maximumContributionAmount: "",
+            simpAEReviseStatus: "",
+            simplifiedEnrollmentEligible: "eligible",
+            enrollmentFollowUps: { title: "", body: "" }
+        };
+
+        // initialize storage
+        sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
+
+        // when radio changes, update both constMsg and storage
         document.querySelectorAll('input[name="populationType"]').forEach(radio => {
-            radio.addEventListener('change', event => {
-                const selectedValue = event.target.value;
-                constMsg.populationType = selectedValue;
+            radio.addEventListener('change', e => {
+                constMsg.populationType = e.target.value;
                 sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
-                console.log(`Updated populationType to: ${selectedValue}`);
+                console.log(`PopulationType updated: ${constMsg.populationType}`);
             });
         });
-        sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
-		console.log('constMsg set in sessionStorage:', constMsg);
-        const constMsg2 = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
-        console.log('constMsg2:', constMsg2);
+
         const messageRegistry = { suggested: new Set(), questions: new Set() };
         window.addEventListener('message', event => {
             const { questions, suggested_message } = event.data;
@@ -263,12 +82,11 @@
             });
             chatHistory.scrollTop = chatHistory.scrollHeight;
         });
+
+        // helper to map optionId to description
         const optionMap = {};
-        constMsg2.availableOptions.forEach(o => optionMap[o.optionId] = o.optionDescription);
-        if (constMsg2.electedOption) optionMap[constMsg2.electedOption.optionId] = constMsg2.electedOption.optionDescription;
-        const availablePlanIds = constMsg2.availableOptions.map(o => String(o.optionId));
-        const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
-        const API_URL = 'https://0ph.execute-api.us-east-1.amazonaws.com/Dev/chat';
+        constMsg.availableOptions.forEach(o => optionMap[o.optionId] = o.optionDescription);
+        if (constMsg.electedOption) optionMap[constMsg.electedOption.optionId] = constMsg.electedOption.optionDescription;
 
         function handleEnterKey(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -280,45 +98,35 @@
             document.getElementById('message-input').value = q;
             sendMessage();
         }
-        function appendMessage(msg, isUser) {
-            const div = document.createElement('div');
-            div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            bubble.textContent = msg;
-            div.appendChild(bubble);
-            document.getElementById('chat-history').appendChild(div);
-            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
-        }
 
         async function sendMessage() {
-            const inputEl = document.getElementById('message-input');
-            const text = inputEl.value.trim();
+            const text = document.getElementById('message-input').value.trim();
             if (!text) return;
-            inputEl.value = '';
-            document.getElementById('error-message').textContent = '';
             appendMessage(text, true);
+            document.getElementById('message-input').value = '';
+            document.getElementById('error-message').textContent = '';
             document.getElementById('typing-indicator').style.display = 'block';
 
-            // Build parameters
-            const params = [
-                { name: 'condition', value: text }
-            ];
-            availablePlanIds.forEach(id => params.push({ name: 'plan', value: id }));
-            if (electedPlanId) params.push({ name: 'plan', value: electedPlanId });
+            // load latest constMsg (if needed)
+            const latest = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
 
-            // Full payload with all constMsg2 fields
+            // build parameter list
+            const params = [{ name: 'condition', value: text }];
+            latest.availableOptions.forEach(o => params.push({ name: 'plan', value: String(o.optionId) }));
+            if (latest.electedOption) params.push({ name: 'plan', value: String(latest.electedOption.optionId) });
+
+            // payload uses latest
             const payload = {
                 parameters: params,
-                pageName: constMsg2.pageName,
-                populationType: constMsg2.populationType,
-                enrollmentDeadlineDate: constMsg2.enrollmentDeadlineDate,
-                availableOptions: constMsg2.availableOptions,
-                electedOption: constMsg2.electedOption
+                pageName: latest.pageName,
+                populationType: latest.populationType,
+                enrollmentDeadlineDate: latest.enrollmentDeadlineDate,
+                availableOptions: latest.availableOptions,
+                electedOption: latest.electedOption
             };
 
             try {
-                const res = await fetch(API_URL, {
+                const res = await fetch('https://0ph.execute-api.us-east-1.amazonaws.com/Dev/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -330,7 +138,7 @@
                 }
 
                 let reply = '';
-                if (data && typeof data.message === 'string') {
+                if (data.message) {
                     reply = data.message;
                 } else if (Array.isArray(data)) {
                     reply = data.map(item => {
@@ -350,6 +158,7 @@
                 } else {
                     reply = 'Sorry, I got an unexpected response.';
                 }
+
                 appendMessage(reply, false);
             } catch (err) {
                 document.getElementById('error-message').textContent = `Error: ${err.message}`;
@@ -357,10 +166,16 @@
                 document.getElementById('typing-indicator').style.display = 'none';
             }
         }
-       
 
-       
+        function appendMessage(msg, isUser) {
+            const div = document.createElement('div');
+            div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = msg;
+            div.appendChild(bubble);
+            document.getElementById('chat-history').appendChild(div);
+            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
+        }
     </script>
 </body>
-
-</html>
