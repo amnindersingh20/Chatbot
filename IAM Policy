@@ -51,9 +51,20 @@ def lambda_handler(event, context):
         raw_body = event.get('body', {})
         body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
 
+        # parse parameters into a dict
         params = {p['name']: p['value'] for p in body.get('parameters', [])}
+        log.info(f"Parsed parameters: {params}")
+
+        # normalize and uppercase the populationType before map lookup
+        raw_pop = params.get('populationType', '')
+        log.info(f"Raw populationType parameter: '{raw_pop}'")
+        population_type = raw_pop.strip().upper()
+
+        # select the KB ID (default if unrecognized)
+        kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
+        log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
+
         condition = params.get('condition', '').strip()
-        population_type = params.get('populationType', '')
         available_options = body.get('availableOptions', [])
         elected_option = body.get('electedOption', {})
 
@@ -64,13 +75,9 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'Missing condition or availableOptions'})
             }
 
-        kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
-        log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
-
-
+        # filter out any “No Coverage” options
         available_list = []
         elected_desc = None
-
         for opt in available_options:
             desc = opt.get('optionDescription', '').strip()
             if desc.lower() == 'no coverage':
@@ -86,31 +93,40 @@ def lambda_handler(event, context):
             log.info("No applicable options to process after filtering.")
             return {
                 'statusCode': 200,
-                'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
-                'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
+                'headers': {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'message': 'No applicable options to process.',
+                    'citations': []
+                })
             }
 
+        # normalize any plan-name mentions in the user’s question
         plan_name_map = {d.lower(): d for d in ([elected_desc] if elected_desc else []) + available_list}
         condition = normalize_condition(condition, plan_name_map)
 
+        # build the prompt
         blocks = []
         if elected_desc:
             blocks.append(f"**Elected Option:** {elected_desc}")
-
         if available_list:
             blocks.append("**Available Options:**")
             for desc in available_list:
                 blocks.append(f"- {desc}")
-
         option_list_block = "\n\n".join(blocks)
 
-        final_input_text = PROMPT_INSTRUCTIONS.strip() + "\n\n" + \
-            "Here are the benefit plan options:\n" + option_list_block + "\n\n" + \
-            "Here is the user's question:\n" + f"What is the {condition} for each of these options?"
-
+        final_input_text = (
+            PROMPT_INSTRUCTIONS.strip()
+            + "\n\nHere are the benefit plan options:\n"
+            + option_list_block
+            + "\n\nHere is the user's question:\n"
+            + f"What is the {condition} for each of these options?"
+        )
         log.info(f"Final input text for Bedrock:\n{final_input_text}")
 
-
+        # invoke Bedrock
         response = client_bedrock.retrieve_and_generate(
             input={'text': final_input_text},
             retrieveAndGenerateConfiguration={
@@ -118,7 +134,7 @@ def lambda_handler(event, context):
                 'knowledgeBaseConfiguration': {
                     'knowledgeBaseId': kb_id,
                     'modelArn': (
-                        'arn:aws:bedrock:us-east-1::foundation-model/'  
+                        'arn:aws:bedrock:us-east-1::foundation-model/'
                         'anthropic.claude-3-5-sonnet-20240620-v1:0'
                     ),
                     'retrievalConfiguration': {
@@ -128,21 +144,19 @@ def lambda_handler(event, context):
                         }
                     },
                     'generationConfiguration': {
-                        "inferenceConfig": { 
+                        'inferenceConfig': {
                             'textInferenceConfig': {
-                                "maxTokens": 1024,
-                                "temperature": 0.0,
-                                "topP": 1.0
-
+                                'maxTokens': 1024,
+                                'temperature': 0.0,
+                                'topP': 1.0
                             }
-               
-                }
-                }
+                        }
+                    }
                 }
             }
         )
 
- 
+        # extract answer & citations
         answer = response['output']['text']
         citations = []
         for cit in response.get('citations', []):
@@ -159,7 +173,10 @@ def lambda_handler(event, context):
 
         return {
             'statusCode': 200,
-            'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+            'headers': {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Access-Control-Allow-Origin': '*'
+            },
             'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
         }
 
