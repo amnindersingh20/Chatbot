@@ -1,188 +1,120 @@
-import json
-import boto3
-import logging
-import re
+<!DOCTYPE html>
+<html>
 
-log = logging.getLogger()
-log.setLevel(logging.INFO)
+<head>
+    <title>AI Enrollment Chatbot</title>
+    <style>
+        /* (Style block remains unchanged) */
+    </style>
+</head>
 
-client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+<body>
+    <form>
+        <label><input type="radio" name="populationType" value="AMGMT99"> AMGMT99</label>
+        <label><input type="radio" name="populationType" value="BLKACTIVE"> BLKACTIVE</label>
+        <label><input type="radio" name="populationType" value="MWTIBEWACTIVE"> MWTIBEWACTIVE</label>
+    </form>
 
-POPULATION_KB_MAP = {
-    "AMGMT99": "RIBHZRVAQA",
-    "BLKACTIVE": "TGZMV97MNY",
-    "MWTIBEWACTIVE": "TGZMV97MNY"
-}
-DEFAULT_KB_ID = "RIBHZRVAQA"
+    <div id="chat-container">
+        <div id="chat-history"></div>
+        <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
+    </div>
 
-PROMPT_INSTRUCTIONS = """
-You are a question-answering agent. You will be given a list of benefit-plan options and a question.
-Your job is to use only the provided retrieval results to answer the question about the provided options.
+    <div class="error-message" id="error-message"></div>
+    <div id="input-container">
+        <input type="text" id="message-input" placeholder="Ask your question" onkeypress="handleEnterKey(event)">
+        <button id="send-button" onclick="sendMessage()">
+            <svg width="40px" height="40px" viewBox="0 0 24 24" fill="none">
+                <path d="M7.75778 6.14799..." fill="#000000"/>
+            </svg>
+        </button>
+    </div>
 
-Strict rules:
- - Always pull data for next year’s plans by default—unless the user explicitly asks for current-year details when multiple years are available.
- - If next-year data is not available, fall back to current-year information.
- - If you cannot find an exact answer for a plan feature in the retrievals, state: “I couldn’t find that.”
- - Do not mention plan IDs—use only each plan’s human-readable description.
+    <script>
+        // Three distinct constMsg objects for each population type
+        const constMsg1 = {
+            populationType: "AMGMT99",
+            pageName: "Page A",
+            enrollmentDeadlineDate: "",
+            availableOptions: [],
+            electedOption: {}
+        };
 
-Answer format:
- - Organize your response into clearly labeled sections (e.g., **In-Network**, **Out-of-Network**, **Option Summaries**, etc.).
- - For every plan option except the one marked **[ELECTED]**, provide a concise 2–3 sentence summary under its own heading.
- - For the **[ELECTED]** option, include a focused breakdown of its **deductible**, **coinsurance**, and **out-of-pocket maximum**.
+        const constMsg2 = {
+            populationType: "BLKACTIVE",
+            pageName: "Page B",
+            enrollmentDeadlineDate: "",
+            availableOptions: [],
+            electedOption: {}
+        };
 
-Targeted follow-ups:
- - If the user’s question calls out a specific option by name, answer only for that option.
+        const constMsg3 = {
+            populationType: "MWTIBEWACTIVE",
+            pageName: "Page C",
+            enrollmentDeadlineDate: "",
+            availableOptions: [],
+            electedOption: {}
+        };
 
-Use this structure on every response to keep plan comparisons clean, consistent, and easy to scan.
-"""
+        let activeConstMsg = constMsg1; // Default
 
-def normalize_condition(text, plan_name_map):
-    """
-    Replace any mention of a plan name in `text` with its exact-cased version from plan_name_map.
-    """
-    for lower_name, exact_name in plan_name_map.items():
-        pattern = r"\b" + re.escape(lower_name) + r"\b"
-        text = re.sub(pattern, exact_name, text, flags=re.IGNORECASE)
-    return text
-
-
-def lambda_handler(event, context):
-    try:
-        raw_body = event.get('body', {})
-        body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
-
-        # parse parameters into a dict
-        params = {p['name']: p['value'] for p in body.get('parameters', [])}
-        log.info(f"Parsed parameters: {params}")
-
-        # normalize and uppercase the populationType before map lookup
-        raw_pop = params.get('populationType', '')
-        log.info(f"Raw populationType parameter: '{raw_pop}'")
-        population_type = raw_pop.strip().upper()
-
-        # select the KB ID (default if unrecognized)
-        kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
-        log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
-
-        condition = params.get('condition', '').strip()
-        available_options = body.get('availableOptions', [])
-        elected_option = body.get('electedOption', {})
-
-        if not condition or not available_options:
-            log.warning("Request is missing 'condition' or 'availableOptions'.")
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing condition or availableOptions'})
-            }
-
-        # filter out any “No Coverage” options
-        available_list = []
-        elected_desc = None
-        for opt in available_options:
-            desc = opt.get('optionDescription', '').strip()
-            if desc.lower() == 'no coverage':
-                log.info(f"Skipping option '{desc}' due to no coverage")
-                continue
-
-            if elected_option and opt.get('optionId') == elected_option.get('optionId'):
-                elected_desc = desc
-            else:
-                available_list.append(desc)
-
-        if not elected_desc and not available_list:
-            log.info("No applicable options to process after filtering.")
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({
-                    'message': 'No applicable options to process.',
-                    'citations': []
-                })
-            }
-
-        # normalize any plan-name mentions in the user’s question
-        plan_name_map = {d.lower(): d for d in ([elected_desc] if elected_desc else []) + available_list}
-        condition = normalize_condition(condition, plan_name_map)
-
-        # build the prompt
-        blocks = []
-        if elected_desc:
-            blocks.append(f"**Elected Option:** {elected_desc}")
-        if available_list:
-            blocks.append("**Available Options:**")
-            for desc in available_list:
-                blocks.append(f"- {desc}")
-        option_list_block = "\n\n".join(blocks)
-
-        final_input_text = (
-            PROMPT_INSTRUCTIONS.strip()
-            + "\n\nHere are the benefit plan options:\n"
-            + option_list_block
-            + "\n\nHere is the user's question:\n"
-            + f"What is the {condition} for each of these options?"
-        )
-        log.info(f"Final input text for Bedrock:\n{final_input_text}")
-
-        # invoke Bedrock
-        response = client_bedrock.retrieve_and_generate(
-            input={'text': final_input_text},
-            retrieveAndGenerateConfiguration={
-                'type': 'KNOWLEDGE_BASE',
-                'knowledgeBaseConfiguration': {
-                    'knowledgeBaseId': kb_id,
-                    'modelArn': (
-                        'arn:aws:bedrock:us-east-1::foundation-model/'
-                        'anthropic.claude-3-5-sonnet-20240620-v1:0'
-                    ),
-                    'retrievalConfiguration': {
-                        'vectorSearchConfiguration': {
-                            'overrideSearchType': 'HYBRID',
-                            'numberOfResults': 60
-                        }
-                    },
-                    'generationConfiguration': {
-                        'inferenceConfig': {
-                            'textInferenceConfig': {
-                                'maxTokens': 1024,
-                                'temperature': 0.0,
-                                'topP': 1.0
-                            }
-                        }
-                    }
+        document.querySelectorAll('input[name="populationType"]').forEach(radio => {
+            radio.addEventListener('change', e => {
+                switch (e.target.value) {
+                    case "AMGMT99":
+                        activeConstMsg = constMsg1;
+                        break;
+                    case "BLKACTIVE":
+                        activeConstMsg = constMsg2;
+                        break;
+                    case "MWTIBEWACTIVE":
+                        activeConstMsg = constMsg3;
+                        break;
                 }
+                sessionStorage.setItem("constMsg", JSON.stringify(activeConstMsg));
+            });
+        });
+
+        async function sendMessage() {
+            const inputEl = document.getElementById('message-input');
+            const text = inputEl.value.trim();
+            if (!text) return;
+            inputEl.value = '';
+            document.getElementById('error-message').textContent = '';
+            appendMessage(text, true);
+            document.getElementById('typing-indicator').style.display = 'block';
+
+            const params = [
+                { name: 'condition', value: text },
+                { name: 'populationType', value: activeConstMsg.populationType }
+            ];
+            activeConstMsg.availableOptions.forEach(opt => {
+                params.push({ name: 'plan', value: String(opt.optionId) });
+            });
+
+            const payload = {
+                parameters: params,
+                pageName: activeConstMsg.pageName,
+                populationType: activeConstMsg.populationType,
+                enrollmentDeadlineDate: activeConstMsg.enrollmentDeadlineDate,
+                availableOptions: activeConstMsg.availableOptions,
+                electedOption: activeConstMsg.electedOption
+            };
+
+            try {
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                // handle response as before
+            } catch (err) {
+                document.getElementById('error-message').textContent = `Error: ${err.message}`;
+            } finally {
+                document.getElementById('typing-indicator').style.display = 'none';
             }
-        )
-
-        # extract answer & citations
-        answer = response['output']['text']
-        citations = []
-        for cit in response.get('citations', []):
-            for ref in cit.get('retrievedReferences', []):
-                loc = ref.get('location', {})
-                content = ref.get('content', {}).get('text')
-                uri = loc.get('s3Location', {}).get('uri')
-                if uri and content:
-                    citations.append({'source': uri, 'text': content})
-                else:
-                    log.warning(f"Skipping malformed reference: {ref}")
-
-        log.info(f"Successfully generated answer and found {len(citations)} citation references.")
-
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json; charset=utf-8',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
         }
+    </script>
+</body>
 
-    except Exception as e:
-        log.exception("An error occurred in the lambda_handler")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+</html>
