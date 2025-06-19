@@ -1,181 +1,171 @@
-<body>
-    <form action="">
-        <label for="populationType1"><input type="radio" id="populationType1" name="populationType" value="AMGMT99">AMGMT99</label>
-        <label for="populationType2"><input type="radio" id="populationType2" name="populationType" value="BLKACTIVE">BLKACTIVE</label>
-        <label for="populationType3"><input type="radio" id="populationType3" name="populationType" value="MWTIBEWACTIVE">MWTIBEWACTIVE</label>
-    </form>
-    <div id="chat-container">
-        <div id="chat-history"></div>
-        <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
-    </div>
+import json
+import boto3
+import logging
+import re
 
-    <div class="error-message" id="error-message"></div>
-    <div id="input-container">
-        <input type="text" id="message-input" placeholder="Ask your question" onkeypress="handleEnterKey(event)">
-        <button id="send-button" onclick="sendMessage()">
-            <svg width="40px" height="40px" viewBox="0 0 24 24" fill="none">
-                <path d="M7.75778 6.14799C6.84443 5.77187 6.0833 5.45843 5.49196 5.30702C4.91915 5.16036 4.18085 5.07761 3.63766 5.62862C3.09447 6.17962 3.18776 6.91666 3.34259 7.48732C3.50242 8.07644 3.8267 8.83302 4.21583 9.7409L4.86259 11.25H10C10.4142 11.25 10.75 11.5858 10.75 12C10.75 12.4142 10.4142 12.75 10 12.75H4.8626L4.21583 14.2591C3.8267 15.167 3.50242 15.9236 3.34259 16.5127C3.18776 17.0833 3.09447 17.8204 3.63766 18.3714C4.18085 18.9224 4.91915 18.8396 5.49196 18.693C6.0833 18.5416 6.84443 18.2281 7.75777 17.852L19.1997 13.1406C19.4053 13.0561 19.6279 12.9645 19.7941 12.867C19.944 12.779 20.3434 12.5192 20.3434 12C20.3434 11.4808 19.944 11.221 19.7941 11.133C19.6279 11.0355 19.4053 10.9439 19.1997 10.8594L7.75778 6.14799Z" fill="#000000"/>
-            </svg>
-        </button>
-    </div>
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
-    <script>
-        // single source of truth
-        let constMsg = {
-            pageName: "Annual Enrollment - Medical - AT&T",
-            planId: "1000",
-            populationType: "",
-            customText1: "<p><i><b>Provider disclaimer:</b> Note: If you or your dependent(s) use a provider outside of your local area, and they are listed as out-of-network here, you can check with that carrier to confirm their network status in that plan option.</i></p><p>Choose the right medical plan option for you!</p><p>To receive a personalized review of your medical plan options, consider using resources available to you, like the Medical Plan Option Evaluator located on your Annual Enrollment home page.</p><p>To create a list of in-network doctors select <b>Find a Doctor.</b></p><p>   <ol><li>Use <b>Find Doctors</b> button to search and save your physicians (select 'Add Favorites ' on the search site).</li><li>Use the drop down to assign the in-network physicians to you and your dependents.</li></ol>",
-            customText2: "",
-            customText3: "",
-            customText4: "",
-            cddList: [],
-            enrollmentDeadlineDate: "",
-            availableOptions: [
-                { optionId: 9960, optionDescription: "No Coverage", coverageAmount: "" },
-                { optionId: 1284, optionDescription: "Low Deductible Select", coverageAmount: "" },
-                { optionId: 14512, optionDescription: "Kaiser S Cal High Ded Plan", coverageAmount: "" },
-                { optionId: 1276, optionDescription: "High Deductible Select", coverageAmount: "" },
-                { optionId: 1273, optionDescription: "High Deductible Broad", coverageAmount: "" },
-                { optionId: 11020, optionDescription: "Kaiser South California Plan", coverageAmount: "" }
-            ],
-            electedOption: { optionId: 1284, optionDescription: "Low Deductible Select" },
-            currentCoverageOption: { currentCoverageOptionID: "", currentCoverageDescription: "" },
-            minimumContributionAmount: "",
-            maximumContributionAmount: "",
-            simpAEReviseStatus: "",
-            simplifiedEnrollmentEligible: "eligible",
-            enrollmentFollowUps: { title: "", body: "" }
-        };
+client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
 
-        // initialize storage
-        sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
+POPULATION_KB_MAP = {
+    "AMGMT99": "RIBHZRVAQA",
+    "BLKACTIVE": "TGZMV97MNY",
+    "MWTIBEWACTIVE": "TGZMV97MNY"
+}
+DEFAULT_KB_ID = "RIBHZRVAQA"
 
-        // when radio changes, update both constMsg and storage
-        document.querySelectorAll('input[name="populationType"]').forEach(radio => {
-            radio.addEventListener('change', e => {
-                constMsg.populationType = e.target.value;
-                sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
-                console.log(`PopulationType updated: ${constMsg.populationType}`);
-            });
-        });
+PROMPT_INSTRUCTIONS = """
+You are a question-answering agent. You will be given a list of benefit-plan options and a question.
+Your job is to use only the provided retrieval results to answer the question about the provided options.
 
-        const messageRegistry = { suggested: new Set(), questions: new Set() };
-        window.addEventListener('message', event => {
-            const { questions, suggested_message } = event.data;
-            const chatHistory = document.getElementById('chat-history');
-            if (suggested_message) {
-                const div = document.createElement('div');
-                div.className = 'suggested_messagep';
-                div.textContent = suggested_message.trim();
-                chatHistory.appendChild(div);
+Strict rules:
+ - Always pull data for next year’s plans by default—unless the user explicitly asks for current-year details when multiple years are available.
+ - If next-year data is not available, fall back to current-year information.
+ - If you cannot find an exact answer for a plan feature in the retrievals, state: “I couldn’t find that.”
+ - Do not mention plan IDs—use only each plan’s human-readable description.
+
+Answer format:
+ - Organize your response into clearly labeled sections (e.g., **In-Network**, **Out-of-Network**, **Option Summaries**, etc.).
+ - For every plan option except the one marked **[ELECTED]**, provide a concise 2–3 sentence summary under its own heading.
+ - For the **[ELECTED]** option, include a focused breakdown of its **deductible**, **coinsurance**, and **out-of-pocket maximum**.
+
+Targeted follow-ups:
+ - If the user’s question calls out a specific option by name, answer only for that option.
+
+Use this structure on every response to keep plan comparisons clean, consistent, and easy to scan.
+"""
+
+def normalize_condition(text, plan_name_map):
+    """
+    Replace any mention of a plan name in `text` with its exact-cased version from plan_name_map.
+    """
+    for lower_name, exact_name in plan_name_map.items():
+        pattern = r"\b" + re.escape(lower_name) + r"\b"
+        text = re.sub(pattern, exact_name, text, flags=re.IGNORECASE)
+    return text
+
+
+def lambda_handler(event, context):
+    try:
+        raw_body = event.get('body', {})
+        body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+
+        params = {p['name']: p['value'] for p in body.get('parameters', [])}
+        condition = params.get('condition', '').strip()
+        population_type = params.get('populationType', '')
+        available_options = body.get('availableOptions', [])
+        elected_option = body.get('electedOption', {})
+
+        if not condition or not available_options:
+            log.warning("Request is missing 'condition' or 'availableOptions'.")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing condition or availableOptions'})
             }
-            questions.forEach(q => {
-                if (!messageRegistry.questions.has(q)) {
-                    const tile = document.createElement('div');
-                    tile.className = 'question-tile';
-                    tile.textContent = q.trim();
-                    tile.onclick = () => sendQuestion(q);
-                    chatHistory.appendChild(tile);
-                    messageRegistry.questions.add(q);
-                }
-            });
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        });
 
-        // helper to map optionId to description
-        const optionMap = {};
-        constMsg.availableOptions.forEach(o => optionMap[o.optionId] = o.optionDescription);
-        if (constMsg.electedOption) optionMap[constMsg.electedOption.optionId] = constMsg.electedOption.optionDescription;
+        kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
+        log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
 
-        function handleEnterKey(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
+
+        available_list = []
+        elected_desc = None
+
+        for opt in available_options:
+            desc = opt.get('optionDescription', '').strip()
+            if desc.lower() == 'no coverage':
+                log.info(f"Skipping option '{desc}' due to no coverage")
+                continue
+
+            if elected_option and opt.get('optionId') == elected_option.get('optionId'):
+                elected_desc = desc
+            else:
+                available_list.append(desc)
+
+        if not elected_desc and not available_list:
+            log.info("No applicable options to process after filtering.")
+            return {
+                'statusCode': 200,
+                'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+                'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
             }
-        }
-        function sendQuestion(q) {
-            document.getElementById('message-input').value = q;
-            sendMessage();
-        }
 
-        async function sendMessage() {
-            const text = document.getElementById('message-input').value.trim();
-            if (!text) return;
-            appendMessage(text, true);
-            document.getElementById('message-input').value = '';
-            document.getElementById('error-message').textContent = '';
-            document.getElementById('typing-indicator').style.display = 'block';
+        plan_name_map = {d.lower(): d for d in ([elected_desc] if elected_desc else []) + available_list}
+        condition = normalize_condition(condition, plan_name_map)
 
-            // load latest constMsg (if needed)
-            const latest = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
+        blocks = []
+        if elected_desc:
+            blocks.append(f"**Elected Option:** {elected_desc}")
 
-            // build parameter list
-            const params = [{ name: 'condition', value: text }];
-            latest.availableOptions.forEach(o => params.push({ name: 'plan', value: String(o.optionId) }));
-            if (latest.electedOption) params.push({ name: 'plan', value: String(latest.electedOption.optionId) });
+        if available_list:
+            blocks.append("**Available Options:**")
+            for desc in available_list:
+                blocks.append(f"- {desc}")
 
-            // payload uses latest
-            const payload = {
-                parameters: params,
-                pageName: latest.pageName,
-                populationType: latest.populationType,
-                enrollmentDeadlineDate: latest.enrollmentDeadlineDate,
-                availableOptions: latest.availableOptions,
-                electedOption: latest.electedOption
-            };
+        option_list_block = "\n\n".join(blocks)
 
-            try {
-                const res = await fetch('https://0ph.execute-api.us-east-1.amazonaws.com/Dev/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                let data = await res.json();
-                if (data.body && typeof data.body === 'string') {
-                    data = JSON.parse(data.body);
-                }
+        final_input_text = PROMPT_INSTRUCTIONS.strip() + "\n\n" + \
+            "Here are the benefit plan options:\n" + option_list_block + "\n\n" + \
+            "Here is the user's question:\n" + f"What is the {condition} for each of these options?"
 
-                let reply = '';
-                if (data.message) {
-                    reply = data.message;
-                } else if (Array.isArray(data)) {
-                    reply = data.map(item => {
-                        if (item.data) {
-                            return item.data.map(d => {
-                                const desc = optionMap[d.plan] || d.plan;
-                                return `For "${d.condition}" under "${desc}", the value is: ${d.value}`;
-                            }).join('\n');
+        log.info(f"Final input text for Bedrock:\n{final_input_text}")
+
+
+        response = client_bedrock.retrieve_and_generate(
+            input={'text': final_input_text},
+            retrieveAndGenerateConfiguration={
+                'type': 'KNOWLEDGE_BASE',
+                'knowledgeBaseConfiguration': {
+                    'knowledgeBaseId': kb_id,
+                    'modelArn': (
+                        'arn:aws:bedrock:us-east-1::foundation-model/'  
+                        'anthropic.claude-3-5-sonnet-20240620-v1:0'
+                    ),
+                    'retrievalConfiguration': {
+                        'vectorSearchConfiguration': {
+                            'overrideSearchType': 'HYBRID',
+                            'numberOfResults': 60
                         }
-                        if (item.value !== undefined) {
-                            const desc = optionMap[item.plan] || item.plan;
-                            return `For "${text}" under "${desc}", the value is: ${item.value}`;
-                        }
-                        const desc = optionMap[item.plan] || item.plan;
-                        return `For "${text}" under "${desc}", error: ${item.error}`;
-                    }).join('\n\n');
-                } else {
-                    reply = 'Sorry, I got an unexpected response.';
+                    },
+                    'generationConfiguration': {
+                        "inferenceConfig": { 
+                            'textInferenceConfig': {
+                                "maxTokens": 1024,
+                                "temperature": 0.0,
+                                "topP": 1.0
+
+                            }
+               
                 }
-
-                appendMessage(reply, false);
-            } catch (err) {
-                document.getElementById('error-message').textContent = `Error: ${err.message}`;
-            } finally {
-                document.getElementById('typing-indicator').style.display = 'none';
+                }
+                }
             }
+        )
+
+ 
+        answer = response['output']['text']
+        citations = []
+        for cit in response.get('citations', []):
+            for ref in cit.get('retrievedReferences', []):
+                loc = ref.get('location', {})
+                content = ref.get('content', {}).get('text')
+                uri = loc.get('s3Location', {}).get('uri')
+                if uri and content:
+                    citations.append({'source': uri, 'text': content})
+                else:
+                    log.warning(f"Skipping malformed reference: {ref}")
+
+        log.info(f"Successfully generated answer and found {len(citations)} citation references.")
+
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
         }
 
-        function appendMessage(msg, isUser) {
-            const div = document.createElement('div');
-            div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            bubble.textContent = msg;
-            div.appendChild(bubble);
-            document.getElementById('chat-history').appendChild(div);
-            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
+    except Exception as e:
+        log.exception("An error occurred in the lambda_handler")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
         }
-    </script>
-</body>
