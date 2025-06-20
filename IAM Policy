@@ -1,147 +1,70 @@
-<!DOCTYPE html>
-<html>
+import json
+import boto3
+import logging
+from botocore.exceptions import ClientError
 
-<head>
-    <title>AI Enrollment Chatbot</title>
-    <style>
-        /* (Style block remains unchanged) */
-    </style>
-</head>
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-<body>
-    <form>
-        <label><input type="radio" name="populationType" value="AMGMT99"> AMGMT99</label>
-        <label><input type="radio" name="populationType" value="BLKACTIVE"> BLKACTIVE</label>
-        <label><input type="radio" name="populationType" value="MWTIBEWACTIVE"> MWTIBEWACTIVE</label>
-    </form>
+bedrock_client = boto3.client(service_name='bedrock-runtime')
 
-    <div id="chat-container">
-        <div id="chat-history"></div>
-        <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
-    </div>
+def stream_conversation(model_id, messages, system_prompts, inference_config, additional_model_fields):
+    logger.info("Streaming messages with model %s", model_id)
 
-    <div class="error-message" id="error-message"></div>
-    <div id="input-container">
-        <input type="text" id="message-input" placeholder="Ask your question" onkeypress="handleEnterKey(event)">
-        <button id="send-button" onclick="sendMessage()">
-            <svg width="40px" height="40px" viewBox="0 0 24 24" fill="none">
-                <path d="M7.75778 6.14799..." fill="#000000"/>
-            </svg>
-        </button>
-    </div>
+    response = bedrock_client.converse_stream(
+        modelId=model_id,
+        messages=messages,
+        system=system_prompts,
+        inferenceConfig=inference_config,
+        additionalModelRequestFields=additional_model_fields
+    )
 
-    <script>
-        // API endpoint
-        const API_URL = 'https://0ph.execute-api.us-east-1.amazonaws.com/Dev/chat';
+    stream = response.get('stream')
+    output = ""
+    if stream:
+        for event in stream:
+            if 'contentBlockDelta' in event:
+                output += event['contentBlockDelta']['delta']['text']
+    return output
 
-        // Three distinct constMsg objects for each population type
-        const constMsg1 = {
-            populationType: "AMGMT99",
-            pageName: "Page A",
-            enrollmentDeadlineDate: "",
-            availableOptions: [],
-            electedOption: {}
-        };
+def lambda_handler(event, context):
+    try:
+        # Parse input from POST body
+        body = json.loads(event.get("body", "{}"))
+        input_text = body.get("input_text", "Write an essay on the importance of biodiversity.")
 
-        const constMsg2 = {
-            populationType: "BLKACTIVE",
-            pageName: "Page B",
-            enrollmentDeadlineDate: "",
-            availableOptions: [],
-            electedOption: {}
-        };
+        model_id = "anthropic.claude-3-5-sonnet-220-v1:0"
+        system_prompt = "You are an app that writes essays on various topics in a clear and engaging style."
 
-        const constMsg3 = {
-            populationType: "MWTIBEWACTIVE",
-            pageName: "Page C",
-            enrollmentDeadlineDate: "",
-            availableOptions: [],
-            electedOption: {}
-        };
+        messages = [{"role": "user", "content": [{"text": input_text}]}]
+        system_prompts = [{"text": system_prompt}]
+        inference_config = {"temperature": 0.7}
+        additional_model_fields = {"top_k": 250}
 
-        let activeConstMsg = constMsg1; // Default selection
+        result = stream_conversation(
+            model_id,
+            messages,
+            system_prompts,
+            inference_config,
+            additional_model_fields
+        )
 
-        // Update activeConstMsg on radio change
-        document.querySelectorAll('input[name="populationType"]').forEach(radio => {
-            radio.addEventListener('change', e => {
-                switch (e.target.value) {
-                    case "AMGMT99": activeConstMsg = constMsg1; break;
-                    case "BLKACTIVE": activeConstMsg = constMsg2; break;
-                    case "MWTIBEWACTIVE": activeConstMsg = constMsg3; break;
-                }
-                sessionStorage.setItem("constMsg", JSON.stringify(activeConstMsg));
-            });
-        });
-
-        // Handle Enter key for single-line submit
-        function handleEnterKey(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type"
+            },
+            "body": json.dumps({"result": result})
         }
 
-        // Utility to append messages to chat
-        function appendMessage(msg, isUser) {
-            const container = document.getElementById('chat-history');
-            const div = document.createElement('div');
-            div.className = 'message ' + (isUser ? 'user-message' : 'bot-message');
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            bubble.textContent = msg;
-            div.appendChild(bubble);
-            container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
+    except ClientError as err:
+        logger.error("Client error: %s", err)
+        return {
+            "statusCode": 500,
+            "headers": {
+                "Content-Type": "application/json",
+            },
+            "body": json.dumps({"error": err.response['Error']['Message']})
         }
-
-        // Send user message to API
-        async function sendMessage() {
-            const inputEl = document.getElementById('message-input');
-            const text = inputEl.value.trim();
-            if (!text) return;
-            inputEl.value = '';
-            document.getElementById('error-message').textContent = '';
-            appendMessage(text, true);
-            document.getElementById('typing-indicator').style.display = 'block';
-
-            // Build parameters array
-            const params = [
-                { name: 'condition', value: text },
-                { name: 'populationType', value: activeConstMsg.populationType }
-            ];
-            activeConstMsg.availableOptions.forEach(opt => {
-                params.push({ name: 'plan', value: String(opt.optionId) });
-            });
-
-            // Construct full payload
-            const payload = {
-                parameters: params,
-                pageName: activeConstMsg.pageName,
-                populationType: activeConstMsg.populationType,
-                enrollmentDeadlineDate: activeConstMsg.enrollmentDeadlineDate,
-                availableOptions: activeConstMsg.availableOptions,
-                electedOption: activeConstMsg.electedOption
-            };
-
-            try {
-                const res = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                // Assuming API returns { message: '...' }
-                const reply = data.message || 'No response';
-                appendMessage(reply, false);
-            } catch (err) {
-                document.getElementById('error-message').textContent = `Error: ${err.message}`;
-            } finally {
-                document.getElementById('typing-indicator').style.display = 'none';
-            }
-        }
-    </script>
-</body>
-
-</html>
-
