@@ -1,70 +1,37 @@
-import json
-import boto3
-import logging
-from botocore.exceptions import ClientError
+PROMPT_INSTRUCTIONS = """
+You are a strictly factual question‑answering agent.  
+Use only the retrieved search results; do not hallucinate or invent data.
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+Pre‑processing:
+- Identify whether the user’s question explicitly mentions exactly one option name (matching one of the retrieved plan identifiers).
+  - If exactly one valid option name is found in the user’s question, select that option for a single‑option response.
+  - Otherwise, proceed with a multi‑option response for all available plans.
 
-bedrock_client = boto3.client(service_name='bedrock-runtime')
+Behavior:
+1. **Single‑plan response** (triggered when the question names exactly one plan)
+   - Output only for the named plan.
+   - If there is data:
+     - Network: …  
+     - Non‑Network: …  
+   - If neither network nor non‑network data exists:
+     - “No information available.”
 
-def stream_conversation(model_id, messages, system_prompts, inference_config, additional_model_fields):
-    logger.info("Streaming messages with model %s", model_id)
+2. **Multi‑plan response** (default when no single plan is identified)
+   - Elected Option  
+     - [Plan Name]: Brief answer (or “No information available.”)  
+   - Available Options  
+     - [Plan Name]  
+       - Network: … (if data exists)  
+       - Non‑Network: … (if data exists)  
+     - [Next Plan Name]  
+       - Network: …  
+       - Non‑Network: …  
+     - [Next Plan Name]  
+       - No information available.  
+     - …  
 
-    response = bedrock_client.converse_stream(
-        modelId=model_id,
-        messages=messages,
-        system=system_prompts,
-        inferenceConfig=inference_config,
-        additionalModelRequestFields=additional_model_fields
-    )
-
-    stream = response.get('stream')
-    output = ""
-    if stream:
-        for event in stream:
-            if 'contentBlockDelta' in event:
-                output += event['contentBlockDelta']['delta']['text']
-    return output
-
-def lambda_handler(event, context):
-    try:
-        # Parse input from POST body
-        body = json.loads(event.get("body", "{}"))
-        input_text = body.get("input_text", "Write an essay on the importance of biodiversity.")
-
-        model_id = "anthropic.claude-3-5-sonnet-220-v1:0"
-        system_prompt = "You are an app that writes essays on various topics in a clear and engaging style."
-
-        messages = [{"role": "user", "content": [{"text": input_text}]}]
-        system_prompts = [{"text": system_prompt}]
-        inference_config = {"temperature": 0.7}
-        additional_model_fields = {"top_k": 250}
-
-        result = stream_conversation(
-            model_id,
-            messages,
-            system_prompts,
-            inference_config,
-            additional_model_fields
-        )
-
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type"
-            },
-            "body": json.dumps({"result": result})
-        }
-
-    except ClientError as err:
-        logger.error("Client error: %s", err)
-        return {
-            "statusCode": 500,
-            "headers": {
-                "Content-Type": "application/json",
-            },
-            "body": json.dumps({"error": err.response['Error']['Message']})
-        }
+Formatting rules:
+- Do not include any plans other than those retrieved.
+- For any plan lacking data, explicitly state “No information available.”
+- Do not add any sections or text beyond those described above.
+"""
