@@ -31,15 +31,12 @@ Answer format:
  - For the **[ELECTED]** option, include a focused breakdown of its **deductible**, **coinsurance**, and **out-of-pocket maximum**.
 
 Targeted follow-ups:
- - If the user’s question calls out a specific option by name, answer only for that option do no show for other options if not asked.
+ - If the user’s question calls out a specific option by name, answer only for that option.
 
 Use this structure on every response to keep plan comparisons clean, consistent, and easy to scan.
 """
 
 def normalize_condition(text, plan_name_map):
-    """
-    Replace any mention of a plan name in `text` with its exact-cased version from plan_name_map.
-    """
     for lower_name, exact_name in plan_name_map.items():
         pattern = r"\b" + re.escape(lower_name) + r"\b"
         text = re.sub(pattern, exact_name, text, flags=re.IGNORECASE)
@@ -54,10 +51,7 @@ def lambda_handler(event, context):
         params = {p['name']: p['value'] for p in body.get('parameters', [])}
         log.info(f"Parsed parameters: {params}")
 
-        raw_pop = params.get('populationType', '')
-        log.info(f"Raw populationType parameter: '{raw_pop}'")
-        population_type = raw_pop.strip().upper()
-
+        population_type = params.get('populationType', '').strip().upper()
         kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
         log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
 
@@ -72,52 +66,59 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'Missing condition or availableOptions'})
             }
 
-        available_list = []
+        # Determine elected_desc from optionId
         elected_desc = None
         for opt in available_options:
-            desc = opt.get('optionDescription', '').strip()
-            if desc.lower() == 'no coverage':
-                log.info(f"Skipping option '{desc}' due to no coverage")
-                continue
+            if opt.get('optionId') == elected_option.get('optionId'):
+                elected_desc = opt.get('optionDescription')
+                break
 
-            if elected_option and opt.get('optionId') == elected_option.get('optionId'):
-                elected_desc = desc
-            else:
-                available_list.append(desc)
+        # Build list of other available descriptions
+        available_list = [opt.get('optionDescription') for opt in available_options
+                          if opt.get('optionDescription') != elected_desc]
 
-        if not elected_desc and not available_list:
-            log.info("No applicable options to process after filtering.")
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({
-                    'message': 'No applicable options to process.',
-                    'citations': []
-                })
-            }
+        # Detect if user asked explicitly about another plan
+        asked_desc = None
+        all_descs = [opt.get('optionDescription') for opt in available_options]
+        for desc in all_descs:
+            if re.search(rf"\b{re.escape(desc)}\b", condition, flags=re.IGNORECASE):
+                asked_desc = desc
+                break
 
-        plan_name_map = {d.lower(): d for d in ([elected_desc] if elected_desc else []) + available_list}
-        condition = normalize_condition(condition, plan_name_map)
+        # Decide focus: use asked_desc (if any), else elected_desc
+        focus_desc = asked_desc or elected_desc
 
+        # Normalize any plan mentions in the question text
+        plan_name_map = {d.lower(): d for d in all_descs}
+        normalized_condition = normalize_condition(condition, plan_name_map)
+
+        # Build the prompt blocks (leave elected/available as-is)
         blocks = []
-        if elected_desc:
-            blocks.append(f"**Elected Option:** {elected_desc}")
-        if available_list:
-            blocks.append("**Available Options:**")
-            for desc in available_list:
-                blocks.append(f"- {desc}")
+        blocks.append(f"**Elected Option:** {elected_desc}")
+        blocks.append("**Available Options:**")
+        for desc in available_list:
+            blocks.append(f"- {desc}")
         option_list_block = "\n\n".join(blocks)
 
-        final_input_text = (
-            PROMPT_INSTRUCTIONS.strip()
-            + "\n\nHere are the benefit plan options:\n"
-            + option_list_block
-            + "\n\nHere is the user's question:\n"
-            + f"{condition} for each of these options?"
-        )
+        # Phrase the question
+        base_q = normalized_condition.rstrip(' ?')
+        # If no explicit asked_desc, treat as multi-plan
+        if not asked_desc:
+            question_text = f"{base_q} for each of these options?"
+        else:
+            question_text = f"{base_q}?"
+
+        # Assemble final input for Bedrock
+        prompt_parts = [PROMPT_INSTRUCTIONS.strip(),
+                        "Here are the benefit plan options:",
+                        option_list_block]
+        # Add focus instruction if user named a plan
+        if asked_desc:
+            prompt_parts.append(f"**Please answer only for:** {focus_desc}")
+        prompt_parts.append("Here is the user's question:")
+        prompt_parts.append(question_text)
+        final_input_text = "\n\n".join(prompt_parts)
+
         log.info(f"Final input text for Bedrock:\n{final_input_text}")
 
         response = client_bedrock.retrieve_and_generate(
@@ -160,8 +161,6 @@ def lambda_handler(event, context):
                     citations.append({'source': uri, 'text': content})
                 else:
                     log.warning(f"Skipping malformed reference: {ref}")
-
-        log.info(f"Successfully generated answer and found {len(citations)} citation references.")
 
         return {
             'statusCode': 200,
