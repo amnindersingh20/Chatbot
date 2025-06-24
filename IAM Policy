@@ -5,103 +5,223 @@ import difflib
 from io import StringIO
 import boto3
 import pandas as pd
+import numpy as np
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-S3_BUCKET = "pocbotai"
-S3_KEY = "2025 Medical HPCC Combined.csv"
-FALLBACK_LAMBDA_NAME = "Poc_Bot_lambda1"
-BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+S3_BUCKET = "potai"
+S3_KEY = "2025.csv"
+FALLBACK_LAMBDA_NAME = "Poc_Boa1"
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-2020-v1:0"
 
-_s3      = boto3.client('s3')
-_lambda  = boto3.client('lambda')
+_s3 = boto3.client('s3')
+_lambda = boto3.client('lambda')
 _bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 
 SYNONYMS = {
     r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
-    r"\bco[\s\-]?insurance\b":    "coinsurance",
+    r"\bco[\s\-]?insurance\b": "coinsurance",
     r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
-    r"\bdeductible(s)?\b":         "deductible"
+    r"\bdeductible(s)?\b": "deductible",
+    r"\bmax(imum)?\b": "maximum",
+    r"\bmin(imum)?\b": "minimum",
+    r"\bin[\s\-]?network\b": "in-network",
+    r"\bout[\s\-]?of[\s\-]?network\b": "out-of-network",
+    r"\bindividual(s)?\b": "individual",
+    r"\bfamily\b": "family",
+    r"\bpreventive\b": "preventive",
+    r"\bprimary\b": "primary",
+    r"\bspecial(ty|ist)?\b": "specialist",
+    r"\bemergency\b": "emergency",
+    r"\broom\b": "room",
+    r"\bhospital\b": "hospital",
+    r"\bprescription\b": "prescription",
+    r"\bdrug(s)?\b": "drug",
+    r"\bphysician\b": "physician",
+    r"\bvisit(s)?\b": "visit",
+    r"\bcoverage\b": "coverage",
+    r"\blimit(s)?\b": "limit",
+    r"\bannual\b": "annual",
+    r"\blifetime\b": "lifetime",
+    r"\bper[\s\-]?visit\b": "per visit",
+    r"\bper[\s\-]?occurrence\b": "per occurrence",
+    r"\bexclusion(s)?\b": "exclusion",
+    r"\bwaiting[\s\-]?period\b": "waiting period"
 }
 
+FILLER_WORDS = [
+    r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b", r"\bwhat is the\b",
+    r"\bis the\b", r"\btell me\b", r"\bgive me\b", r"\bplease show\b",
+    r"\bhelp me with\b", r"\bhelp me to\b", r"\bhow much is\b", r"\bis\b",
+    r"\bmy\b", r"\bthe\b", r"\ba\b", r"\ban\b", r"\bfor\b", r"\bof\b",
+    r"\bto\b", r"\bin\b", r"\bwith\b", r"\bunder\b", r"\bplan\b", r"\bcoverage\b",
+    r"\bamount\b", r"\bcost\b", r"\bvalue\b", r"\bdoes\b", r"\bdo\b", r"\bare\b",
+    r"\bcan\b", r"\bcan you\b", r"\bcould\b", r"\bcould you\b", r"\bwould\b",
+    r"\bplease\b", r"\bkindly\b", r"\bneed\b", r"\bwant\b", r"\bknow\b", r"\babout\b",
+    r"\bdetails\b", r"\binformation\b", r"\bregarding\b", r"\bconcerning\b",
+    r"\bpertaining\b", r"\brequired\b", r"\brequirement\b", r"\bbenefit\b"
+]
+
 def normalize(text: str) -> str:
+    """Normalize text by removing non-alphanumeric characters and converting to lowercase."""
     return re.sub(r'[^a-z0-9]', '', str(text).lower())
 
+def tokenize(text: str) -> list:
+    """Tokenize text into meaningful words after cleaning."""
+    text = re.sub(r'[^a-z0-9\s]', ' ', text.lower())
+    return re.sub(r'\s+', ' ', text).strip().split()
+
 def strip_filler(text: str) -> str:
-    text = re.sub(r"[^\w\s]", "", text.lower().strip())
-    fillers = [
-        r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b",r"\bwhat is the\b",r"\bis the\b", r"\btell me\b",
-        r"\bgive me\b", r"\bplease show\b",r"\bhelp me with\b",r"\bhelp me to\b",r"\bhelp me to\b", r"\bhow much is\b", r"\bis\b", r"\bmy\b"
-    ]
-    for pat in fillers:
-        text = re.sub(pat, '', text).strip()
-    return re.sub(r'\s+', ' ', text)
+    """Remove filler words and phrases from text."""
+    text = text.lower().strip()
+    for pat in FILLER_WORDS:
+        text = re.sub(pat, '', text)
+    return re.sub(r'\s+', ' ', text).strip()
 
 def expand_synonyms(text: str) -> str:
+    """Replace synonyms and common variations with standardized terms."""
     for pat, rep in SYNONYMS.items():
         text = re.sub(pat, rep, text, flags=re.IGNORECASE)
     return text
 
+def semantic_similarity(query_tokens: set, target_tokens: set) -> float:
+    """Calculate semantic similarity between query and target using Jaccard similarity."""
+    if not query_tokens or not target_tokens:
+        return 0.0
+        
+    intersection = query_tokens & target_tokens
+    union = query_tokens | target_tokens
+    return len(intersection) / len(union)
+
 def load_dataframe():
+    """Load and preprocess CSV from S3."""
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
         df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
+        
+        # Clean column names and data
         df.columns = df.columns.str.strip()
         df['Data Point Name'] = (
             df['Data Point Name'].astype(str)
-              .str.replace('–', '-', regex=False)
-              .str.replace('\u200b', '', regex=False)
-              .str.strip().str.lower()
+            .str.replace('–', '-', regex=False)
+            .str.replace('\u200b', '', regex=False)
+            .str.strip()
+            .str.lower()
         )
+        
+        # Create normalized version for matching
         df['normalized_name'] = df['Data Point Name'].apply(normalize)
+        
+        # Precompute token sets for semantic matching
+        df['tokens'] = df['Data Point Name'].apply(
+            lambda x: set(tokenize(expand_synonyms(x)))
+        
         return df
-    except Exception:
+    except Exception as e:
         log.exception("Failed to load CSV from S3")
         return pd.DataFrame()
 
+# Load data once during cold start
 DF = load_dataframe()
+if not DF.empty:
+    log.info("Data loaded successfully. Columns: %s", DF.columns.tolist())
+else:
+    log.error("Failed to load data. Empty DataFrame")
 
 def get_plan_value(raw_condition: str, plan_id: str):
-    stripped    = strip_filler(raw_condition)
-    expanded    = expand_synonyms(stripped)
-    query_norm  = normalize(expanded)
-    log.info("Lookup trace: raw=%r → stripped=%r → expanded=%r → norm=%r",
-             raw_condition, stripped, expanded, query_norm)
+    """Get plan value with robust query matching using multiple strategies."""
+    try:
+        # Clean and preprocess query
+        cleaned = strip_filler(raw_condition)
+        expanded = expand_synonyms(cleaned)
+        query_norm = normalize(expanded)
+        query_tokens = set(tokenize(expanded))
+        
+        log.info("Lookup trace: raw='%s' → cleaned='%s' → expanded='%s' → norm='%s'",
+                 raw_condition, cleaned, expanded, query_norm)
 
-    if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
-        return 500, f"CSV missing required columns or plan '{plan_id}'"
+        # Validate dataframe structure
+        if DF.empty:
+            return 500, "Data not loaded"
+            
+        if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
+            return 500, f"CSV missing required columns or plan '{plan_id}'"
 
-    matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
-    if matches.empty:
+        # Strategy 1: Exact normalized match (fastest)
+        exact_match = DF[DF['normalized_name'] == query_norm]
+        if not exact_match.empty:
+            log.info("Found exact normalized match")
+            return extract_results(exact_match, plan_id, raw_condition)
+
+        # Strategy 2: Substring match in normalized name
+        substring_match = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
+        if not substring_match.empty:
+            log.info("Found substring match")
+            return extract_results(substring_match, plan_id, raw_condition)
+
+        # Strategy 3: Semantic similarity
+        # Only compute if we have reasonable token count
+        if len(query_tokens) >= 2:
+            DF['similarity'] = DF['tokens'].apply(
+                lambda tokens: semantic_similarity(query_tokens, tokens) 
+                if isinstance(tokens, set) else 0.0
+            )
+            # Get top matches with similarity >= 0.5
+            semantic_matches = DF[DF['similarity'] >= 0.5].sort_values(
+                'similarity', ascending=False
+            ).head(3)  # Limit to top 3 matches
+            
+            if not semantic_matches.empty:
+                log.info("Found semantic matches: similarity=%.2f", semantic_matches.iloc[0]['similarity'])
+                return extract_results(semantic_matches, plan_id, raw_condition)
+
+        # Strategy 4: Fuzzy string matching (fallback)
         close = difflib.get_close_matches(
-            query_norm, DF['normalized_name'].tolist(), n=5, cutoff=0.7
+            expanded, 
+            DF['Data Point Name'].tolist(), 
+            n=3, 
+            cutoff=0.6
         )
-        matches = DF[DF['normalized_name'].isin(close)] if close else matches
+        if close:
+            fuzzy_matches = DF[DF['Data Point Name'].isin(close)]
+            log.info("Found fuzzy matches: %s", close)
+            return extract_results(fuzzy_matches, plan_id, raw_condition)
 
-    if matches.empty:
-        return 404, f"No data-points matching '{raw_condition}' found"
+        return 404, f"No matches found for '{raw_condition}'"
 
+    except Exception as e:
+        log.exception("Error during plan value lookup")
+        return 500, f"Processing error: {str(e)}"
+
+def extract_results(matches, plan_id, raw_condition):
+    """Extract and format results from matched rows."""
     results = []
     for _, row in matches.iterrows():
         val = row.get(plan_id)
-        if pd.notna(val):
+        if pd.notna(val) and str(val).strip().lower() not in ['n/a', 'na', 'nan', 'not applicable']:
             results.append({
                 "condition": row['Data Point Name'],
                 "plan": plan_id,
                 "value": val
             })
-
-    if not results:
-        return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
-    return 200, results
+            
+    if results:
+        return 200, results
+        
+    # If we have matches but no valid values
+    if not matches.empty:
+        return 404, f"Plan '{plan_id}' has no value for '{raw_condition}'"
+    
+    return 404, f"No data points matching '{raw_condition}' found"
 
 def summarize_with_claude35(composite_result: list, options: list, elected: dict) -> str:
+    """Generate summary using Anthropic Claude model."""
     options_list = [
         {"optionId": opt["optionId"], "optionDescription": opt["optionDescription"]}
         for opt in options
     ]
-    elected_desc = (elected or {}).get("optionDescription")
+    elected_desc = (elected or {}).get("optionDescription") or "Not specified"
     prompt = f"""
 You are a helpful and friendly health benefits advisor.
 Here are the available options:
@@ -118,7 +238,7 @@ Your job:
 - Include details like deductibles, coinsurance, out-of-pocket maximums, etc.
 - Do not display plan IDs in parentheses after the description.
 - Do not display anything of the "No Coverage" option data in the response.
-- Do not display that you asked to summarize.
+- Do not mention that you were asked to summarize.
 - Use conversational, reader-friendly language and end with a call for further questions.
 """
     try:
@@ -135,11 +255,12 @@ Your job:
         )
         body = json.loads(response['body'].read())
         return body['content'][0]['text']
-    except Exception:
-        log.exception("LLM summarization failed")
+    except Exception as e:
+        log.exception("LLM summarization failed: %s", str(e))
         return None
 
 def wrap_response(status, body):
+    """Create API Gateway compatible response."""
     return {
         "statusCode": status,
         "headers": {
@@ -147,10 +268,11 @@ def wrap_response(status, body):
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "OPTIONS,POST"
         },
-        "body": json.dumps(body)
+        "body": json.dumps(body, default=str)  # Handle non-serializable objects
     }
 
 def invoke_fallback(event_payload):
+    """Invoke fallback lambda for unsupported queries."""
     log.info("Invoking fallback lambda")
     try:
         resp = _lambda.invoke(
@@ -158,78 +280,109 @@ def invoke_fallback(event_payload):
             InvocationType="RequestResponse",
             Payload=json.dumps(event_payload).encode()
         )
-        return wrap_response(200, json.loads(resp['Payload'].read()))
+        payload = resp['Payload'].read()
+        if isinstance(payload, bytes):
+            payload = payload.decode('utf-8')
+        return wrap_response(200, json.loads(payload))
     except Exception as e:
-        log.exception("Fallback invocation failed")
-        return wrap_response(500, {"error": f"Fallback error: {e}"})
+        log.exception("Fallback invocation failed: %s", str(e))
+        return wrap_response(500, {"error": f"Fallback error: {str(e)}"})
 
 def lambda_handler(event, _context):
-    log.info("Received event: %s", json.dumps(event))
+    """Main Lambda entry point."""
+    log.info("Received event: %s", json.dumps(event, default=str))
 
-    raw = event.get("body") or event.get("prompt") or "{}"
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode()
     try:
-        payload = json.loads(raw) if isinstance(raw, str) else raw
-    except Exception:
-        log.exception("Failed to parse JSON body")
-        return wrap_response(400, {"error": "Invalid JSON in body"})
+        # Parse input from different trigger sources
+        if 'body' in event and event['body']:
+            payload = json.loads(event['body'])
+        elif 'prompt' in event and event['prompt']:
+            payload = json.loads(event['prompt'])
+        else:
+            payload = event.get('queryStringParameters', {})
+    except Exception as e:
+        log.exception("Payload parsing error: %s", str(e))
+        return wrap_response(400, {"error": "Invalid input format"})
 
+    # Extract parameters from different payload structures
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
-    condition = next((p["value"] for p in params if p["name"]=="condition"), None)
-    plans     = [str(p["value"]).strip() for p in params if p["name"]=="plan"]
+    
+    condition = next((p["value"] for p in params if p.get("name") == "condition"), None)
+    plans = [str(p["value"]).strip() for p in params if p.get("name") == "plan"]
+    
+    # Fallback to direct keys if not in parameters
+    if not condition:
+        condition = payload.get("condition")
+    if not plans:
+        plan_val = payload.get("plan")
+        plans = [plan_val] if plan_val else []
 
     available_options = payload.get("availableOptions", [])
-    elected_option    = payload.get("electedOption")
+    elected_option = payload.get("electedOption", {})
 
+    # Validate required parameters
     if not condition or not plans:
         missing = []
         if not condition: missing.append("condition")
-        if not plans:     missing.append("plan")
-        return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
+        if not plans: missing.append("plan")
+        return wrap_response(400, {"error": "Missing parameters: " + ", ".join(missing)})
 
-    plan_desc_map = {
-        str(opt.get("optionId")): opt.get("optionDescription")
-        for opt in available_options
-    }
-    if isinstance(elected_option, dict):
-        plan_desc_map[str(elected_option.get("optionId"))] = elected_option.get("optionDescription")
+    # Create mapping for plan descriptions
+    plan_desc_map = {}
+    for opt in available_options:
+        if 'optionId' in opt and 'optionDescription' in opt:
+            plan_desc_map[str(opt['optionId'])] = opt['optionDescription']
+    
+    if isinstance(elected_option, dict) and 'optionId' in elected_option:
+        plan_desc_map[str(elected_option['optionId'])] = elected_option.get('optionDescription', '')
 
     composite = []
     for plan in plans:
         desc = plan_desc_map.get(plan, "").strip()
 
+        # Skip no coverage plans
         if desc.lower() == "no coverage":
             log.info(f"Skipping plan {plan} ('{desc}') due to no coverage")
             continue
+            
+        # Get plan value using robust matching
         status, data = get_plan_value(condition, plan)
         if status != 200:
+            log.warning("Primary lookup failed: %s - %s", status, data)
             fallback_body = {
                 "parameters": [
-                    {"name": "condition",         "value": condition},
-                    {"name": "optionDescription","value": desc or plan},
-                    {"name": "populationType",    "value": payload.get("populationType")}
+                    {"name": "condition", "value": condition},
+                    {"name": "optionDescription", "value": desc or plan},
+                    {"name": "populationType", "value": payload.get("populationType")}
                 ],
                 "availableOptions": available_options,
-                "electedOption":    elected_option
+                "electedOption": elected_option
             }
-            return invoke_fallback({ "body": json.dumps(fallback_body) })
+            return invoke_fallback({"body": json.dumps(fallback_body)})
 
         composite.append({
-            "optionId":          plan,
+            "optionId": plan,
             "optionDescription": desc,
-            "data":              data
+            "data": data
         })
 
+    # Handle case where all plans were filtered out
     if not composite:
-        return wrap_response(200, {"message": "No applicable plans to process.", "results": []})
+        return wrap_response(200, {
+            "message": "No applicable plans to process (all filtered as 'No Coverage')",
+            "results": []
+        })
 
+    # Generate summary with Claude
     summary = summarize_with_claude35(composite, available_options, elected_option)
+    if not summary:
+        summary = "Unable to generate summary. Here are the raw results:"
+
     return wrap_response(200, {
-        "message":          summary,
+        "message": summary,
         "availableOptions": available_options,
-        "electedOption":    elected_option,
-        "results":          composite
+        "electedOption": elected_option,
+        "results": composite
     })
