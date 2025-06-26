@@ -1,3 +1,42 @@
+You: Fertility Medication Benefits annual deductible
+INFO:botocore.tokens:Loading cached SSO token for Amninder-sso
+INFO:langchain_aws.llms.bedrock:Using Bedrock Invoke API to generate response
+👉 Fresh question (no rewrite)
+🤖 No KB retrieval – pure LLM response
+
+💬 Claude: Based on the information provided in the document, here are the key details about the annual deductible for Fertility Medication Benefits:
+
+For Option 1:
+- There is no annual deductible for Fertility Medication Benefits.
+
+For Option 2 and Option 3:
+- The annual deductible applies before copayments for Fertility Medications.
+- The annual deductible is combined with Medical, Mental Health/Substance Use Disorder, Prescription Drug and CarePlus benefits.
+- The specific deductible amounts are not provided in the excerpts, but it states to "See the 'Benefits at a Glance' table in the medical and MH/SUD coverage section for amounts."    
+
+So in summary:
+- No deductible for Option 1
+- Annual deductible applies for Options 2 and 3, but the specific amounts are not given in the provided text. The deductible is combined across several benefit categories.
+
+📝 Chat history in memory:
+Human: Fertility Medication Benefits annual deductible
+Ai: Based on the information provided in the document, here are the key details about the annual deductible for Fertility Medication Benefits:
+
+For Option 1:
+- There is no annual deductible for Fertility Medication Benefits.
+
+For Option 2 and Option 3:
+- The annual deductible applies before copayments for Fertility Medications.
+- The annual deductible is combined with Medical, Mental Health/Substance Use Disorder, Prescription Drug and CarePlus benefits.
+- The specific deductible amounts are not provided in the excerpts, but it states to "See the 'Benefits at a Glance' table in the medical and MH/SUD coverage section for amounts."    
+
+So in summary:
+- No deductible for Option 1
+- Annual deductible applies for Options 2 and 3, but the specific amounts are not given in the provided text. The deductible is combined across several benefit categories.
+
+--------------------------------------------------
+
+You: Whats my annual out of pocket maximum?
 Traceback (most recent call last):
   File "D:\Users\A1053499\Downloads\Langchain_code\app.py", line 74, in <module>
     result = runnable.invoke(
@@ -80,21 +119,26 @@ Traceback (most recent call last):
     ^
   File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 167, in invoke
     raise e
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 162, in invoke
-    final_outputs: dict[str, Any] = self.prep_outputs(
-                                    ~~~~~~~~~~~~~~~~~^
-        inputs, outputs, return_only_outputs
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 463, in prep_outputs
-    self.memory.save_context(inputs, outputs)
-    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\chat_memory.py", line 72, in save_context
-    input_str, output_str = self._get_input_output(inputs, outputs)
-                            ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\chat_memory.py", line 61, in _get_input_output
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 157, in invoke
+    self._call(inputs, run_manager=run_manager)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\conversational_retrieval\base.py", line 146, in _call
+    chat_history_str = get_chat_history(inputs["chat_history"])
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\conversational_retrieval\base.py", line 55, in _get_chat_history
     raise ValueError(
-    ...<3 lines>...
+    ...<2 lines>...
     )
-ValueError: Got multiple output keys: dict_keys(['answer', 'source_documents', 'generated_question']), cannot determine which to store in memory. Please set the 'output_key' explicitly.
+ValueError: Unsupported chat history format: <class 'str'>. Full chat history: Human: Fertility Medication Benefits annual deductible
+AI: Based on the information provided in the document, here are the key details about the annual deductible for Fertility Medication Benefits:
+
+For Option 1:
+- There is no annual deductible for Fertility Medication Benefits.
+
+For Option 2 and Option 3:
+- The annual deductible applies before copayments for Fertility Medications.
+- The annual deductible is combined with Medical, Mental Health/Substance Use Disorder, Prescription Drug and CarePlus benefits.
+- The specific deductible amounts are not provided in the excerpts, but it states to "See the 'Benefits at a Glance' table in the medical and MH/SUD coverage section for amounts."    
+
+So in summary:
+- No deductible for Option 1
+- Annual deductible applies for Options 2 and 3, but the specific amounts are not given in the provided text. The deductible is combined across several benefit categories.
