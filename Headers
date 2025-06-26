@@ -1,5 +1,5 @@
 Traceback (most recent call last):
-  File "D:\Users\A1053499\Downloads\Langchain_code\app.py", line 72, in <module>
+  File "D:\Users\A1053499\Downloads\Langchain_code\app.py", line 73, in <module>
     result = runnable.invoke(
         {"question": user_input},
         config={"configurable": {"session_id": session_id}}
@@ -93,8 +93,8 @@ Traceback (most recent call last):
   File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\chat_memory.py", line 72, in save_context
     input_str, output_str = self._get_input_output(inputs, outputs)
                             ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\chat_memory.py", line 47, in _get_input_output
-    prompt_input_key = get_prompt_input_key(inputs, self.memory_variables)
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\utils.py", line 19, in get_prompt_input_key
-    raise ValueError(f"One input key expected got {prompt_input_keys}")
-ValueError: One input key expected got ['question', 'chat_history']
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\chat_memory.py", line 61, in _get_input_output
+    raise ValueError(
+    ...<3 lines>...
+    )
+ValueError: Got multiple output keys: dict_keys(['answer', 'source_documents', 'generated_question']), cannot determine which to store in memory. Please set the 'output_key' explicitly.
