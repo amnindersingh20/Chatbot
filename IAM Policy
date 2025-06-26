@@ -27,12 +27,13 @@ retriever = AmazonKnowledgeBasesRetriever(
     client=session.client("bedrock-agent-runtime", region_name="us-east-1")
 )
 
-# — Build chain *without* memory —
+# — Build chain *without* in-chain memory, but return generated question —
 qa_chain = ConversationalRetrievalChain.from_llm(
     llm=llm,
     retriever=retriever,
     return_source_documents=True,
-    verbose=True
+    return_generated_question=True,
+    verbose=False
 )
 
 # — In-process chat history & Runnable wrapper —
@@ -46,9 +47,9 @@ runnable = RunnableWithMessageHistory(
 
 session_id = "my-session"
 
-# — REPL loop —
+# — CLI loop —
 if __name__ == "__main__":
-    print("Type ‘reset’ to clear context, ‘exit’ to quit.")
+    print("Type 'reset' to clear context, 'exit' to quit.")
     while True:
         user_input = input("You: ").strip()
         if user_input.lower() in {"exit", "quit"}:
@@ -58,18 +59,33 @@ if __name__ == "__main__":
             print("🧹 Context reset!")
             continue
 
-        # **Always** call runnable.invoke, never qa_chain.invoke
+        # Invoke via Runnable (auto-manages context)
         result = runnable.invoke(
             {"question": user_input},
             config={"configurable": {"session_id": session_id}}
         )
-        answer = result["answer"]
 
-        # Print the answer
-        print("Claude:", answer)
+        # 1⃣ Rewritten question check
+        rewritten = result.get("question")
+        if rewritten and rewritten != user_input:
+            print("🔄  Rewritten question (used context):", rewritten)
+        else:
+            print("👉  No rewriting — treated as fresh question.")
 
-        # Show the _full_ running history; you'll see all prior turns
-        print("\n📝 Conversation History:")
+        # 2⃣ Source document check
+        docs = result.get("source_documents", [])
+        if docs:
+            print(f"📚 Retrieved {len(docs)} doc(s) from KB; first snippet:")
+            print(docs[0].page_content[:200], "…")
+        else:
+            print("🤖  No KB retrieval — pure LLM response.")
+
+        # 3⃣ Actual answer
+        answer = result.get("answer")
+        print("\n💬 Claude:", answer)
+
+        # 4⃣ Print running history
+        print("\n📝 Conversation history so far:")
         for msg in chat_history_memory.messages:
             print(f"{msg.type.capitalize()}: {msg.content}")
         print("\n" + "-"*40 + "\n")
