@@ -3,24 +3,21 @@ import boto3
 from langchain_aws import ChatBedrock
 from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
 from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
-# — Logging (optional) —
+# — Logging —
 logging.basicConfig(level=logging.INFO)
 
-# — Boto3 session & Claude LLM client —
+# — AWS / Bedrock setup —
 session = boto3.Session(profile_name="Amder")
 llm = ChatBedrock(
     model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
     region_name="us-east-1",
     client=session.client("bedrock-runtime", region_name="us-east-1")
 )
-
-# — Retriever pointing at your knowledge base —
 retriever = AmazonKnowledgeBasesRetriever(
-    knowledge_base_id="TGMNY",
+    knowledge_base_id="arn:aws:bedrock:us-east-1:123456789012:knowledge-base/my-kb-id",
     retrieval_config={
         "vectorSearchConfiguration": {
             "numberOfResults": 5,
@@ -30,22 +27,16 @@ retriever = AmazonKnowledgeBasesRetriever(
     client=session.client("bedrock-agent-runtime", region_name="us-east-1")
 )
 
-# — Memory that the chain can use internally —
-buffer_memory = ConversationBufferMemory(llm=llm, max_token_limit=512)
-
-# — Build the conversational QA chain with memory attached —
+# — Build chain *without* memory —
 qa_chain = ConversationalRetrievalChain.from_llm(
     llm=llm,
     retriever=retriever,
-    memory=buffer_memory,           # ← here’s the magic
     return_source_documents=True,
     verbose=True
 )
 
-# — In-process chat history store —
+# — In-process chat history & Runnable wrapper —
 chat_history_memory = InMemoryChatMessageHistory()
-
-# — Wrap in Runnable so history is auto-fed in & out —
 runnable = RunnableWithMessageHistory(
     qa_chain,
     lambda _: chat_history_memory,
@@ -55,7 +46,7 @@ runnable = RunnableWithMessageHistory(
 
 session_id = "my-session"
 
-# — Simple REPL loop —
+# — REPL loop —
 if __name__ == "__main__":
     print("Type ‘reset’ to clear context, ‘exit’ to quit.")
     while True:
@@ -64,19 +55,20 @@ if __name__ == "__main__":
             break
         if user_input.lower() == "reset":
             chat_history_memory.clear()
-            buffer_memory.clear()
             print("🧹 Context reset!")
             continue
 
-        # Invoke via runnable—pulls in history, appends new turn
+        # **Always** call runnable.invoke, never qa_chain.invoke
         result = runnable.invoke(
             {"question": user_input},
             config={"configurable": {"session_id": session_id}}
         )
         answer = result["answer"]
+
+        # Print the answer
         print("Claude:", answer)
 
-        # Show running history
+        # Show the _full_ running history; you'll see all prior turns
         print("\n📝 Conversation History:")
         for msg in chat_history_memory.messages:
             print(f"{msg.type.capitalize()}: {msg.content}")
