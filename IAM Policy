@@ -3,52 +3,45 @@ import boto3
 from langchain_aws import ChatBedrock
 from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
 from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
-# — Logging —
+# — Logging setup —
 logging.basicConfig(level=logging.INFO)
 
-# — AWS / Bedrock setup —
+# — AWS / Bedrock client setup —
 session = boto3.Session(profile_name="Amder")
 llm = ChatBedrock(
     model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
     region_name="us-east-1",
     client=session.client("bedrock-runtime", region_name="us-east-1")
 )
+
 retriever = AmazonKnowledgeBasesRetriever(
     knowledge_base_id="arn:aws:bedrock:us-east-1:123456789012:knowledge-base/my-kb-id",
     retrieval_config={
         "vectorSearchConfiguration": {
             "numberOfResults": 5,
-            "overrideSearchType": "HYBRID",
+            "overrideSearchType": "HYBRID"
         }
     },
     client=session.client("bedrock-agent-runtime", region_name="us-east-1")
 )
 
-# — Memory, pointed at our question & chat_history keys —
-buffer_memory = ConversationBufferMemory(
-    llm=llm,
-    input_key="question",       # only look at this incoming key
-    memory_key="chat_history",  # store full transcript here
-    max_token_limit=512,
-)
-
-# — Build the chain with our properly-configured memory —
+# — Build the conversational QA chain with NO memory attached —
 qa_chain = ConversationalRetrievalChain.from_llm(
     llm=llm,
     retriever=retriever,
-    memory=buffer_memory,           
     return_source_documents=True,
     return_generated_question=True,
-    output_key="answer",         # ← explicitly tell it which output to save
+    output_key="answer",
     verbose=False
 )
 
-# — In-process chat history (for printouts) & Runnable wrapper —
+# — In-memory history store for Runnable —
 chat_history_memory = InMemoryChatMessageHistory()
+
+# — Wrap chain so it automatically reads & writes that history —
 runnable = RunnableWithMessageHistory(
     qa_chain,
     lambda _: chat_history_memory,
@@ -59,31 +52,31 @@ runnable = RunnableWithMessageHistory(
 session_id = "my-session"
 
 if __name__ == "__main__":
-    print("Type 'reset' to clear context, 'exit' to quit.")
+    print("Type ‘reset’ to clear context, ‘exit’ to quit.")
     while True:
         user_input = input("You: ").strip()
         if user_input.lower() in {"exit", "quit"}:
+            print("👋 Goodbye!")
             break
         if user_input.lower() == "reset":
             chat_history_memory.clear()
-            buffer_memory.clear()
             print("🧹 Context reset!")
             continue
 
-        # Invoke via Runnable (auto-manages memory)
+        # Always invoke via the Runnable!
         result = runnable.invoke(
             {"question": user_input},
             config={"configurable": {"session_id": session_id}}
         )
 
-        # Show how it rewrote using your prior context
+        # Show how it rewrote (if at all)
         rewritten = result.get("question")
         if rewritten and rewritten != user_input:
             print("🔄 Rewritten with context:", rewritten)
         else:
-            print("👉 Fresh question (no rewrite)")
+            print("👉 Treated as fresh question")
 
-        # Show if KB retrieval happened
+        # Show whether KB docs were pulled in
         docs = result.get("source_documents", [])
         if docs:
             print(f"📚 Retrieved {len(docs)} doc(s); snippet:")
@@ -91,11 +84,11 @@ if __name__ == "__main__":
         else:
             print("🤖 No KB retrieval – pure LLM response")
 
-        # The actual answer (saved under "answer")
+        # The actual answer
         print("\n💬 Claude:", result["answer"])
 
-        # And dump your running memory for sanity
-        print("\n📝 Chat history in memory:")
+        # Print the accumulated chat history
+        print("\n📝 Conversation history so far:")
         for msg in chat_history_memory.messages:
             print(f"{msg.type.capitalize()}: {msg.content}")
-        print("\n" + "-"*50 + "\n")
+        print("\n" + "-"*60 + "\n")
