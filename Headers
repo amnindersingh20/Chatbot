@@ -80,26 +80,21 @@ Traceback (most recent call last):
     ^
   File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 167, in invoke
     raise e
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 157, in invoke
-    self._call(inputs, run_manager=run_manager)
-    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\conversational_retrieval\base.py", line 159, in _call
-    docs = self._get_docs(new_question, inputs, run_manager=_run_manager)
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\conversational_retrieval\base.py", line 396, in _get_docs
-    docs = self.retriever.invoke(
-        question, config={"callbacks": run_manager.get_child()}
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 162, in invoke
+    final_outputs: dict[str, Any] = self.prep_outputs(
+                                    ~~~~~~~~~~~~~~~~~^
+        inputs, outputs, return_only_outputs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     )
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\retrievers.py", line 259, in invoke
-    result = self._get_relevant_documents(
-        input, run_manager=run_manager, **_kwargs
-    )
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_aws\retrievers\bedrock.py", line 190, in _get_relevant_documents
-    response = self.client.retrieve(**retrieve_request)
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\client.py", line 595, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\context.py", line 123, in wrapper
-    return func(*args, **kwargs)
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\client.py", line 1058, in _make_api_call
-    raise error_class(parsed_response, operation_name)
-botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the Retrieve operation: Invalid input provided. Check the input and try again. 
+    ^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 463, in prep_outputs
+    self.memory.save_context(inputs, outputs)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\chat_memory.py", line 72, in save_context
+    input_str, output_str = self._get_input_output(inputs, outputs)
+                            ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\chat_memory.py", line 47, in _get_input_output
+    prompt_input_key = get_prompt_input_key(inputs, self.memory_variables)
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\utils.py", line 19, in get_prompt_input_key
+    raise ValueError(f"One input key expected got {prompt_input_keys}")
+ValueError: One input key expected got ['question', 'chat_history']
