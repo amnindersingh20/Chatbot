@@ -31,18 +31,19 @@ retriever = AmazonKnowledgeBasesRetriever(
 # — Memory, pointed at our question & chat_history keys —
 buffer_memory = ConversationBufferMemory(
     llm=llm,
-    input_key="question",       # <-- only look at this incoming key
-    memory_key="chat_history",  # <-- store full transcript here
+    input_key="question",       # only look at this incoming key
+    memory_key="chat_history",  # store full transcript here
     max_token_limit=512,
 )
 
-# — Build the chain *with* our properly-configured memory —
+# — Build the chain with our properly-configured memory —
 qa_chain = ConversationalRetrievalChain.from_llm(
     llm=llm,
     retriever=retriever,
-    memory=buffer_memory,           # now matches the two keys
+    memory=buffer_memory,           
     return_source_documents=True,
     return_generated_question=True,
+    output_key="answer",         # ← explicitly tell it which output to save
     verbose=False
 )
 
@@ -69,18 +70,18 @@ if __name__ == "__main__":
             print("🧹 Context reset!")
             continue
 
-        # Invoke via Runnable (auto-manages both memory objects)
+        # Invoke via Runnable (auto-manages memory)
         result = runnable.invoke(
             {"question": user_input},
             config={"configurable": {"session_id": session_id}}
         )
 
-        # Show how it rewrote (or not) using your prior context
+        # Show how it rewrote using your prior context
         rewritten = result.get("question")
         if rewritten and rewritten != user_input:
             print("🔄 Rewritten with context:", rewritten)
         else:
-            print("👉 Fresh-question (no rewrite)")
+            print("👉 Fresh question (no rewrite)")
 
         # Show if KB retrieval happened
         docs = result.get("source_documents", [])
@@ -90,7 +91,7 @@ if __name__ == "__main__":
         else:
             print("🤖 No KB retrieval – pure LLM response")
 
-        # The actual answer
+        # The actual answer (saved under "answer")
         print("\n💬 Claude:", result["answer"])
 
         # And dump your running memory for sanity
