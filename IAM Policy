@@ -14,13 +14,13 @@ from langchain_core.prompts import PromptTemplate
 logging.basicConfig(filename='chat_history.log', level=logging.INFO, format='%(asctime)s - %(message)s')
  
 # Create a boto3 session using your SSO profile
-session = boto3.Session(profile_name="Amninder")
+session = boto3.Session(profile_name="Amder")
  
 # Initialize Claude 3.5 via Bedrock
 llm = ChatBedrock(
-    model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
+    model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
     region_name="us-east-1",
-    client=session.client("bedrock-runtime", region_name="us-east-1")
+    client=session.client("bedrock-runtime", region_name="us-et-1")
 )
  
 # --- Optional: General Conversation Setup (not used in main loop) ---
@@ -52,7 +52,7 @@ custom_prompt = PromptTemplate(
  
 # --- Knowledge Base Setup ---
 retriever = AmazonKnowledgeBasesRetriever(
-    knowledge_base_id="TGZMV97MNY",
+    knowledge_base_id="TGMNY",
     retrieval_config={
         "vectorSearchConfiguration": {
             "numberOfResults": 50,
