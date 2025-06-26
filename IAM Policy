@@ -1,21 +1,175 @@
-{
-  "input": "What's my deductible for plan PPO-2000?",
-  "parameters": {
-    "plan": "PPO-2000",
-    "condition": "deductible"
-  },
-  "availableOptions": [
-    {
-      "optionId": "PPO-2000",
-      "optionDescription": "Preferred Provider Organization 2000"
+import json
+import boto3
+import logging
+from langchain_aws import ChatBedrock
+from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
+from langchain.chains import ConversationalRetrievalChain, ConversationChain
+from langchain.memory import ConversationBufferMemory
+from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.prompts import PromptTemplate
+
+
+# Configure logging
+logging.basicConfig(filename='chat_history.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+ 
+# Create a boto3 session using your SSO profile
+session = boto3.Session(profile_name="Amninder")
+ 
+# Initialize Claude 3.5 via Bedrock
+llm = ChatBedrock(
+    model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
+    region_name="us-east-1",
+    client=session.client("bedrock-runtime", region_name="us-east-1")
+)
+ 
+# --- Optional: General Conversation Setup (not used in main loop) ---
+def initialize_memory(llm):
+    return ConversationBufferMemory(llm=llm, max_token_limit=512)
+ 
+def create_conversation_chain(llm, memory):
+    return ConversationChain(llm=llm, memory=memory, verbose=True)
+ 
+buffer_memory = initialize_memory(llm)
+conversation = create_conversation_chain(llm, buffer_memory)
+ 
+# --- Custom Prompt (optional, can be used in future) ---
+custom_prompt = PromptTemplate(
+    input_variables=["chat_history", "question"],
+    template="""
+    The following is a conversation between a user and an AI assistant. Use the conversation history to answer the user's question.
+
+    Conversation History:
+    {chat_history}
+
+    Question:
+    {question}
+
+    Answer:
+    """
+)
+
+ 
+# --- Knowledge Base Setup ---
+retriever = AmazonKnowledgeBasesRetriever(
+    knowledge_base_id="TGZMV97MNY",
+    retrieval_config={
+        "vectorSearchConfiguration": {
+            "numberOfResults": 50,
+            "overrideSearchType": "HYBRID"
+        }
     },
-    {
-      "optionId": "HMO-1000",
-      "optionDescription": "Health Maintenance Organization 1000"
-    }
-  ],
-  "electedOption": {
-    "optionId": "PPO-2000",
-    "optionDescription": "Preferred Provider Organization 2000"
-  }
-}
+    client=session.client("bedrock-agent-runtime", region_name="us-east-1")
+)
+
+  # Replace with your Lambda function name
+ 
+# --- Context-Aware Chain ---
+qa_chain = ConversationalRetrievalChain.from_llm(
+    llm=llm,
+    retriever=retriever,
+    return_source_documents=True,
+    output_key="answer",
+    verbose=True
+)
+ 
+# --- In-Memory Chat History ---
+session_id = "vscode-session"
+chat_history_memory = InMemoryChatMessageHistory()
+ 
+# --- Wrap with RunnableWithMessageHistory ---
+runnable = RunnableWithMessageHistory(
+    qa_chain,
+    lambda _: chat_history_memory,
+    input_messages_key="question",
+    history_messages_key="chat_history"
+)
+ 
+# --- CLI Loop ---
+# if __name__ == "__main__":
+#     print("🧠 Claude 3.5 ChatBot with Context + Knowledge Base (type 'exit' to quit)")
+#     while True:
+#         user_input = input("You: ").strip()
+#         if user_input.lower() in {"exit", "quit"}:
+#             print("👋 Goodbye!")
+#             break
+#         try:
+#             result = runnable.invoke(
+#                 {"question": user_input},
+#                 config={"configurable": {"session_id": session_id}}
+#             )
+#             answer = result["answer"]
+#             print(f"Claude: {answer}")
+ 
+#             # Log conversation
+#             logging.info(f"User: {user_input}")
+#             logging.info(f"Claude: {answer}")
+#             logging.info("-" * 40)
+ 
+#             # Print conversation history
+#             print("\n📝 Conversation History:")
+#             logging.info("\n--- Conversation History ---")
+#             for msg in chat_history_memory.messages:
+#                 line = f"{msg.type.capitalize()}: {msg.content}"
+#                 print(line)
+#                 logging.info(line)
+#             print()
+ 
+#         except Exception as e:
+#             print(f"❌ Error: {e}")
+
+if __name__ == "__main__":
+    print("🧠 Claude 3.5 ChatBot with Context + Knowledge Base (type 'exit' to quit, type 'reset' to clear context)")
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() in {"exit", "quit"}:
+            print("👋 Goodbye!")
+            break
+        if user_input.lower() == "reset":
+            chat_history_memory.clear()
+            print("🧹 Context reset!")
+            continue
+        try:
+            # Prepare the chat history
+            chat_history = [
+                {"type": "human", "content": msg.content} if msg.type == "human" else {"type": "ai", "content": msg.content}
+                for msg in chat_history_memory.messages
+            ]
+
+            # Invoke the QA chain with chat history
+            result = qa_chain.invoke({
+                "question": user_input,
+                "chat_history": chat_history
+            })
+            answer = result["answer"]
+            source_documents = result.get("source_documents", [])
+
+                # Check if the answer came from the knowledge base
+            if source_documents:
+                logging.info("Answer retrieved from Knowledge Base.")
+                print("Claude (Knowledge Base):", answer)
+                logging.info(f"Source Documents: {source_documents}")
+            elif chat_history:
+                logging.info("Answer generated from Conversation History.")
+                print("Claude (History):", answer)
+            else:
+                logging.info("Answer generated directly by the LLM.")
+                print("Claude (LLM):", answer)
+
+                # Log conversation
+                logging.info(f"User: {user_input}")
+                logging.info(f"Claude: {answer}")
+                logging.info("-" * 40)
+
+                # Log and display memory state
+                logging.info("Current Memory State:")
+            print("\n📝 Conversation History:")
+            for msg in chat_history_memory.messages:
+                line = f"{msg.type.capitalize()}: {msg.content}"
+                print(line)
+                logging.info(line)
+            print()
+
+        except Exception as e:
+            logging.error(f"❌ Error: {e}")
+            print(f"❌ Error: {e}")
