@@ -1,5 +1,5 @@
 Traceback (most recent call last):
-  File "D:\Users\A1053499\Downloads\Langchain_code\app.py", line 73, in <module>
+  File "D:\Users\A1053499\Downloads\Langchain_code\app.py", line 74, in <module>
     result = runnable.invoke(
         {"question": user_input},
         config={"configurable": {"session_id": session_id}}
