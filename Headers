@@ -1,4 +1,105 @@
-chat2.html:160 
- Uncaught ReferenceError: handleEnterKey is not defined
-    at HTMLInputElement.onkeypress (chat2.html:160:114)
-onkeypress	@	chat2.html:160
+Traceback (most recent call last):
+  File "D:\Users\A1053499\Downloads\Langchain_code\app.py", line 72, in <module>
+    result = runnable.invoke(
+        {"question": user_input},
+        config={"configurable": {"session_id": session_id}}
+    )
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\runnables\base.py", line 5431, in invoke
+    return self.bound.invoke(
+           ~~~~~~~~~~~~~~~~~^
+        input,
+        ^^^^^^
+        self._merge_configs(config),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **{**self.kwargs, **kwargs},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\runnables\base.py", line 5431, in invoke
+    return self.bound.invoke(
+           ~~~~~~~~~~~~~~~~~^
+        input,
+        ^^^^^^
+        self._merge_configs(config),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **{**self.kwargs, **kwargs},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\runnables\base.py", line 3047, in invoke
+    input_ = context.run(step.invoke, input_, config)
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\runnables\base.py", line 5431, in invoke
+    return self.bound.invoke(
+           ~~~~~~~~~~~~~~~~~^
+        input,
+        ^^^^^^
+        self._merge_configs(config),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **{**self.kwargs, **kwargs},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\runnables\base.py", line 4772, in invoke
+    return self._call_with_config(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        self._invoke,
+        ^^^^^^^^^^^^^
+    ...<2 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\runnables\base.py", line 1940, in _call_with_config
+    context.run(
+    ~~~~~~~~~~~^
+        call_func_with_variable_args,  # type: ignore[arg-type]
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ),
+    ^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\runnables\config.py", line 428, in call_func_with_variable_args
+    return func(input, **kwargs)  # type: ignore[call-arg]
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\runnables\base.py", line 4641, in _invoke
+    output = output.invoke(
+        input_,
+    ...<4 lines>...
+        ),
+    )
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\runnables\base.py", line 5431, in invoke
+    return self.bound.invoke(
+           ~~~~~~~~~~~~~~~~~^
+        input,
+        ^^^^^^
+        self._merge_configs(config),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **{**self.kwargs, **kwargs},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 167, in invoke
+    raise e
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\base.py", line 157, in invoke
+    self._call(inputs, run_manager=run_manager)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\conversational_retrieval\base.py", line 159, in _call
+    docs = self._get_docs(new_question, inputs, run_manager=_run_manager)
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\chains\conversational_retrieval\base.py", line 396, in _get_docs
+    docs = self.retriever.invoke(
+        question, config={"callbacks": run_manager.get_child()}
+    )
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\retrievers.py", line 259, in invoke
+    result = self._get_relevant_documents(
+        input, run_manager=run_manager, **_kwargs
+    )
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_aws\retrievers\bedrock.py", line 190, in _get_relevant_documents
+    response = self.client.retrieve(**retrieve_request)
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\client.py", line 595, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\client.py", line 1058, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the Retrieve operation: Invalid input provided. Check the input and try again. 
