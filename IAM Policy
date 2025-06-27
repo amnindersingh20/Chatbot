@@ -1,4 +1,22 @@
-import os
-os.environ.setdefault("AWS_PROFILE", "Amder")
-os.environ.setdefault("AWS_REGION", "us-east-1")
-
+Traceback (most recent call last):
+  File "D:\Users\A1053499\Downloads\Langchain_code\app_dynamoDB.py", line 131, in <module>
+    run_chat(TABLE_NAME, SESSION_ID)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Users\A1053499\Downloads\Langchain_code\app_dynamoDB.py", line 118, in run_chat
+    history.add_message(ChatMessage(type="human", content=user_input))
+                        ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\messages\base.py", line 71, in __init__
+    super().__init__(content=content, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain_core\load\serializable.py", line 130, in __init__        
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\pydantic\main.py", line 253, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+pydantic_core._pydantic_core.ValidationError: 2 validation errors for ChatMessage
+type
+  Input should be 'chat' [type=literal_error, input_value='human', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/literal_error
+role
+  Field required [type=missing, input_value={'content': 'Fertility Me...tible', 'type': 'human'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
