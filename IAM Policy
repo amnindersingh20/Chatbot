@@ -1,4 +1,158 @@
-Traceback (most recent call last):
-  File "D:\Users\A1053499\Downloads\Langchain_code\app_dynamoDB.py", line 23, in <module>
-    from langchain.memory import BaseChatMessageHistory
-ImportError: cannot import name 'BaseChatMessageHistory' from 'langchain.memory' (D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\langchain\memory\__init__.py)
+# --- Prerequisites ---
+# 1. Python 3.8 or newer installed
+# 2. VS Code installed on Windows
+# 3. AWS CLI v2 installed and configured:
+#    aws configure --profile Amder
+# 4. (Optional) Set environment vars in VS Code terminal:
+#    set AWS_PROFILE=Amder
+#    set AWS_REGION=us-east-1
+# 5. Install dependencies:
+#    pip install boto3 langchain langchain-aws
+# 6. Create DynamoDB table 'ChatSessions':
+#    - Partition key: SessionId (String)
+#    - Sort key: Timestamp (Number)
+# 7. Attach a policy allowing dynamodb:PutItem, Query, DeleteItem on the table to your IAM user or SSO permission set.
+
+import os
+import time
+import logging
+import boto3
+from langchain_aws import ChatBedrock
+from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
+from langchain.chains import ConversationalRetrievalChain
+# Removed BaseChatMessageHistory import to avoid version conflicts
+# DynamoDBChatHistory will use a plain interface (add_message, clear, messages) compatible with RunnableWithMessageHistory
+from langchain.schema import ChatMessage
+from langchain_core.runnables.history import RunnableWithMessageHistory
+
+# Ensure correct profile and region
+os.environ.setdefault("AWS_PROFILE", "Amder")
+os.environ.setdefault("AWS_REGION", "us-east-1")
+
+logging.basicConfig(level=logging.INFO)
+
+class DynamoDBChatHistory:  # removed BaseChatMessageHistory inheritance
+    def __init__(self, table_name: str, session_id: str, client=None, region="us-east-1"):
+        self.table_name = table_name
+        self.session_id = session_id
+        self.dynamo = client or boto3.client("dynamodb", region_name=region)
+
+    def add_message(self, message: ChatMessage):
+        # Save each ChatMessage with timestamp
+        timestamp = int(time.time() * 1000)
+        self.dynamo.put_item(
+            TableName=self.table_name,
+            Item={
+                "SessionId": {"S": self.session_id},
+                "Timestamp": {"N": str(timestamp)},
+                "MessageType": {"S": message.role},
+                "Content": {"S": message.content},
+            }
+        )
+
+    def clear(self):
+        # Remove all items for this session
+        resp = self.dynamo.query(
+            TableName=self.table_name,
+            KeyConditionExpression="SessionId = :sid",
+            ExpressionAttributeValues={":sid": {"S": self.session_id}},
+            ProjectionExpression="SessionId, Timestamp"
+        )
+        with self.dynamo.batch_writer(TableName=self.table_name) as batch:
+            for item in resp.get("Items", []):
+                batch.delete_item(
+                    Key={
+                        "SessionId": item["SessionId"],
+                        "Timestamp": item["Timestamp"]
+                    }
+                )
+
+    @property
+    def messages(self):
+        # Retrieve and build ChatMessage list
+        resp = self.dynamo.query(
+            TableName=self.table_name,
+            KeyConditionExpression="SessionId = :sid",
+            ExpressionAttributeValues={":sid": {"S": self.session_id}},
+            ScanIndexForward=True
+        )
+        msgs = []
+        for item in resp.get("Items", []):
+            msgs.append(
+                ChatMessage(
+                    role=item["MessageType"]["S"],
+                    content=item["Content"]["S"]
+                )
+            )
+        return msgs
+
+# Setup Bedrock Chat and Retriever
+session = boto3.Session(profile_name="Amder")
+llm = ChatBedrock(
+    model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
+    region_name="us-east-1",
+    client=session.client("bedrock-runtime", region_name="us-east-1")
+)
+retriever = AmazonKnowledgeBasesRetriever(
+    knowledge_base_id="TGZMNY",
+    retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 5, "overrideSearchType": "HYBRID"}},
+    client=session.client("bedrock-agent-runtime", region_name="us-east-1")
+)
+qa_chain = ConversationalRetrievalChain.from_llm(
+    llm=llm,
+    retriever=retriever,
+    output_key="answer",
+    verbose=False
+)
+
+# Main chat loop
+def run_chat(table_name: str, session_id: str):
+    print("Type 'reset' to clear history, 'exit' to quit.")
+    history = DynamoDBChatHistory(table_name, session_id)
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() in {"exit", "quit"}:
+            print("Goodbye!")
+            break
+        if user_input.lower() == "reset":
+            history.clear()
+            print("History cleared.")
+            continue
+
+        # Persist user message
+        history.add_message(ChatMessage(role="user", content=user_input))
+
+        # Invoke QA chain
+        runnable = RunnableWithMessageHistory(
+            qa_chain,
+            lambda _: history,
+            input_messages_key="question",
+            history_messages_key="chat_history"
+        )
+        result = runnable.invoke(
+            {"question": user_input},
+            config={"configurable": {"session_id": session_id}}
+        )
+
+        # Persist assistant message
+        answer = result.get("answer", "")
+        history.add_message(ChatMessage(role="assistant", content=answer))
+
+        # Display answer and full history
+        print(f"Assistant: {answer}\n")
+        print("Full history:")
+        for msg in history.messages:
+            speaker = "You" if msg.role == "user" else "Assistant"
+            print(f"{speaker}: {msg.content}")
+        print("-"*50)
+
+if __name__ == "__main__":
+    TABLE_NAME = "ChatSessions"
+    SESSION_ID = input("Enter session ID: ")
+    run_chat(TABLE_NAME, SESSION_ID)
+
+# Testing steps:
+# 1. Ensure DynamoDB table exists.
+# 2. Run: python app_dynamoDB.py
+# 3. Enter session ID (e.g., 'user-123').
+# 4. Chat and exit.\# 5. Re-run with same session ID to see persisted history.
