@@ -1,8 +1,14 @@
-(langchain) PS D:\Users\A1053499\Downloads\Langchain_code> python app_dynamoDB.py
-Traceback (most recent call last):
-  File "D:\Users\A1053499\Downloads\Langchain_code\app_dynamoDB.py", line 8, in <module>
-    from langchain_core.schema import ChatMessage
-ModuleNotFoundError: No module named 'langchain_core.schema'
-(langchain) PS D:\Users\A1053499\Downloads\Langchain_code> pip install langchain_core.schema
-ERROR: Could not find a version that satisfies the requirement langchain_core.schema (from versions: none)
-ERROR: No matching distribution found for langchain_core.schema
+{
+#         "Version": "2012-10-17",
+#         "Statement": [
+#           {
+#             "Effect": "Allow",
+#             "Action": [
+#               "dynamodb:PutItem",
+#               "dynamodb:Query",
+#               "dynamodb:DeleteItem"
+#             ],
+#             "Resource": "arn:aws:dynamodb:us-east-1:YOUR_ACCOUNT_ID:table/ChatSessions"
+#           }
+#         ]
+#       }
