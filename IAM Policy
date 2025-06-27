@@ -156,3 +156,113 @@ if __name__ == "__main__":
 # 1. Verify the 'ChatSessions' table now has an attribute 'CreatedAt' (String) alongside keys.
 # 2. Run and chat; check in DynamoDB console that 'CreatedAt' shows ISO UTC times.
 # 3. Use 'reset' to clear session data as before.
+
+# --- 4. Flask UI Integration ---
+# Create a simple Flask app (app.py) and an HTML template (templates/chat.html) to provide a web UI.
+
+# 4.1 File: app.py
+from flask import Flask, request, jsonify, send_from_directory
+from datetime import datetime
+import os
+from your_module import DynamoDBChatHistory, qa_chain  # import your existing logic
+from langchain.schema import ChatMessage
+from langchain.runnables.history import RunnableWithMessageHistory
+
+app = Flask(__name__, static_folder='static', template_folder='templates')
+TABLE_NAME = os.environ.get('TABLE_NAME', 'ChatSessions')
+
+@app.route('/')
+def index():
+    return send_from_directory('templates', 'chat.html')
+
+@app.route('/history')
+def get_history():
+    session_id = request.args.get('session_id')
+    history = DynamoDBChatHistory(TABLE_NAME, session_id).messages
+    return jsonify([{'role': m.role, 'content': m.content} for m in history])
+
+@app.route('/message', methods=['POST'])
+def post_message():
+    data = request.json
+    session_id = data['session_id']
+    user_text = data['message']
+    history = DynamoDBChatHistory(TABLE_NAME, session_id)
+    # Persist user message
+    history.add_message(ChatMessage(role='user', content=user_text))
+    # Run QA chain
+    runnable = RunnableWithMessageHistory(
+        qa_chain,
+        lambda _: history,
+        input_messages_key='question',
+        history_messages_key='chat_history'
+    )
+    result = runnable.invoke({'question': user_text}, config={'configurable': {'session_id': session_id}})
+    ai_text = result.get('answer', '')
+    # Persist assistant message
+    history.add_message(ChatMessage(role='assistant', content=ai_text))
+    return jsonify({'reply': ai_text})
+
+if __name__ == '__main__':
+    # Ensure AWS_PROFILE and AWS_REGION are set in environment
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+# 4.2 File: templates/chat.html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Persistent Chat</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    #history { height: 60vh; overflow-y: scroll; border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; }
+    .user { text-align: right; color: blue; margin: 0.5em; }
+    .assistant { text-align: left; color: green; margin: 0.5em; }
+  </style>
+</head>
+<body>
+  <div id="history"></div>
+  <input id="msg" placeholder="Type a message…" style="width:80%; padding:0.5em;" />
+  <button id="send">Send</button>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session_id') || 'default-session';
+
+    function addBubble(role, text) {
+      const div = document.createElement('div');
+      div.className = role;
+      div.textContent = text;
+      document.getElementById('history').append(div);
+      document.getElementById('history').scrollTop = document.getElementById('history').scrollHeight;
+    }
+
+    // Load history
+    fetch(`/history?session_id=${sessionId}`)
+      .then(r => r.json())
+      .then(msgs => msgs.forEach(m => addBubble(m.role, m.content)));
+
+    document.getElementById('send').onclick = async () => {
+      const msg = document.getElementById('msg').value;
+      if (!msg) return;
+      addBubble('user', msg);
+      document.getElementById('msg').value = '';
+      const res = await fetch('/message', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({session_id: sessionId, message: msg})
+      });
+      const { reply } = await res.json();
+      addBubble('assistant', reply);
+    };
+  </script>
+</body>
+</html>
+
+# 4.3 How to test the UI
+# 1. Install Flask: pip install flask
+# 2. Place app.py alongside your existing script module containing DynamoDBChatHistory and qa_chain.
+# 3. Create folder 'templates' and save chat.html inside it.
+# 4. Set env vars and run: python app.py
+# 5. Open browser at http://localhost:5000/?session_id=user-123
+# 6. Chat, reload page, and observe persistent history.
+
