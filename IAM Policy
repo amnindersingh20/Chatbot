@@ -1,31 +1,84 @@
+import time
 import logging
 import boto3
 from langchain_aws import ChatBedrock
 from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
 from langchain.chains import ConversationalRetrievalChain
-from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_core.schema import ChatMessage
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
 logging.basicConfig(level=logging.INFO)
 
+# --- 1. DynamoDB-backed history implementation ---
+class DynamoDBChatHistory(BaseChatMessageHistory):
+    def __init__(self, table_name: str, session_id: str, client=None, region="us-east-1"):
+        self.table_name = table_name
+        self.session_id = session_id
+        self.dynamo = client or boto3.client("dynamodb", region_name=region)
+
+    def add_message(self, message: ChatMessage):
+        timestamp = int(time.time() * 1000)
+        self.dynamo.put_item(
+            TableName=self.table_name,
+            Item={
+                "SessionId": {"S": self.session_id},
+                "Timestamp": {"N": str(timestamp)},
+                "MessageType": {"S": message.type},
+                "Content": {"S": message.content},
+            }
+        )
+
+    def clear(self):
+        # Query all keys for this SessionId
+        resp = self.dynamo.query(
+            TableName=self.table_name,
+            KeyConditionExpression="SessionId = :sid",
+            ExpressionAttributeValues={":sid": {"S": self.session_id}},
+            ProjectionExpression="SessionId, Timestamp",
+        )
+        # Batch delete
+        with self.dynamo.batch_writer(TableName=self.table_name) as batch:
+            for item in resp.get("Items", []):
+                batch.delete_item(
+                    Key={
+                        "SessionId": item["SessionId"],
+                        "Timestamp": item["Timestamp"],
+                    }
+                )
+
+    @property
+    def messages(self):
+        resp = self.dynamo.query(
+            TableName=self.table_name,
+            KeyConditionExpression="SessionId = :sid",
+            ExpressionAttributeValues={":sid": {"S": self.session_id}},
+            ScanIndexForward=True,
+        )
+        msgs = []
+        for item in resp.get("Items", []):
+            msgs.append(
+                ChatMessage(
+                    type=item["MessageType"]["S"],
+                    content=item["Content"]["S"]
+                )
+            )
+        return msgs
+
+# --- 2. Setup AWS and LLM retriever ---
 session = boto3.Session(profile_name="Amder")
 llm = ChatBedrock(
     model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
     region_name="us-east-1",
     client=session.client("bedrock-runtime", region_name="us-east-1")
 )
-
 retriever = AmazonKnowledgeBasesRetriever(
     knowledge_base_id="TGZMNY",
     retrieval_config={
-        "vectorSearchConfiguration": {
-            "numberOfResults": 5,
-            "overrideSearchType": "HYBRID"
-        }
+        "vectorSearchConfiguration": {"numberOfResults": 5, "overrideSearchType": "HYBRID"}
     },
     client=session.client("bedrock-agent-runtime", region_name="us-east-1")
 )
-
 qa_chain = ConversationalRetrievalChain.from_llm(
     llm=llm,
     retriever=retriever,
@@ -33,54 +86,58 @@ qa_chain = ConversationalRetrievalChain.from_llm(
     verbose=False
 )
 
-
-chat_history_memory = InMemoryChatMessageHistory()
-
-
-runnable = RunnableWithMessageHistory(
-    qa_chain,
-    lambda _: chat_history_memory,
-    input_messages_key="question",
-    history_messages_key="chat_history"
-)
-
-session_id = "my-session"
-
-if __name__ == "__main__":
+# --- 3. Main loop with persistent history ---
+def run_chat(table_name: str, session_id: str):
     print("Type ‘reset’ to clear context, ‘exit’ to quit.")
+    history = DynamoDBChatHistory(table_name, session_id)
     while True:
         user_input = input("You: ").strip()
         if user_input.lower() in {"exit", "quit"}:
             print("👋 Goodbye!")
             break
         if user_input.lower() == "reset":
-            chat_history_memory.clear()
+            history.clear()
             print("🧹 Context reset!")
             continue
 
+        # Prepare runnable
+        runnable = RunnableWithMessageHistory(
+            qa_chain,
+            lambda _: history,
+            input_messages_key="question",
+            history_messages_key="chat_history"
+        )
+        # Invoke with persistence
         result = runnable.invoke(
             {"question": user_input},
             config={"configurable": {"session_id": session_id}}
         )
 
-        rewritten = result.get("question")
-        if rewritten and rewritten != user_input:
-            print("🔄 Rewritten with context:", rewritten)
-        else:
-            print("👉 Treated as fresh question")
+        # Persist the turn
+        history.add_message(ChatMessage(type="human", content=user_input))
+        history.add_message(ChatMessage(type="assistant", content=result["answer"]))
 
-        docs = result.get("source_documents", [])
-        if docs:
-            print(f"📚 Retrieved {len(docs)} doc(s); snippet:")
-            print(docs[0].page_content[:200], "…")
-        else:
-            print("🤖 No KB retrieval – pure LLM response")
-
-        # The actual answer
+        # Show result
         print("\n💬 Claude:", result["answer"])
-
-        # Print the accumulated chat history
         print("\n📝 Conversation history so far:")
-        for msg in chat_history_memory.messages:
+        for msg in history.messages:
             print(f"{msg.type.capitalize()}: {msg.content}")
         print("\n" + "-"*60 + "\n")
+
+if __name__ == "__main__":
+    # Replace with your actual DynamoDB table name
+    TABLE_NAME = "ChatSessions"
+    # In a real app, derive this from the logged-in user
+    SESSION_ID = input("Enter session ID: ")
+    run_chat(TABLE_NAME, SESSION_ID)
+
+# --- 4. Testing steps ---
+# 1. Create a DynamoDB table named 'ChatSessions' with:
+#    - Partition key: SessionId (String)
+#    - Sort key: Timestamp (Number)
+# 2. Attach IAM permissions for PutItem, Query, DeleteItem on this table to your AWS profile.
+# 3. Run this script: `python chat_dynamo.py`
+# 4. When prompted, enter a session ID (e.g., 'user-123').
+# 5. Send several messages, then type 'exit'.
+# 6. Re-run the script with the same session ID: you should see prior messages reloaded.
+# 7. Test 'reset' to clear the history in DynamoDB and confirm the table empties for that session.
