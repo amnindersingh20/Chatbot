@@ -1,30 +1,15 @@
-# --- Prerequisites ---
-# 1. Python 3.8 or newer installed
-# 2. VS Code installed on Windows
-# 3. AWS CLI v2 installed and configured: aws configure --profile Amder
-# 4. (Optional) Set environment vars in VS Code terminal:
-#    set AWS_PROFILE=Amder
-#    set AWS_REGION=us-east-1
-# 5. Install dependencies:
-#    pip install boto3 langchain langchain-aws
-# 6. Create DynamoDB table 'ChatSessions':
-#    - Partition key: SessionId (String)
-#    - Sort key: Timestamp (Number)
-# 7. Attach policy allowing dynamodb:PutItem, Query, DeleteItem on the table.
-
 import os
 import time
 import logging
 import boto3
-from datetime import datetime, timezone  # added timezone for UTC-aware timestamps
+from datetime import datetime, timezone
 from langchain_aws import ChatBedrock
 from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
 from langchain.chains import ConversationalRetrievalChain
 from langchain.schema import ChatMessage
-from langchain.runnables.history import RunnableWithMessageHistory  # updated import for RunnableWithMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory 
 
-# Ensure correct AWS profile and region
-os.environ.setdefault("AWS_PROFILE", "Amder")
+os.environ.setdefault("AWS_PROFILE", "Amninder-2")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 
 logging.basicConfig(level=logging.INFO)
@@ -36,9 +21,9 @@ class DynamoDBChatHistory:
         self.dynamo = client or boto3.client("dynamodb", region_name=region)
 
     def add_message(self, message: ChatMessage):
-        # Save each ChatMessage with timestamp and ISO datetime
+
         timestamp = int(time.time() * 1000)
-        created_at = datetime.now(timezone.utc).isoformat()  # use UTC-aware timestamp  # UTC ISO timestamp
+        created_at = datetime.now(timezone.utc).isoformat()  
         self.dynamo.put_item(
             TableName=self.table_name,
             Item={
@@ -51,7 +36,7 @@ class DynamoDBChatHistory:
         )
 
     def clear(self):
-        # Remove all items for this session
+
         resp = self.dynamo.query(
             TableName=self.table_name,
             KeyConditionExpression="SessionId = :sid",
@@ -69,7 +54,7 @@ class DynamoDBChatHistory:
 
     @property
     def messages(self):
-        # Retrieve and build ChatMessage list
+
         resp = self.dynamo.query(
             TableName=self.table_name,
             KeyConditionExpression="SessionId = :sid",
@@ -78,7 +63,7 @@ class DynamoDBChatHistory:
         )
         msgs = []
         for item in resp.get("Items", []):
-            # Optionally, you can capture item['CreatedAt']['S'] here if you want to display datetime
+
             msgs.append(
                 ChatMessage(
                     role=item["MessageType"]["S"],
@@ -87,16 +72,16 @@ class DynamoDBChatHistory:
             )
         return msgs
 
-# Setup Bedrock Chat and Retriever
-session = boto3.Session(profile_name="Amder")
+
+session = boto3.Session(profile_name="Amninder-2")
 llm = ChatBedrock(
-    model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
+    model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
     region_name="us-east-1",
     client=session.client("bedrock-runtime", region_name="us-east-1")
 )
 retriever = AmazonKnowledgeBasesRetriever(
-    knowledge_base_id="TGZMNY",
-    retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 5, "overrideSearchType": "HYBRID"}},
+    knowledge_base_id="TGZMV97MNY",
+    retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 10, "overrideSearchType": "HYBRID"}},
     client=session.client("bedrock-agent-runtime", region_name="us-east-1")
 )
 qa_chain = ConversationalRetrievalChain.from_llm(
@@ -106,7 +91,7 @@ qa_chain = ConversationalRetrievalChain.from_llm(
     verbose=False
 )
 
-# Main chat loop
+
 def run_chat(table_name: str, session_id: str):
     print("Type 'reset' to clear history, 'exit' to quit.")
     history = DynamoDBChatHistory(table_name, session_id)
@@ -120,10 +105,10 @@ def run_chat(table_name: str, session_id: str):
             print("History cleared.")
             continue
 
-        # Persist user message
+
         history.add_message(ChatMessage(role="user", content=user_input))
 
-        # Invoke QA chain
+
         runnable = RunnableWithMessageHistory(
             qa_chain,
             lambda _: history,
@@ -135,134 +120,18 @@ def run_chat(table_name: str, session_id: str):
             config={"configurable": {"session_id": session_id}}
         )
 
-        # Persist assistant message
+
         answer = result.get("answer", "")
         history.add_message(ChatMessage(role="assistant", content=answer))
 
-        # Display answer and full history
         print(f"Assistant: {answer}\n")
         print("Full history (with timestamps):")
         for item in history.messages:
-            # If you want to print CreatedAt, fetch it via a custom property or re-query DynamoDB
+
             print(f"{item.role.capitalize()}: {item.content}")
         print("-"*50)
 
 if __name__ == "__main__":
-    TABLE_NAME = "ChatSessions"
+    TABLE_NAME = "POC-Chatbot-ChatSession"
     SESSION_ID = input("Enter session ID: ")
     run_chat(TABLE_NAME, SESSION_ID)
-
-# Testing steps:
-# 1. Verify the 'ChatSessions' table now has an attribute 'CreatedAt' (String) alongside keys.
-# 2. Run and chat; check in DynamoDB console that 'CreatedAt' shows ISO UTC times.
-# 3. Use 'reset' to clear session data as before.
-
-# --- 4. Flask UI Integration ---
-# Create a simple Flask app (app.py) and an HTML template (templates/chat.html) to provide a web UI.
-
-# 4.1 File: app.py
-from flask import Flask, request, jsonify, send_from_directory
-from datetime import datetime
-import os
-from your_module import DynamoDBChatHistory, qa_chain  # import your existing logic
-from langchain.schema import ChatMessage
-from langchain.runnables.history import RunnableWithMessageHistory
-
-app = Flask(__name__, static_folder='static', template_folder='templates')
-TABLE_NAME = os.environ.get('TABLE_NAME', 'ChatSessions')
-
-@app.route('/')
-def index():
-    return send_from_directory('templates', 'chat.html')
-
-@app.route('/history')
-def get_history():
-    session_id = request.args.get('session_id')
-    history = DynamoDBChatHistory(TABLE_NAME, session_id).messages
-    return jsonify([{'role': m.role, 'content': m.content} for m in history])
-
-@app.route('/message', methods=['POST'])
-def post_message():
-    data = request.json
-    session_id = data['session_id']
-    user_text = data['message']
-    history = DynamoDBChatHistory(TABLE_NAME, session_id)
-    # Persist user message
-    history.add_message(ChatMessage(role='user', content=user_text))
-    # Run QA chain
-    runnable = RunnableWithMessageHistory(
-        qa_chain,
-        lambda _: history,
-        input_messages_key='question',
-        history_messages_key='chat_history'
-    )
-    result = runnable.invoke({'question': user_text}, config={'configurable': {'session_id': session_id}})
-    ai_text = result.get('answer', '')
-    # Persist assistant message
-    history.add_message(ChatMessage(role='assistant', content=ai_text))
-    return jsonify({'reply': ai_text})
-
-if __name__ == '__main__':
-    # Ensure AWS_PROFILE and AWS_REGION are set in environment
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
-# 4.2 File: templates/chat.html
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Persistent Chat</title>
-  <style>
-    body { font-family: sans-serif; margin: 2em; }
-    #history { height: 60vh; overflow-y: scroll; border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; }
-    .user { text-align: right; color: blue; margin: 0.5em; }
-    .assistant { text-align: left; color: green; margin: 0.5em; }
-  </style>
-</head>
-<body>
-  <div id="history"></div>
-  <input id="msg" placeholder="Type a message…" style="width:80%; padding:0.5em;" />
-  <button id="send">Send</button>
-
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get('session_id') || 'default-session';
-
-    function addBubble(role, text) {
-      const div = document.createElement('div');
-      div.className = role;
-      div.textContent = text;
-      document.getElementById('history').append(div);
-      document.getElementById('history').scrollTop = document.getElementById('history').scrollHeight;
-    }
-
-    // Load history
-    fetch(`/history?session_id=${sessionId}`)
-      .then(r => r.json())
-      .then(msgs => msgs.forEach(m => addBubble(m.role, m.content)));
-
-    document.getElementById('send').onclick = async () => {
-      const msg = document.getElementById('msg').value;
-      if (!msg) return;
-      addBubble('user', msg);
-      document.getElementById('msg').value = '';
-      const res = await fetch('/message', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({session_id: sessionId, message: msg})
-      });
-      const { reply } = await res.json();
-      addBubble('assistant', reply);
-    };
-  </script>
-</body>
-</html>
-
-# 4.3 How to test the UI
-# 1. Install Flask: pip install flask
-# 2. Place app.py alongside your existing script module containing DynamoDBChatHistory and qa_chain.
-# 3. Create folder 'templates' and save chat.html inside it.
-# 4. Set env vars and run: python app.py
-# 5. Open browser at http://localhost:5000/?session_id=user-123
-# 6. Chat, reload page, and observe persistent history.
-
