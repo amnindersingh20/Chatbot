@@ -1,1 +1,4 @@
-botocore.exceptions.ClientError: An error occurred (UnrecognizedClientException) when calling the Query operation: The security token included in the request is invalid.
+import os
+os.environ.setdefault("AWS_PROFILE", "Amder")
+os.environ.setdefault("AWS_REGION", "us-east-1")
+
