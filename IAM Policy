@@ -1,163 +1,235 @@
-# File: preprocess.py
-# ------------------
-# This module handles user input preprocessing before passing to the QA chain.
-import re
-
-def preprocess_text(text: str) -> str:
-    """
-    Clean and normalize user input:
-    - Lowercase conversion
-    - Strip leading/trailing whitespace
-    - Remove multiple spaces
-    - Custom replacements or filtering
-    """
-    cleaned = text.lower().strip()
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned
-
-
-# File: external_handler.py
-# -------------------------
-# Handles custom input processing logic. 
-# Modify this function with your own business logic.
-def handle_input(preprocessed_text: str) -> str:
-    # Example: pass-through; extend with NLP or parameter extraction
-    return preprocessed_text
-
-
-# File: lambda_function.py
-# ------------------------
-import os
-import time
 import logging
+import json
+import re
+import difflib
+from io import StringIO
 import boto3
-from datetime import datetime, timezone
-from langchain_aws import ChatBedrock
-from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
-from langchain.chains import ConversationalRetrievalChain
-from langchain.schema import ChatMessage
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from preprocess import preprocess_text
-from external_handler import handle_input
+import pandas as pd
 
-# Set AWS region via Lambda environment config
-REGION = os.getenv("AWS_REGION", "us-east-1")
-TABLE_NAME = os.getenv("DDB_TABLE", "POCion")
-KNOWLEDGE_BASE_ID = os.getenv("KB_ID", "TGMNY")
-MODEL_ID = os.getenv("MODEL_ID", "anthropic.claude-3-5-sonnet-2020-v1:0")
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+S3_BUCKET = "pocbotai"
+S3_KEY = "2025 Medical HPCC Combined.csv"
+FALLBACK_LAMBDA_NAME = "Poc_Bot_lambda1"
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
-# Initialize AWS clients and LangChain components globally (cold start)
-session = boto3.Session(region_name=REGION)
+_s3      = boto3.client('s3')
+_lambda  = boto3.client('lambda')
+_bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 
-class DynamoDBChatHistory:
-    def __init__(self, table_name: str, session_id: str, client=None, region=REGION):
-        self.table_name = table_name
-        self.session_id = session_id
-        self.dynamo = client or boto3.client("dynamodb", region_name=region)
+SYNONYMS = {
+    r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
+    r"\bco[\s\-]?insurance\b":    "coinsurance",
+    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
+    r"\bdeductible(s)?\b":         "deductible"
+}
 
-    def add_message(self, message: ChatMessage):
-        timestamp = int(time.time() * 1000)
-        created_at = datetime.now(timezone.utc).isoformat()
-        self.dynamo.put_item(
-            TableName=self.table_name,
-            Item={
-                "SessionId": {"S": self.session_id},
-                "Timestamp": {"N": str(timestamp)},
-                "CreatedAt": {"S": created_at},
-                "MessageType": {"S": message.role},
-                "Content": {"S": message.content},
-            }
+def normalize(text: str) -> str:
+    return re.sub(r'[^a-z0-9]', '', str(text).lower())
+
+def strip_filler(text: str) -> str:
+    text = re.sub(r"[^\w\s]", "", text.lower().strip())
+    fillers = [
+        r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b",r"\bwhat is the\b",r"\bis the\b", r"\btell me\b",
+        r"\bgive me\b", r"\bplease show\b",r"\bhelp me with\b",r"\bhelp me to\b",r"\bhelp me to\b", r"\bhow much is\b", r"\bis\b", r"\bmy\b"
+    ]
+    for pat in fillers:
+        text = re.sub(pat, '', text).strip()
+    return re.sub(r'\s+', ' ', text)
+
+def expand_synonyms(text: str) -> str:
+    for pat, rep in SYNONYMS.items():
+        text = re.sub(pat, rep, text, flags=re.IGNORECASE)
+    return text
+
+def load_dataframe():
+    try:
+        obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
+        df = pd.read_csv(StringIO(obj['Body'].read().decode('utf-8')), dtype=str)
+        df.columns = df.columns.str.strip()
+        df['Data Point Name'] = (
+            df['Data Point Name'].astype(str)
+              .str.replace('–', '-', regex=False)
+              .str.replace('\u200b', '', regex=False)
+              .str.strip().str.lower()
         )
+        df['normalized_name'] = df['Data Point Name'].apply(normalize)
+        return df
+    except Exception:
+        log.exception("Failed to load CSV from S3")
+        return pd.DataFrame()
 
-    def get_messages(self):
-        resp = self.dynamo.query(
-            TableName=self.table_name,
-            KeyConditionExpression="SessionId = :sid",
-            ExpressionAttributeValues={":sid": {"S": self.session_id}},
-            ScanIndexForward=True
+DF = load_dataframe()
+
+def get_plan_value(raw_condition: str, plan_id: str):
+    stripped    = strip_filler(raw_condition)
+    expanded    = expand_synonyms(stripped)
+    query_norm  = normalize(expanded)
+    log.info("Lookup trace: raw=%r → stripped=%r → expanded=%r → norm=%r",
+             raw_condition, stripped, expanded, query_norm)
+
+    if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
+        return 500, f"CSV missing required columns or plan '{plan_id}'"
+
+    matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
+    if matches.empty:
+        close = difflib.get_close_matches(
+            query_norm, DF['normalized_name'].tolist(), n=5, cutoff=0.7
         )
-        return [
-            ChatMessage(role=item["MessageType"]["S"], content=item["Content"]["S"])
-            for item in resp.get("Items", [])
-        ]
+        matches = DF[DF['normalized_name'].isin(close)] if close else matches
 
-# Build LLM & retriever
-llm = ChatBedrock(
-    model_id=MODEL_ID,
-    region_name=REGION,
-    client=session.client("bedrock-runtime", region_name=REGION)
-)
-retriever = AmazonKnowledgeBasesRetriever(
-    knowledge_base_id=KNOWLEDGE_BASE_ID,
-    retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 10, "overrideSearchType": "HYBRID"}},
-    client=session.client("bedrock-agent-runtime", region_name=REGION)
-)
-qa_chain = ConversationalRetrievalChain.from_llm(
-    llm=llm,
-    retriever=retriever,
-    output_key="answer",
-    return_source_documents=True,
-    verbose=False
-)
+    if matches.empty:
+        return 404, f"No data-points matching '{raw_condition}' found"
 
-# Lambda handler
-def lambda_handler(event, context):
-    """
-    Expects `event` with:
-    {
-      "session_id": "string",
-      "user_input": "string"
-    }
-    Returns JSON:
-    {
-      "answer": "...",
-      "source_count": int,
-      "session_id": "..."
-    }
-    """
-    session_id = event.get("session_id")
-    user_input = event.get("user_input", "").strip()
+    results = []
+    for _, row in matches.iterrows():
+        val = row.get(plan_id)
+        if pd.notna(val):
+            results.append({
+                "condition": row['Data Point Name'],
+                "plan": plan_id,
+                "value": val
+            })
 
-    if not session_id or not user_input:
-        return {"statusCode": 400, "body": "Missing session_id or user_input"}
+    if not results:
+        return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
+    return 200, results
 
-    history = DynamoDBChatHistory(TABLE_NAME, session_id)
+def summarize_with_claude35(composite_result: list, options: list, elected: dict) -> str:
+    options_list = [
+        {"optionId": opt["optionId"], "optionDescription": opt["optionDescription"]}
+        for opt in options
+    ]
+    elected_desc = (elected or {}).get("optionDescription")
+    prompt = f"""
+You are a helpful and friendly health benefits advisor.
+Here are the available options:
+{json.dumps(options_list, indent=2)}
+The employee elected: {elected_desc}.
 
-    # Preprocess & custom handling
-    cleaned = preprocess_text(user_input)
-    processed = handle_input(cleaned)
-    history.add_message(ChatMessage(role="user", content=processed))
+Retrieved plan data:
+{json.dumps(composite_result, indent=2)}
 
-    # Assemble full history
-    past_messages = history.get_messages()
+Your job:
+- Summarize each available option as its own section, using its optionDescription.
+- Clearly mark which option was elected and which are other available options.
+- Within each section, organize In-Network (Individual, Family) and Out-of-Network (Individual, Family).
+- Include details like deductibles, coinsurance, out-of-pocket maximums, etc.
+- Do not display plan IDs in parentheses after the description.
+- Do not display anything of the "No Coverage" option data in the response.
+- Do not display that you asked to summarize.
+- Use conversational, reader-friendly language and end with a call for further questions.
+"""
+    try:
+        response = _bedrock.invoke_model(
+            modelId=BEDROCK_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 1024,
+                "temperature": 0.5
+            })
+        )
+        body = json.loads(response['body'].read())
+        return body['content'][0]['text']
+    except Exception:
+        log.exception("LLM summarization failed")
+        return None
 
-    # Invoke QA chain
-    runnable = RunnableWithMessageHistory(
-        qa_chain,
-        lambda _: history,
-        input_messages_key="question",
-        history_messages_key="chat_history"
-    )
-    result = runnable.invoke(
-        {"question": processed},
-        config={"configurable": {"session_id": session_id}}
-    )
-
-    answer = result.get("answer", "")
-    docs = result.get("source_documents", [])
-
-    history.add_message(ChatMessage(role="assistant", content=answer))
-
-    logger.info("Session %s: returned %d docs", session_id, len(docs))
-
+def wrap_response(status, body):
     return {
-        "statusCode": 200,
-        "body": {
-            "answer": answer,
-            "source_count": len(docs),
-            "session_id": session_id
-        }
+        "statusCode": status,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "OPTIONS,POST"
+        },
+        "body": json.dumps(body)
     }
+
+def invoke_fallback(event_payload):
+    log.info("Invoking fallback lambda")
+    try:
+        resp = _lambda.invoke(
+            FunctionName=FALLBACK_LAMBDA_NAME,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(event_payload).encode()
+        )
+        return wrap_response(200, json.loads(resp['Payload'].read()))
+    except Exception as e:
+        log.exception("Fallback invocation failed")
+        return wrap_response(500, {"error": f"Fallback error: {e}"})
+
+def lambda_handler(event, _context):
+    log.info("Received event: %s", json.dumps(event))
+
+    raw = event.get("body") or event.get("prompt") or "{}"
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode()
+    try:
+        payload = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        log.exception("Failed to parse JSON body")
+        return wrap_response(400, {"error": "Invalid JSON in body"})
+
+    params = payload.get("parameters") or []
+    if isinstance(params, dict):
+        params = [{"name": k, "value": v} for k, v in params.items()]
+    condition = next((p["value"] for p in params if p["name"]=="condition"), None)
+    plans     = [str(p["value"]).strip() for p in params if p["name"]=="plan"]
+
+    available_options = payload.get("availableOptions", [])
+    elected_option    = payload.get("electedOption")
+
+    if not condition or not plans:
+        missing = []
+        if not condition: missing.append("condition")
+        if not plans:     missing.append("plan")
+        return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
+
+    plan_desc_map = {
+        str(opt.get("optionId")): opt.get("optionDescription")
+        for opt in available_options
+    }
+    if isinstance(elected_option, dict):
+        plan_desc_map[str(elected_option.get("optionId"))] = elected_option.get("optionDescription")
+
+    composite = []
+    for plan in plans:
+        desc = plan_desc_map.get(plan, "").strip()
+
+        if desc.lower() == "no coverage":
+            log.info(f"Skipping plan {plan} ('{desc}') due to no coverage")
+            continue
+        status, data = get_plan_value(condition, plan)
+        if status != 200:
+            fallback_body = {
+                "parameters": [
+                    {"name": "condition",         "value": condition},
+                    {"name": "optionDescription","value": desc or plan},
+                    {"name": "populationType",    "value": payload.get("populationType")}
+                ],
+                "availableOptions": available_options,
+                "electedOption":    elected_option
+            }
+            return invoke_fallback({ "body": json.dumps(fallback_body) })
+
+        composite.append({
+            "optionId":          plan,
+            "optionDescription": desc,
+            "data":              data
+        })
+
+    if not composite:
+        return wrap_response(200, {"message": "No applicable plans to process.", "results": []})
+
+    summary = summarize_with_claude35(composite, available_options, elected_option)
+    return wrap_response(200, {
+        "message":          summary,
+        "availableOptions": available_options,
+        "electedOption":    elected_option,
+        "results":          composite
+    })
