@@ -1,110 +1,99 @@
+# File: preprocess.py
+# ------------------
+# This module handles user input preprocessing before passing to the QA chain.
+import re
+
+def preprocess_text(text: str) -> str:
+    """
+    Clean and normalize user input:
+    - Lowercase conversion
+    - Strip leading/trailing whitespace
+    - Remove multiple spaces
+    - Custom replacements or filtering
+    """
+    cleaned = text.lower().strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned
+
+
+# File: external_handler.py
+# -------------------------
+# Handles custom input processing logic. 
+# Modify this function with your own business logic.
+def handle_input(preprocessed_text: str) -> str:
+    # Example: pass-through; extend with NLP or parameter extraction
+    return preprocessed_text
+
+
+# File: lambda_function.py
+# ------------------------
 import os
 import time
 import logging
 import boto3
-import spacy
 from datetime import datetime, timezone
 from langchain_aws import ChatBedrock
 from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
 from langchain.chains import ConversationalRetrievalChain
 from langchain.schema import ChatMessage
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from preprocess import preprocess_text
+from external_handler import handle_input
 
-# Load NLP model for input processing with fallback
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    # If not found, download or raise informative error
-    raise RuntimeError("spaCy model 'en_core_web_sm' not found. Please install via 'python -m spacy download en_core_web_sm'.")
+# Set AWS region via Lambda environment config
+REGION = os.getenv("AWS_REGION", "us-east-1")
+TABLE_NAME = os.getenv("DDB_TABLE", "POCion")
+KNOWLEDGE_BASE_ID = os.getenv("KB_ID", "TGMNY")
+MODEL_ID = os.getenv("MODEL_ID", "anthropic.claude-3-5-sonnet-2020-v1:0")
 
-# ANSI color codes for terminal highlighting
-CYAN = '\033[96m'
-GREEN = '\033[92m'
-YELLOW = '\033[93m'
-RED = '\033[91m'
-RESET = '\033[0m'
-
-os.environ.setdefault("AWS_PROFILE", "Amer-2")
-os.environ.setdefault("AWS_REGION", "us-east-1")
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize AWS clients and LangChain components globally (cold start)
+session = boto3.Session(region_name=REGION)
+
 class DynamoDBChatHistory:
-    def __init__(self, table_name: str, session_id: str, client=None, region="us-east-1"):
+    def __init__(self, table_name: str, session_id: str, client=None, region=REGION):
         self.table_name = table_name
         self.session_id = session_id
         self.dynamo = client or boto3.client("dynamodb", region_name=region)
 
     def add_message(self, message: ChatMessage):
-        try:
-            timestamp = int(time.time() * 1000)
-            created_at = datetime.now(timezone.utc).isoformat()
-            self.dynamo.put_item(
-                TableName=self.table_name,
-                Item={
-                    "SessionId": {"S": self.session_id},
-                    "Timestamp": {"N": str(timestamp)},
-                    "CreatedAt": {"S": created_at},
-                    "MessageType": {"S": message.role},
-                    "Content": {"S": message.content},
-                }
-            )
-        except Exception as e:
-            logger.error("Failed to save message to DynamoDB: %s", e)
+        timestamp = int(time.time() * 1000)
+        created_at = datetime.now(timezone.utc).isoformat()
+        self.dynamo.put_item(
+            TableName=self.table_name,
+            Item={
+                "SessionId": {"S": self.session_id},
+                "Timestamp": {"N": str(timestamp)},
+                "CreatedAt": {"S": created_at},
+                "MessageType": {"S": message.role},
+                "Content": {"S": message.content},
+            }
+        )
 
-    def clear(self):
-        try:
-            resp = self.dynamo.query(
-                TableName=self.table_name,
-                KeyConditionExpression="SessionId = :sid",
-                ExpressionAttributeValues={":sid": {"S": self.session_id}},
-                ProjectionExpression="SessionId, Timestamp"
-            )
-            with self.dynamo.batch_writer(TableName=self.table_name) as batch:
-                for item in resp.get("Items", []):
-                    batch.delete_item(
-                        Key={
-                            "SessionId": item["SessionId"],
-                            "Timestamp": item["Timestamp"]
-                        }
-                    )
-        except Exception as e:
-            logger.error("Failed to clear history: %s", e)
+    def get_messages(self):
+        resp = self.dynamo.query(
+            TableName=self.table_name,
+            KeyConditionExpression="SessionId = :sid",
+            ExpressionAttributeValues={":sid": {"S": self.session_id}},
+            ScanIndexForward=True
+        )
+        return [
+            ChatMessage(role=item["MessageType"]["S"], content=item["Content"]["S"])
+            for item in resp.get("Items", [])
+        ]
 
-    @property
-    def messages(self):
-        try:
-            resp = self.dynamo.query(
-                TableName=self.table_name,
-                KeyConditionExpression="SessionId = :sid",
-                ExpressionAttributeValues={":sid": {"S": self.session_id}},
-                ScanIndexForward=True
-            )
-            msgs = []
-            for item in resp.get("Items", []):
-                msgs.append(
-                    ChatMessage(
-                        role=item["MessageType"]["S"],
-                        content=item["Content"]["S"]
-                    )
-                )
-            return msgs
-        except Exception as e:
-            logger.error("Failed to fetch history: %s", e)
-            return []
-
-# AWS session and LLM setup
-session = boto3.Session(profile_name="Amer-2", region_name="us-east-1")
+# Build LLM & retriever
 llm = ChatBedrock(
-    model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
-    region_name="us-east-1",
-    client=session.client("bedrock-runtime", region_name="us-east-1")
+    model_id=MODEL_ID,
+    region_name=REGION,
+    client=session.client("bedrock-runtime", region_name=REGION)
 )
 retriever = AmazonKnowledgeBasesRetriever(
-    knowledge_base_id="TGMNY",
+    knowledge_base_id=KNOWLEDGE_BASE_ID,
     retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 10, "overrideSearchType": "HYBRID"}},
-    client=session.client("bedrock-agent-runtime", region_name="us-east-1")
+    client=session.client("bedrock-agent-runtime", region_name=REGION)
 )
 qa_chain = ConversationalRetrievalChain.from_llm(
     llm=llm,
@@ -114,85 +103,61 @@ qa_chain = ConversationalRetrievalChain.from_llm(
     verbose=False
 )
 
-# Intent detection based on simple patterns
-def detect_intent(text: str) -> str:
-    text_lower = text.lower()
-    if any(greet in text_lower for greet in ("hello", "hi", "hey")): return "greeting"
-    if any(exit_kw in text_lower for exit_kw in ("exit", "quit", "bye")): return "exit"
-    if "reset" == text_lower: return "reset"
-    return "question"
+# Lambda handler
+def lambda_handler(event, context):
+    """
+    Expects `event` with:
+    {
+      "session_id": "string",
+      "user_input": "string"
+    }
+    Returns JSON:
+    {
+      "answer": "...",
+      "source_count": int,
+      "session_id": "..."
+    }
+    """
+    session_id = event.get("session_id")
+    user_input = event.get("user_input", "").strip()
 
-# Text preprocessing: lemmatization, stopword/punctuation removal
-def preprocess_text(text: str) -> (str, list):
-    doc = nlp(text)
-    # Extract entities
-    entities = [(ent.text, ent.label_) for ent in doc.ents]
-    # Clean tokens
-    tokens = [token.lemma_.lower() for token in doc if not token.is_stop and not token.is_punct]
-    cleaned = " ".join(tokens)
-    return cleaned, entities
+    if not session_id or not user_input:
+        return {"statusCode": 400, "body": "Missing session_id or user_input"}
 
-# Main chat loop
+    history = DynamoDBChatHistory(TABLE_NAME, session_id)
 
-def run_chat(table_name: str, session_id: str):
-    logger.info("Starting chat session %s", session_id)
-    print(YELLOW + "Type 'reset' to clear history, 'exit' to quit." + RESET)
-    history = DynamoDBChatHistory(table_name, session_id)
+    # Preprocess & custom handling
+    cleaned = preprocess_text(user_input)
+    processed = handle_input(cleaned)
+    history.add_message(ChatMessage(role="user", content=processed))
 
-    while True:
-        raw_input_text = input(YELLOW + "You: " + RESET).strip()
-        intent = detect_intent(raw_input_text)
-        if intent == "exit":
-            print(RED + "Goodbye!" + RESET)
-            break
-        if intent == "reset":
-            history.clear()
-            print(YELLOW + "History cleared." + RESET)
-            continue
+    # Assemble full history
+    past_messages = history.get_messages()
 
-        # NLP preprocess
-        processed_text, entities = preprocess_text(raw_input_text)
-        logger.debug("Processed: %s | Entities: %s", processed_text, entities)
+    # Invoke QA chain
+    runnable = RunnableWithMessageHistory(
+        qa_chain,
+        lambda _: history,
+        input_messages_key="question",
+        history_messages_key="chat_history"
+    )
+    result = runnable.invoke(
+        {"question": processed},
+        config={"configurable": {"session_id": session_id}}
+    )
 
-        # Save user message
-        history.add_message(ChatMessage(role="user", content=processed_text))
+    answer = result.get("answer", "")
+    docs = result.get("source_documents", [])
 
-        # Invoke retrieval QA
-        runnable = RunnableWithMessageHistory(
-            qa_chain, lambda _: history,
-            input_messages_key="question", history_messages_key="chat_history"
-        )
-        result = runnable.invoke({"question": processed_text}, config={"configurable": {"session_id": session_id}})
+    history.add_message(ChatMessage(role="assistant", content=answer))
 
-        answer = result.get("answer", "Sorry, I couldn't generate a response.")
-        docs_count = len(result.get("source_documents", []))
+    logger.info("Session %s: returned %d docs", session_id, len(docs))
 
-        # Display
-        print("\n" + "="*60)
-        print(CYAN + f"Original: {raw_input_text}" + RESET)
-        print(CYAN + f"Processed: {processed_text}" + RESET)
-        if entities:
-            ent_str = ", ".join([f"{text}({label})" for text, label in entities])
-            print(YELLOW + f"Recognized Entities: {ent_str}" + RESET)
-        print(GREEN + f"Answer: {answer}" + RESET)
-        print("="*60 + "\n")
-
-        # Log source usage
-        if docs_count > 0:
-            logger.info("Used %d source docs", docs_count)
-        # Save assistant
-        history.add_message(ChatMessage(role="assistant", content=answer))
-
-        # History print
-        print(YELLOW + "---- Conversation History ----" + RESET)
-        for msg in history.messages:
-            label = "You" if msg.role == "user" else "Assistant"
-            color = CYAN if msg.role == "user" else GREEN
-            print(color + f"{label}: {msg.content}" + RESET)
-        print(YELLOW + "-"*20 + RESET)
-
-
-if __name__ == "__main__":
-    TABLE_NAME = "POCion"
-    SESSION_ID = input("Enter session ID: ")
-    run_chat(TABLE_NAME, SESSION_ID)
+    return {
+        "statusCode": 200,
+        "body": {
+            "answer": answer,
+            "source_count": len(docs),
+            "session_id": session_id
+        }
+    }
