@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import boto3
+import spacy
 from datetime import datetime, timezone
 from langchain_aws import ChatBedrock
 from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
@@ -9,10 +10,18 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain.schema import ChatMessage
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
+# Load NLP model for input processing with fallback
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    # If not found, download or raise informative error
+    raise RuntimeError("spaCy model 'en_core_web_sm' not found. Please install via 'python -m spacy download en_core_web_sm'.")
+
 # ANSI color codes for terminal highlighting
 CYAN = '\033[96m'
 GREEN = '\033[92m'
 YELLOW = '\033[93m'
+RED = '\033[91m'
 RESET = '\033[0m'
 
 os.environ.setdefault("AWS_PROFILE", "Amer-2")
@@ -28,72 +37,75 @@ class DynamoDBChatHistory:
         self.dynamo = client or boto3.client("dynamodb", region_name=region)
 
     def add_message(self, message: ChatMessage):
-        timestamp = int(time.time() * 1000)
-        created_at = datetime.now(timezone.utc).isoformat()
-        self.dynamo.put_item(
-            TableName=self.table_name,
-            Item={
-                "SessionId": {"S": self.session_id},
-                "Timestamp": {"N": str(timestamp)},
-                "CreatedAt": {"S": created_at},
-                "MessageType": {"S": message.role},
-                "Content": {"S": message.content},
-            }
-        )
+        try:
+            timestamp = int(time.time() * 1000)
+            created_at = datetime.now(timezone.utc).isoformat()
+            self.dynamo.put_item(
+                TableName=self.table_name,
+                Item={
+                    "SessionId": {"S": self.session_id},
+                    "Timestamp": {"N": str(timestamp)},
+                    "CreatedAt": {"S": created_at},
+                    "MessageType": {"S": message.role},
+                    "Content": {"S": message.content},
+                }
+            )
+        except Exception as e:
+            logger.error("Failed to save message to DynamoDB: %s", e)
 
     def clear(self):
-        resp = self.dynamo.query(
-            TableName=self.table_name,
-            KeyConditionExpression="SessionId = :sid",
-            ExpressionAttributeValues={":sid": {"S": self.session_id}},
-            ProjectionExpression="SessionId, Timestamp"
-        )
-        with self.dynamo.batch_writer(TableName=self.table_name) as batch:
-            for item in resp.get("Items", []):
-                batch.delete_item(
-                    Key={
-                        "SessionId": item["SessionId"],
-                        "Timestamp": item["Timestamp"]
-                    }
-                )
+        try:
+            resp = self.dynamo.query(
+                TableName=self.table_name,
+                KeyConditionExpression="SessionId = :sid",
+                ExpressionAttributeValues={":sid": {"S": self.session_id}},
+                ProjectionExpression="SessionId, Timestamp"
+            )
+            with self.dynamo.batch_writer(TableName=self.table_name) as batch:
+                for item in resp.get("Items", []):
+                    batch.delete_item(
+                        Key={
+                            "SessionId": item["SessionId"],
+                            "Timestamp": item["Timestamp"]
+                        }
+                    )
+        except Exception as e:
+            logger.error("Failed to clear history: %s", e)
 
     @property
     def messages(self):
-        resp = self.dynamo.query(
-            TableName=self.table_name,
-            KeyConditionExpression="SessionId = :sid",
-            ExpressionAttributeValues={":sid": {"S": self.session_id}},
-            ScanIndexForward=True
-        )
-        msgs = []
-        for item in resp.get("Items", []):
-            msgs.append(
-                ChatMessage(
-                    role=item["MessageType"]["S"],
-                    content=item["Content"]["S"]
-                )
+        try:
+            resp = self.dynamo.query(
+                TableName=self.table_name,
+                KeyConditionExpression="SessionId = :sid",
+                ExpressionAttributeValues={":sid": {"S": self.session_id}},
+                ScanIndexForward=True
             )
-        return msgs
+            msgs = []
+            for item in resp.get("Items", []):
+                msgs.append(
+                    ChatMessage(
+                        role=item["MessageType"]["S"],
+                        content=item["Content"]["S"]
+                    )
+                )
+            return msgs
+        except Exception as e:
+            logger.error("Failed to fetch history: %s", e)
+            return []
 
+# AWS session and LLM setup
 session = boto3.Session(profile_name="Amer-2", region_name="us-east-1")
-
 llm = ChatBedrock(
     model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
     region_name="us-east-1",
     client=session.client("bedrock-runtime", region_name="us-east-1")
 )
-
 retriever = AmazonKnowledgeBasesRetriever(
     knowledge_base_id="TGMNY",
-    retrieval_config={
-        "vectorSearchConfiguration": {
-            "numberOfResults": 10,
-            "overrideSearchType": "HYBRID"
-        }
-    },
+    retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 10, "overrideSearchType": "HYBRID"}},
     client=session.client("bedrock-agent-runtime", region_name="us-east-1")
 )
-
 qa_chain = ConversationalRetrievalChain.from_llm(
     llm=llm,
     retriever=retriever,
@@ -102,63 +114,81 @@ qa_chain = ConversationalRetrievalChain.from_llm(
     verbose=False
 )
 
+# Intent detection based on simple patterns
+def detect_intent(text: str) -> str:
+    text_lower = text.lower()
+    if any(greet in text_lower for greet in ("hello", "hi", "hey")): return "greeting"
+    if any(exit_kw in text_lower for exit_kw in ("exit", "quit", "bye")): return "exit"
+    if "reset" == text_lower: return "reset"
+    return "question"
+
+# Text preprocessing: lemmatization, stopword/punctuation removal
+def preprocess_text(text: str) -> (str, list):
+    doc = nlp(text)
+    # Extract entities
+    entities = [(ent.text, ent.label_) for ent in doc.ents]
+    # Clean tokens
+    tokens = [token.lemma_.lower() for token in doc if not token.is_stop and not token.is_punct]
+    cleaned = " ".join(tokens)
+    return cleaned, entities
+
+# Main chat loop
 
 def run_chat(table_name: str, session_id: str):
     logger.info("Starting chat session %s", session_id)
     print(YELLOW + "Type 'reset' to clear history, 'exit' to quit." + RESET)
     history = DynamoDBChatHistory(table_name, session_id)
+
     while True:
-        user_input = input(YELLOW + "You: " + RESET).strip()
-        if user_input.lower() in {"exit", "quit"}:
-            print(YELLOW + "Goodbye!" + RESET)
+        raw_input_text = input(YELLOW + "You: " + RESET).strip()
+        intent = detect_intent(raw_input_text)
+        if intent == "exit":
+            print(RED + "Goodbye!" + RESET)
             break
-        if user_input.lower() == "reset":
+        if intent == "reset":
             history.clear()
             print(YELLOW + "History cleared." + RESET)
             continue
 
+        # NLP preprocess
+        processed_text, entities = preprocess_text(raw_input_text)
+        logger.debug("Processed: %s | Entities: %s", processed_text, entities)
+
         # Save user message
-        history.add_message(ChatMessage(role="user", content=user_input))
+        history.add_message(ChatMessage(role="user", content=processed_text))
 
-        # Invoke QA chain
+        # Invoke retrieval QA
         runnable = RunnableWithMessageHistory(
-            qa_chain,
-            lambda _: history,
-            input_messages_key="question",
-            history_messages_key="chat_history"
+            qa_chain, lambda _: history,
+            input_messages_key="question", history_messages_key="chat_history"
         )
-        result = runnable.invoke(
-            {"question": user_input},
-            config={"configurable": {"session_id": session_id}}
-        )
+        result = runnable.invoke({"question": processed_text}, config={"configurable": {"session_id": session_id}})
 
-        answer = result.get("answer", "")
-        source_docs = result.get("source_documents", [])
-        docs_count = len(source_docs)
+        answer = result.get("answer", "Sorry, I couldn't generate a response.")
+        docs_count = len(result.get("source_documents", []))
 
-        # Highlight current Q&A
+        # Display
         print("\n" + "="*60)
-        print(CYAN + f"Current Question: {user_input}" + RESET)
-        print(GREEN + f"Current Answer: {answer}" + RESET)
+        print(CYAN + f"Original: {raw_input_text}" + RESET)
+        print(CYAN + f"Processed: {processed_text}" + RESET)
+        if entities:
+            ent_str = ", ".join([f"{text}({label})" for text, label in entities])
+            print(YELLOW + f"Recognized Entities: {ent_str}" + RESET)
+        print(GREEN + f"Answer: {answer}" + RESET)
         print("="*60 + "\n")
 
         # Log source usage
         if docs_count > 0:
-            logger.info("Answer retrieved from KB: used %d document(s)", docs_count)
-        else:
-            logger.info("Answer provided from chat history (no new docs retrieved)")
-
-        # Save assistant response
+            logger.info("Used %d source docs", docs_count)
+        # Save assistant
         history.add_message(ChatMessage(role="assistant", content=answer))
 
-        print(YELLOW + f"(Retrieved {docs_count} document(s) for this response)" + RESET)
-
-        # Print full history section
+        # History print
         print(YELLOW + "---- Conversation History ----" + RESET)
-        for item in history.messages:
-            role_label = "You" if item.role == "user" else "Assistant"
-            color = CYAN if item.role == "user" else GREEN
-            print(color + f"{role_label}: {item.content}" + RESET)
+        for msg in history.messages:
+            label = "You" if msg.role == "user" else "Assistant"
+            color = CYAN if msg.role == "user" else GREEN
+            print(color + f"{label}: {msg.content}" + RESET)
         print(YELLOW + "-"*20 + RESET)
 
 
