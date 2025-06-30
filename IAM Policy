@@ -9,7 +9,7 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain.schema import ChatMessage
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
-os.environ.setdefault("AWS_PROFILE", "Amninder-2")
+os.environ.setdefault("AWS_PROFILE", "Amer-2")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -70,16 +70,16 @@ class DynamoDBChatHistory:
         return msgs
 
 
-session = boto3.Session(profile_name="Amninder-2", region_name="us-east-1")
+session = boto3.Session(profile_name="Amer-2", region_name="us-east-1")
 
 llm = ChatBedrock(
-    model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
+    model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
     region_name="us-east-1",
     client=session.client("bedrock-runtime", region_name="us-east-1")
 )
 
 retriever = AmazonKnowledgeBasesRetriever(
-    knowledge_base_id="TGZMV97MNY",
+    knowledge_base_id="TGMNY",
     retrieval_config={
         "vectorSearchConfiguration": {
             "numberOfResults": 10,
