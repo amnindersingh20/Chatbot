@@ -12,7 +12,7 @@ log.setLevel(logging.INFO)
 S3_BUCKET = "pocbotai"
 S3_KEY = "2025 Medical HPCC Combined.csv"
 FALLBACK_LAMBDA_NAME = "Poc_Bot_lambda1"
-BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-202400-v1:0"
 
 _s3      = boto3.client('s3')
 _lambda  = boto3.client('lambda')
