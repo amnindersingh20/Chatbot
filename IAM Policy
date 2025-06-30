@@ -9,6 +9,12 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain.schema import ChatMessage
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
+# ANSI color codes for terminal highlighting
+CYAN = '\033[96m'
+GREEN = '\033[92m'
+YELLOW = '\033[93m'
+RESET = '\033[0m'
+
 os.environ.setdefault("AWS_PROFILE", "Amer-2")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 
@@ -69,7 +75,6 @@ class DynamoDBChatHistory:
             )
         return msgs
 
-
 session = boto3.Session(profile_name="Amer-2", region_name="us-east-1")
 
 llm = ChatBedrock(
@@ -100,20 +105,22 @@ qa_chain = ConversationalRetrievalChain.from_llm(
 
 def run_chat(table_name: str, session_id: str):
     logger.info("Starting chat session %s", session_id)
-    print("Type 'reset' to clear history, 'exit' to quit.")
+    print(YELLOW + "Type 'reset' to clear history, 'exit' to quit." + RESET)
     history = DynamoDBChatHistory(table_name, session_id)
     while True:
-        user_input = input("You: ").strip()
+        user_input = input(YELLOW + "You: " + RESET).strip()
         if user_input.lower() in {"exit", "quit"}:
-            print("Goodbye!")
+            print(YELLOW + "Goodbye!" + RESET)
             break
         if user_input.lower() == "reset":
             history.clear()
-            print("History cleared.")
+            print(YELLOW + "History cleared." + RESET)
             continue
 
+        # Save user message
         history.add_message(ChatMessage(role="user", content=user_input))
 
+        # Invoke QA chain
         runnable = RunnableWithMessageHistory(
             qa_chain,
             lambda _: history,
@@ -129,25 +136,33 @@ def run_chat(table_name: str, session_id: str):
         source_docs = result.get("source_documents", [])
         docs_count = len(source_docs)
 
+        # Highlight current Q&A
+        print("\n" + "="*60)
+        print(CYAN + f"Current Question: {user_input}" + RESET)
+        print(GREEN + f"Current Answer: {answer}" + RESET)
+        print("="*60 + "\n")
+
+        # Log source usage
         if docs_count > 0:
             logger.info("Answer retrieved from KB: used %d document(s)", docs_count)
         else:
             logger.info("Answer provided from chat history (no new docs retrieved)")
 
+        # Save assistant response
         history.add_message(ChatMessage(role="assistant", content=answer))
 
-        print(f"Assistant: {answer}\n")
+        print(YELLOW + f"(Retrieved {docs_count} document(s) for this response)" + RESET)
 
-        print(f"(Retrieved {docs_count} document(s) for this response)")
-
-        logger.info("Printing full chat history")
-        print("Full history (with roles):")
+        # Print full history section
+        print(YELLOW + "---- Conversation History ----" + RESET)
         for item in history.messages:
-            print(f"{item.role.capitalize()}: {item.content}")
-        print("-" * 50)
+            role_label = "You" if item.role == "user" else "Assistant"
+            color = CYAN if item.role == "user" else GREEN
+            print(color + f"{role_label}: {item.content}" + RESET)
+        print(YELLOW + "-"*20 + RESET)
 
 
 if __name__ == "__main__":
-    TABLE_NAME = "POC-Chatbot-ChatSession"
+    TABLE_NAME = "POCion"
     SESSION_ID = input("Enter session ID: ")
     run_chat(TABLE_NAME, SESSION_ID)
