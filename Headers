@@ -1,6 +1,11 @@
-{
-  "headers": {
-    "Session-Id": "ABC123"
-  },
-  "body": "{\"parameters\":[{\"name\":\"condition\",\"value\":\"annual deductible\"},{\"name\":\"plan\",\"value\":\"1651\"}]}"
-}
+[WARNING]	2025-07-01T09:05:52.734Z		LAMBDA_WARNING: Unhandled exception. The most likely cause is an issue in the function code. However, in rare cases, a Lambda runtime update can cause unexpected function behavior. For functions using managed runtimes, runtime updates can be triggered by a function change, or can be applied automatically. To determine if the runtime has been updated, check the runtime version in the INIT_START log entry. If this error correlates with a change in the runtime version, you may be able to mitigate this error by temporarily rolling back to the previous runtime version. For more information, see https://docs.aws.amazon.com/lambda/latest/dg/runtimes-update.html
+[ERROR] Runtime.ImportModuleError: Unable to import module 'lambda_function': module ''langchain_core._api'.'deprecation'' not found
+Traceback (most recent call last):
+INIT_REPORT Init Duration: 2876.55 ms	Phase: init	Status: error	Error Type: Runtime.ImportModuleError
+[WARNING]	2025-07-01T09:05:55.486Z		LAMBDA_WARNING: Unhandled exception. The most likely cause is an issue in the function code. However, in rare cases, a Lambda runtime update can cause unexpected function behavior. For functions using managed runtimes, runtime updates can be triggered by a function change, or can be applied automatically. To determine if the runtime has been updated, check the runtime version in the INIT_START log entry. If this error correlates with a change in the runtime version, you may be able to mitigate this error by temporarily rolling back to the previous runtime version. For more information, see https://docs.aws.amazon.com/lambda/latest/dg/runtimes-update.html
+[ERROR] Runtime.ImportModuleError: Unable to import module 'lambda_function': module ''langchain_core._api'.'deprecation'' not found
+Traceback (most recent call last):
+INIT_REPORT Init Duration: 2704.95 ms	Phase: invoke	Status: error	Error Type: Runtime.ImportModuleError
+START RequestId: 1b14e63f-73f4-4bbb-9b28-9b1d7a256fa8 Version: $LATEST
+END RequestId: 1b14e63f-73f4-4bbb-9b28-9b1d7a256fa8
+REPORT RequestId: 1b14e63f-73f4-4bbb-9b28-9b1d7a256fa8	Duration: 2721.45 ms	Billed Duration: 2722 ms	Memory Size: 128 MB	Max Memory Used: 127 MB	Status: error	Error Type: Runtime.ImportModuleError
