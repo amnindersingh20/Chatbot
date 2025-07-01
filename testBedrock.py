@@ -3,20 +3,17 @@ import time
 import logging
 import json
 import re
-difflib
+import difflib
 from io import StringIO
 import boto3
 import pandas as pd
 from datetime import datetime, timezone
-from langchain.schema import ChatMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-# Environment and AWS clients
-os.environ.setdefault("AWS_PROFILE", "Amnder-2")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
-# DynamoDB for history persistence
 db_client = boto3.client('dynamodb', region_name='us-east-1')
 class DynamoDBChatHistory:
     def __init__(self, table_name, session_id, client=None, region="us-east-1"):
@@ -43,13 +40,11 @@ class DynamoDBChatHistory:
         )
         return [ChatMessage(role=i["MessageType"]["S"], content=i["Content"]["S"]) for i in resp.get("Items", [])]
 
-# AWS Bedrock client for summarization fallback
 _lambda = boto3.client('lambda')
 bedrock_client = boto3.client('bedrock-runtime', region_name='us-east-1')
 FALLBACK_LAMBDA = "Poc_Bot_lambda1"
 BEDROCK_MODEL = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
-# CSV lookup (cold start)
 S3_BUCKET, S3_KEY = "pocbotai", "2025 Medical HPCC Combined.csv"
 _s3 = boto3.client('s3')
 SYN = {
@@ -102,7 +97,6 @@ def get_plan_value(raw, plan):
             })
     return (200, results) if results else (404, f"No value for '{raw}' under '{plan}'")
 
-# Summarize multiple-plan results via Claude Bedrock
 def summarize_csv_results(composite):
     prompt = f"""
 You are a helpful and friendly health benefits advisor.
@@ -129,7 +123,6 @@ Summarize each option as its own section, clearly marking the plan ID, and organ
         logger.exception("Summarization LLM failed")
         return None
 
-# Fallback Lambda invocation for non-CSV answers
 def invoke_fallback(payload):
     resp = _lambda.invoke(
         FunctionName=FALLBACK_LAMBDA,
@@ -138,7 +131,6 @@ def invoke_fallback(payload):
     )
     return json.loads(resp['Payload'].read())
 
-# HTTP response wrapper
 def wrap(status, body):
     return {
         "statusCode": status,
@@ -146,22 +138,18 @@ def wrap(status, body):
         "body": json.dumps(body)
     }
 
-# Main Lambda handler
 def lambda_handler(event, context):
-    # Identify session for persistence
     sid = (event.get('headers') or {}).get('Session-Id') or (event.get('queryStringParameters') or {}).get('session_id')
     if not sid:
         return wrap(400, {"error": "Missing session_id"})
-    history = DynamoDBChatHistory("POC-Chsion", sid, db_client)
+    history = DynamoDBChatHistory("POC-Chatbot-ChatSession", sid, db_client)
 
-    # Parse payload
     raw = event.get('body') or '{}'
     try:
         payload = json.loads(raw)
     except Exception:
         return wrap(400, {"error": "Invalid JSON"})
 
-    # CSV lookup flow
     params = payload.get('parameters')
     if params:
         question = payload.get('question', '').strip() or 'CSV lookup'
@@ -174,13 +162,11 @@ def lambda_handler(event, context):
         for plan in plans:
             status, data = get_plan_value(condition, plan)
             if status != 200:
-                # Missing CSV data → fallback lambda
                 out = invoke_fallback({"body": json.dumps(payload)})
                 history.add_message(ChatMessage(role='assistant', content=json.dumps(out)))
                 return wrap(200, out)
             composite.append({"plan": plan, "data": data})
 
-        # If multiple plan results, summarize via Claude
         if len(composite) > 1:
             summary = summarize_csv_results(composite)
             assistant_response = {"summary": summary, "results": composite}
@@ -190,7 +176,6 @@ def lambda_handler(event, context):
         history.add_message(ChatMessage(role='assistant', content=json.dumps(assistant_response)))
         return wrap(200, assistant_response)
 
-    # Free-form chat → fallback lambda for model response
     message = payload.get('question') or payload.get('message')
     if not message:
         return wrap(400, {"error": "Missing question/message"})
