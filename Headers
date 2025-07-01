@@ -1,14 +1,6 @@
 {
-#         "Version": "2012-10-17",
-#         "Statement": [
-#           {
-#             "Effect": "Allow",
-#             "Action": [
-#               "dynamodb:PutItem",
-#               "dynamodb:Query",
-#               "dynamodb:DeleteItem"
-#             ],
-#             "Resource": "arn:aws:dynamodb:us-east-1:YOUR_ACCOUNT_ID:table/ChatSessions"
-#           }
-#         ]
-#       }
+  "headers": {
+    "Session-Id": "ABC123"
+  },
+  "body": "{\"parameters\":[{\"name\":\"condition\",\"value\":\"annual deductible\"},{\"name\":\"plan\",\"value\":\"1651\"}]}"
+}
