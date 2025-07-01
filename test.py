@@ -1,116 +1,162 @@
-import json
 import os
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from sentence_transformers import SentenceTransformer, util
-import numpy as np
+import time
+import logging
 import boto3
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from mangum import Mangum  # For AWS Lambda
+from datetime import datetime, timezone
+from langchain_aws import ChatBedrock
+from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
+from langchain.chains import ConversationalRetrievalChain
+from langchain.schema import ChatMessage
+from langchain_core.runnables.history import RunnableWithMessageHistory
 
-# S3 Configuration – update these with your actual S3 details or environment variables
-S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "your-bucket-name")
-S3_OBJECT_KEY = os.environ.get("S3_OBJECT_KEY", "your-file.json")
-AWS_REGION = os.environ.get("AWS_REGION", "your-region")
+CYAN = '\033[96m'
+GREEN = '\033[92m'
+YELLOW = '\033[93m'
+RESET = '\033[0m'
 
-app = FastAPI()
+os.environ.setdefault("AWS_PROFILE", "Amnder-2")
 
-# Add CORS middleware to allow calls from your local frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this to your local dev domain (e.g., http://localhost:3000)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+os.environ.setdefault("AWS_REGION", "us-east-1")
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logger = logging.getLogger(__name__)
+
+class DynamoDBChatHistory:
+    def __init__(self, table_name: str, session_id: str, client=None, region="us-east-1"):
+        self.table_name = table_name
+        self.session_id = session_id
+        self.dynamo = client or boto3.client("dynamodb", region_name=region)
+
+    def add_message(self, message: ChatMessage):
+        timestamp = int(time.time() * 1000)
+        created_at = datetime.now(timezone.utc).isoformat()
+        self.dynamo.put_item(
+            TableName=self.table_name,
+            Item={
+                "SessionId": {"S": self.session_id},
+                "Timestamp": {"N": str(timestamp)},
+                "CreatedAt": {"S": created_at},
+                "MessageType": {"S": message.role},
+                "Content": {"S": message.content},
+            }
+        )
+
+    def clear(self):
+        resp = self.dynamo.query(
+            TableName=self.table_name,
+            KeyConditionExpression="SessionId = :sid",
+            ExpressionAttributeValues={":sid": {"S": self.session_id}},
+            ProjectionExpression="SessionId, Timestamp"
+        )
+        with self.dynamo.batch_writer(TableName=self.table_name) as batch:
+            for item in resp.get("Items", []):
+                batch.delete_item(
+                    Key={
+                        "SessionId": item["SessionId"],
+                        "Timestamp": item["Timestamp"]
+                    }
+                )
+
+    @property
+    def messages(self):
+        resp = self.dynamo.query(
+            TableName=self.table_name,
+            KeyConditionExpression="SessionId = :sid",
+            ExpressionAttributeValues={":sid": {"S": self.session_id}},
+            ScanIndexForward=True
+        )
+        msgs = []
+        for item in resp.get("Items", []):
+            msgs.append(
+                ChatMessage(
+                    role=item["MessageType"]["S"],
+                    content=item["Content"]["S"]
+                )
+            )
+        return msgs
+
+session = boto3.Session(profile_name="Amder-2", region_name="us-east-1")
+
+llm = ChatBedrock(
+    model_id="anthropic.claude-3-5-sonnet-2020-v1:0",
+    region_name="us-east-1",
+    client=session.client("bedrock-runtime", region_name="us-east-1")
 )
 
-# Global variables for the knowledge base, embeddings, retrieval model, and generative model
-knowledge_base = []
-kb_embeddings = None
-retrieval_model = None
-gen_model = None
-gen_tokenizer = None
+retriever = AmazonKnowledgeBasesRetriever(
+    knowledge_base_id="TGMNY",
+    retrieval_config={
+        "vectorSearchConfiguration": {
+            "numberOfResults": 10,
+            "overrideSearchType": "HYBRID"
+        }
+    },
+    client=session.client("bedrock-agent-runtime", region_name="us-east-1")
+)
 
-@app.on_event("startup")
-def load_knowledge():
-    global knowledge_base, kb_embeddings, retrieval_model, gen_model, gen_tokenizer
-    try:
-        print("Fetching knowledge base from S3 bucket...")
-        s3_client = boto3.client("s3", region_name=AWS_REGION)
-        response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=S3_OBJECT_KEY)
-        data = response["Body"].read().decode("utf-8")
-        knowledge_base = json.loads(data)
-        print("Knowledge base loaded from S3:", knowledge_base)
-    except Exception as e:
-        knowledge_base = []
-        print("Error loading knowledge base from S3:", e)
-    
-    try:
-        retrieval_model = SentenceTransformer('all-MiniLM-L6-v2')
-        print("Retrieval NLP model loaded.")
-        questions = [item.get("question", "") for item in knowledge_base]
-        if questions:
-            kb_embeddings = retrieval_model.encode(questions, convert_to_tensor=True)
-            print("Knowledge base embeddings computed.")
+qa_chain = ConversationalRetrievalChain.from_llm(
+    llm=llm,
+    retriever=retriever,
+    output_key="answer",
+    return_source_documents=True,
+    verbose=False
+)
+
+
+def run_chat(table_name: str, session_id: str):
+    logger.info("Starting chat session %s", session_id)
+    print(YELLOW + "Type 'reset' to clear history, 'exit' to quit." + RESET)
+    history = DynamoDBChatHistory(table_name, session_id)
+    while True:
+        user_input = input(YELLOW + "You: " + RESET).strip()
+        if user_input.lower() in {"exit", "quit"}:
+            print(YELLOW + "Goodbye!" + RESET)
+            break
+        if user_input.lower() == "reset":
+            history.clear()
+            print(YELLOW + "History cleared." + RESET)
+            continue
+
+        history.add_message(ChatMessage(role="user", content=user_input))
+
+        runnable = RunnableWithMessageHistory(
+            qa_chain,
+            lambda _: history,
+            input_messages_key="question",
+            history_messages_key="chat_history"
+        )
+        result = runnable.invoke(
+            {"question": user_input},
+            config={"configurable": {"session_id": session_id}}
+        )
+
+        answer = result.get("answer", "")
+        source_docs = result.get("source_documents", [])
+        docs_count = len(source_docs)
+
+        print("\n" + "="*60)
+        print(CYAN + f"Current Question: {user_input}" + RESET)
+        print(GREEN + f"Current Answer: {answer}" + RESET)
+        print("="*60 + "\n")
+
+        if docs_count > 0:
+            logger.info("Answer retrieved from KB: used %d document(s)", docs_count)
         else:
-            kb_embeddings = None
-            print("No questions found in the knowledge base.")
-    except Exception as e:
-        print("Error loading retrieval model or computing embeddings:", e)
-        kb_embeddings = None
+            logger.info("Answer provided from chat history (no new docs retrieved)")
 
-    try:
-        print("Loading generative model (DistilGPT-2)...")
-        gen_tokenizer = AutoTokenizer.from_pretrained("distilgpt2")
-        gen_model = AutoModelForCausalLM.from_pretrained("distilgpt2")
-        print("Generative model loaded.")
-    except Exception as e:
-        print("Error loading generative model:", e)
-        gen_model = None
-        gen_tokenizer = None
+        history.add_message(ChatMessage(role="assistant", content=answer))
 
-def search_knowledge(query: str, threshold: float = 0.5):
-    global kb_embeddings, retrieval_model
-    if not knowledge_base or kb_embeddings is None:
-        return ""
-    query_embedding = retrieval_model.encode(query, convert_to_tensor=True)
-    cosine_scores = util.cos_sim(query_embedding, kb_embeddings)[0]
-    best_score = float(cosine_scores.max())
-    best_idx = int(cosine_scores.argmax())
-    print(f"Best similarity score: {best_score}")
-    if best_score >= threshold:
-        return knowledge_base[best_idx].get("answer", "")
-    else:
-        return ""
+        print(YELLOW + f"(Retrieved {docs_count} document(s) for this response)" + RESET)
 
-def generate_response(query: str, context: str = "") -> str:
-    if context:
-        prompt = f"Context: {context}\nQuestion: {query}\nAnswer:"
-    else:
-        prompt = f"Question: {query}\nAnswer:"
-    
-    if gen_model is None or gen_tokenizer is None:
-        return "I'm sorry, the generative model is not available."
-    
-    try:
-        input_ids = gen_tokenizer.encode(prompt, return_tensors="pt")
-        output = gen_model.generate(input_ids, max_length=150, num_return_sequences=1, no_repeat_ngram_size=2)
-        generated_text = gen_tokenizer.decode(output[0], skip_special_tokens=True)
-        if generated_text.startswith(prompt):
-            generated_text = generated_text[len(prompt):].strip()
-        return generated_text
-    except Exception as e:
-        print(f"Error during generation: {e}")
-        return "I'm sorry, I couldn't generate an answer at this time."
+        print(YELLOW + "---- Conversation History ----" + RESET)
+        for item in history.messages:
+            role_label = "You" if item.role == "user" else "Assistant"
+            color = CYAN if item.role == "user" else GREEN
+            print(color + f"{role_label}: {item.content}" + RESET)
+        print(YELLOW + "-"*20 + RESET)
 
-@app.get("/chat")
-def chat(query: str):
-    print(f"Received chat request with query: {query}")
-    retrieved_context = search_knowledge(query)
-    print(f"Retrieved context: {retrieved_context}")
-    final_answer = generate_response(query, retrieved_context)
-    print(f"Returning generated response: {final_answer}")
-    return {"response": final_answer}
 
-# Create a Mangum handler for AWS Lambda
-handler = Mangum(app)
+if __name__ == "__main__":
+    TABLE_NAME = "POC-Chsion"
+    SESSION_ID = input("Enter session ID: ")
+    run_chat(TABLE_NAME, SESSION_ID)
