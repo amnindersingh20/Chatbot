@@ -1,4 +1,1 @@
-{
-  "headers": { "Session-Id": "ABC123" },
-  "body": "{\"parameters\":[{\"name\":\"condition\",\"value\":\"out of pocket max\"},{\"name\":\"plan\",\"value\":\"1651\"},{\"name\":\"plan\",\"value\":\"1652\"}]}"
-}
+ERROR: When restricting platform and interpreter constraints using --python-version, --platform, --abi, or --implementation, either --no-deps must be set, or --only-binary=:all: must be set and --no-binary must not be set (or must be set to :none:).
