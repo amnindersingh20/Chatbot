@@ -5,6 +5,7 @@ import difflib
 from io import StringIO
 import boto3
 import pandas as pd
+import time # For timestamp in DynamoDB
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -14,15 +15,24 @@ S3_KEY = "2025 Meined.csv"
 FALLBACK_LAMBDA_NAME = "Pocda1"
 BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-220-v1:0"
 
-_s3      = boto3.client('s3')
-_lambda  = boto3.client('lambda')
+# New Constants for DynamoDB
+DYNAMODB_TABLE_NAME = "ChatHistoryTable" # You'll need to create this table in DynamoDB
+# Ensure this table has a primary key, e.g., 'sessionId' (Partition Key)
+# and 'timestamp' (Sort Key) or a single 'id' which can be a UUID.
+# For simplicity, let's use 'sessionId' and 'timestamp' for this example.
+
+_s3 = boto3.client('s3')
+_lambda = boto3.client('lambda')
 _bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+_comprehend = boto3.client("comprehend", region_name="us-east-1") # Assuming us-east-1 for Comprehend
+_dynamodb = boto3.resource('dynamodb', region_name="us-east-1") # Using resource for simpler item operations
+_dynamodb_table = _dynamodb.Table(DYNAMODB_TABLE_NAME)
 
 SYNONYMS = {
     r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
-    r"\bco[\s\-]?insurance\b":    "coinsurance",
+    r"\bco[\s\-]?insurance\b": "coinsurance",
     r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
-    r"\bdeductible(s)?\b":         "deductible"
+    r"\bdeductible(s)?\b": "deductible"
 }
 
 def normalize(text: str) -> str:
@@ -63,9 +73,9 @@ def load_dataframe():
 DF = load_dataframe()
 
 def get_plan_value(raw_condition: str, plan_id: str):
-    stripped    = strip_filler(raw_condition)
-    expanded    = expand_synonyms(stripped)
-    query_norm  = normalize(expanded)
+    stripped = strip_filler(raw_condition)
+    expanded = expand_synonyms(stripped)
+    query_norm = normalize(expanded)
     log.info("Lookup trace: raw=%r → stripped=%r → expanded=%r → norm=%r",
              raw_condition, stripped, expanded, query_norm)
 
@@ -163,6 +173,66 @@ def invoke_fallback(event_payload):
         log.exception("Fallback invocation failed")
         return wrap_response(500, {"error": f"Fallback error: {e}"})
 
+# New function for Comprehend NLP
+def process_with_comprehend(text: str) -> str:
+    """
+    Uses AWS Comprehend to detect key phrases from the input text.
+    Returns a concatenated string of key phrases.
+    """
+    try:
+        # First, detect dominant language
+        language_response = _comprehend.detect_dominant_language(Text=text)
+        dominant_language_code = language_response['Languages'][0]['LanguageCode']
+        log.info(f"Detected dominant language: {dominant_language_code}")
+
+        # Then, detect key phrases in that language
+        response = _comprehend.detect_key_phrases(Text=text, LanguageCode=dominant_language_code)
+        key_phrases = [phrase['Text'] for phrase in response['KeyPhrases']]
+        log.info(f"Comprehend Key Phrases: {key_phrases}")
+        # Join key phrases to form a single string for lookup
+        return " ".join(key_phrases)
+    except Exception:
+        log.exception("Comprehend NLP processing failed")
+        return text # Fallback to original text if Comprehend fails
+
+# New functions for DynamoDB Chat History
+def save_chat_history(session_id: str, user_input: str, bot_response: str, timestamp: int = None):
+    """Saves the chat interaction to DynamoDB."""
+    if not timestamp:
+        timestamp = int(time.time()) # Unix timestamp
+    try:
+        _dynamodb_table.put_item(
+            Item={
+                'sessionId': session_id,
+                'timestamp': timestamp,
+                'user_input': user_input,
+                'bot_response': bot_response
+            }
+        )
+        log.info(f"Chat history saved for session {session_id} at {timestamp}")
+    except Exception:
+        log.exception(f"Failed to save chat history for session {session_id}")
+
+def get_chat_history(session_id: str, limit: int = 5) -> list:
+    """Retrieves the most recent chat history for a given session ID."""
+    try:
+        response = _dynamodb_table.query(
+            KeyConditionExpression='sessionId = :sid',
+            ExpressionAttributeValues={
+                ':sid': session_id
+            },
+            Limit=limit,
+            ScanIndexForward=False # Get most recent first
+        )
+        items = response.get('Items', [])
+        # Sort by timestamp in ascending order to maintain chronological context
+        sorted_items = sorted(items, key=lambda x: x.get('timestamp', 0))
+        log.info(f"Retrieved {len(sorted_items)} chat history items for session {session_id}")
+        return sorted_items
+    except Exception:
+        log.exception(f"Failed to retrieve chat history for session {session_id}")
+        return []
+
 def lambda_handler(event, _context):
     log.info("Received event: %s", json.dumps(event))
 
@@ -175,20 +245,37 @@ def lambda_handler(event, _context):
         log.exception("Failed to parse JSON body")
         return wrap_response(400, {"error": "Invalid JSON in body"})
 
+    # Extract session ID for context and history
+    # You might get this from API Gateway context, or pass it in the payload
+    session_id = payload.get("sessionId", "default-session")
+    user_input_text = payload.get("inputText", "") # Assuming original user query is in 'inputText'
+
+    # Retrieve chat history for context
+    chat_history = get_chat_history(session_id)
+    log.info(f"Current chat history for {session_id}: {chat_history}")
+
+    # For now, let's keep the parameter extraction as is, but in a real scenario
+    # the 'condition' might be derived more heavily from Comprehend or the LLM.
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
-    condition = next((p["value"] for p in params if p["name"]=="condition"), None)
-    plans     = [str(p["value"]).strip() for p in params if p["name"]=="plan"]
+    # Original condition or derive from user_input_text if 'condition' param is not present
+    condition = next((p["value"] for p in params if p["name"] == "condition"), user_input_text)
+    plans = [str(p["value"]).strip() for p in params if p["name"] == "plan"]
 
     available_options = payload.get("availableOptions", [])
-    elected_option    = payload.get("electedOption")
+    elected_option = payload.get("electedOption")
 
-    if not condition or not plans:
-        missing = []
-        if not condition: missing.append("condition")
-        if not plans:     missing.append("plan")
-        return wrap_response(400, {"error": "Missing: " + ", ".join(missing)})
+    if not condition and not user_input_text: # Ensure there's some input to process
+        return wrap_response(400, {"error": "Missing 'condition' parameter or 'inputText' in payload"})
+    if not plans:
+        return wrap_response(400, {"error": "Missing 'plan' parameter(s)"})
+
+    # --- NLP Processing with AWS Comprehend ---
+    processed_condition = process_with_comprehend(condition)
+    if not processed_condition: # If Comprehend returns empty, use the original condition as fallback
+        processed_condition = condition
+    log.info(f"Comprehend processed condition: {processed_condition}")
 
     plan_desc_map = {
         str(opt.get("optionId")): opt.get("optionDescription")
@@ -198,24 +285,43 @@ def lambda_handler(event, _context):
         plan_desc_map[str(elected_option.get("optionId"))] = elected_option.get("optionDescription")
 
     composite = []
+    response_message = "" # To store the final message from Bedrock or fallback
+
     for plan in plans:
         desc = plan_desc_map.get(plan, "").strip()
 
         if desc.lower() == "no coverage":
             log.info(f"Skipping plan {plan} ('{desc}') due to no coverage")
             continue
-        status, data = get_plan_value(condition, plan)
+
+        # Use the Comprehend-processed condition for CSV lookup
+        status, data = get_plan_value(processed_condition, plan)
         if status != 200:
+            log.warning(f"CSV lookup failed for plan {plan} with condition '{processed_condition}'. Status: {status}, Data: {data}")
+            # --- Fallback to another Lambda (with processed condition) ---
             fallback_body = {
                 "parameters": [
-                    {"name": "condition",         "value": condition},
+                    {"name": "condition",       "value": processed_condition}, # Pass processed condition
                     {"name": "optionDescription","value": desc or plan},
-                    {"name": "populationType",    "value": payload.get("populationType")}
+                    {"name": "populationType",  "value": payload.get("populationType")},
+                    {"name": "userQuery",       "value": user_input_text} # Pass original user query
                 ],
                 "availableOptions": available_options,
-                "electedOption":    elected_option
+                "electedOption":    elected_option,
+                "chatHistory":      chat_history # Pass chat history to fallback if it can utilize it
             }
-            return invoke_fallback({ "body": json.dumps(fallback_body) })
+            fallback_response = invoke_fallback({ "body": json.dumps(fallback_body) })
+            # If fallback succeeds, return its response directly and save history
+            if fallback_response['statusCode'] == 200:
+                response_body = json.loads(fallback_response['body'])
+                response_message = response_body.get('message', json.dumps(response_body))
+                save_chat_history(session_id, user_input_text, response_message)
+                return fallback_response
+            else:
+                # If fallback also fails, log and return error
+                log.error("Fallback lambda invocation failed or returned non-200 status.")
+                save_chat_history(session_id, user_input_text, "Error: Unable to retrieve information.")
+                return fallback_response
 
         composite.append({
             "optionId":          plan,
@@ -224,11 +330,20 @@ def lambda_handler(event, _context):
         })
 
     if not composite:
-        return wrap_response(200, {"message": "No applicable plans to process.", "results": []})
+        # If no plans were applicable after filtering or initial processing
+        response_message = "No applicable plans to process based on your query or elected options."
+        save_chat_history(session_id, user_input_text, response_message)
+        return wrap_response(200, {"message": response_message, "results": []})
 
+    # Summarize with Bedrock (Claude 3.5 Sonnet)
     summary = summarize_with_claude35(composite, available_options, elected_option)
+    response_message = summary if summary else "I couldn't generate a summary at this time, but here are the raw details."
+
+    # Save the successful interaction to DynamoDB
+    save_chat_history(session_id, user_input_text, response_message)
+
     return wrap_response(200, {
-        "message":          summary,
+        "message":          response_message,
         "availableOptions": available_options,
         "electedOption":    elected_option,
         "results":          composite
