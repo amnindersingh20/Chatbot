@@ -1,5 +1,7 @@
 {
   "body": {
+    "sessionId": "test-session-123",  // Add a unique session ID for testing
+    "inputText": "whats my oop?",     // Add the original user query here
     "parameters": [
       { "name": "condition", "value": "whats my oop?" },
       { "name": "plan",      "value": "1284"      },
@@ -9,8 +11,8 @@
       { "name": "plan",      "value": "11020"     },
       { "name": "plan",      "value": "1284"      }
     ],
-    "pageName":             "Annual Enrollment - Medical - AT&T",
-    "populationType":       "ATMGMT",
+    "pageName":              "Annual Enrollment - Medical - AT&T",
+    "populationType":        "ATMGMT",
     "enrollmentDeadlineDate":"",
     "availableOptions": [
       {
