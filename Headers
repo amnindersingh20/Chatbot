@@ -7,6 +7,7 @@ import boto3
 from datetime import datetime, timezone
 import pandas as pd
 import time
+# import pytz # You would still need pytz if you want IST time in save_chat_history
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -18,38 +19,21 @@ BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
 DYNAMODB_TABLE_NAME = "POC-Chatbot-ChatSession"
 
-
 _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
 _bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 _comprehend = boto3.client("comprehend", region_name="us-east-1")
-_dynamodb = boto3.resource('dynamodb', region_name="us-east-1") 
+_dynamodb = boto3.resource('dynamodb', region_name="us-east-1")
 _dynamodb_table = _dynamodb.Table(DYNAMODB_TABLE_NAME)
 
-SYNONYMS = {
-    r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
-    r"\bco[\s\-]?insurance\b": "coinsurance",
-    r"\b(oop|out[\s\-]?of[\s\-]?pocket)\b": "out of pocket",
-    r"\bdeductible(s)?\b": "deductible"
-}
+# --- REMOVED: SYNONYMS dictionary ---
 
 def normalize(text: str) -> str:
+    # This remains for normalizing the data points in the CSV and the Comprehend output
     return re.sub(r'[^a-z0-9]', '', str(text).lower())
 
-def strip_filler(text: str) -> str:
-    text = re.sub(r"[^\w\s]", "", text.lower().strip())
-    fillers = [
-        r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b",r"\bwhat is the\b",r"\bis the\b", r"\btell me\b",
-        r"\bgive me\b", r"\bplease show\b",r"\bhelp me with\b",r"\bhelp me to\b",r"\bhelp me to\b", r"\bhow much is\b", r"\bis\b", r"\bmy\b"
-    ]
-    for pat in fillers:
-        text = re.sub(pat, '', text).strip()
-    return re.sub(r'\s+', ' ', text)
-
-def expand_synonyms(text: str) -> str:
-    for pat, rep in SYNONYMS.items():
-        text = re.sub(pat, rep, text, flags=re.IGNORECASE)
-    return text
+# --- REMOVED: strip_filler function ---
+# --- REMOVED: expand_synonyms function ---
 
 def load_dataframe():
     try:
@@ -70,38 +54,47 @@ def load_dataframe():
 
 DF = load_dataframe()
 
-def get_plan_value(raw_condition: str, plan_id: str):
-    stripped = strip_filler(raw_condition)
-    expanded = expand_synonyms(stripped)
-    query_norm = normalize(expanded)
-    log.info("Lookup trace: raw=%r → stripped=%r → expanded=%r → norm=%r",
-             raw_condition, stripped, expanded, query_norm)
+def get_plan_value(comprehend_processed_condition: str, plan_id: str):
+    """
+    Retrieves plan value using a condition already processed by Comprehend.
+    """
+    # The input 'comprehend_processed_condition' is expected to be the clean
+    # key phrases from Comprehend, so we just normalize it for lookup.
+    query_norm = normalize(comprehend_processed_condition)
+    log.info("Lookup trace: processed_condition=%r → norm=%r",
+             comprehend_processed_condition, query_norm)
 
     if 'Data Point Name' not in DF.columns or plan_id not in DF.columns:
         return 500, f"CSV missing required columns or plan '{plan_id}'"
 
+    # We now use 'str.contains' for a more flexible match against the
+    # normalized data point names, as Comprehend might return phrases
+    # that are subsets or variations.
     matches = DF[DF['normalized_name'].str.contains(query_norm, na=False)]
+    
     if matches.empty:
+        # Fallback to difflib close matches if direct contains doesn't work,
+        # but apply it on the normalized Comprehend output.
         close = difflib.get_close_matches(
             query_norm, DF['normalized_name'].tolist(), n=5, cutoff=0.7
         )
         matches = DF[DF['normalized_name'].isin(close)] if close else matches
 
     if matches.empty:
-        return 404, f"No data-points matching '{raw_condition}' found"
+        return 404, f"No data-points matching '{comprehend_processed_condition}' found"
 
     results = []
     for _, row in matches.iterrows():
         val = row.get(plan_id)
         if pd.notna(val):
             results.append({
-                "condition": row['Data Point Name'],
+                "condition": row['Data Point Name'], # Use original Data Point Name from CSV
                 "plan": plan_id,
                 "value": val
             })
 
     if not results:
-        return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
+        return 404, f"No value for '{comprehend_processed_condition}' under plan '{plan_id}'"
     return 200, results
 
 def summarize_with_claude35(composite_result: list, options: list, elected: dict) -> str:
@@ -176,6 +169,9 @@ def process_with_comprehend(text: str) -> str:
     Uses AWS Comprehend to detect key phrases from the input text.
     Returns a concatenated string of key phrases.
     """
+    if not text or not text.strip(): # Handle empty input gracefully
+        return ""
+
     try:
         language_response = _comprehend.detect_dominant_language(Text=text)
         dominant_language_code = language_response['Languages'][0]['LanguageCode']
@@ -184,10 +180,13 @@ def process_with_comprehend(text: str) -> str:
         response = _comprehend.detect_key_phrases(Text=text, LanguageCode=dominant_language_code)
         key_phrases = [phrase['Text'] for phrase in response['KeyPhrases']]
         log.info(f"Comprehend Key Phrases: {key_phrases}")
+        # Join key phrases to form a single string for lookup
+        # This will be passed to 'normalize' later.
         return " ".join(key_phrases)
     except Exception:
         log.exception("Comprehend NLP processing failed")
-        return text
+        # Fallback to original text if Comprehend fails, but normalize it for consistency
+        return text # If Comprehend fails, we'll try to use the raw text
 
 def save_chat_history(session_id: str, user_input: str, bot_response: str):
     """Saves the chat interaction to DynamoDB."""
@@ -247,21 +246,30 @@ def lambda_handler(event, _context):
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
-    condition = next((p["value"] for p in params if p["name"] == "condition"), user_input_text)
+
+    # Original condition from parameters or user_input_text
+    original_condition = next((p["value"] for p in params if p["name"] == "condition"), user_input_text)
+    
+    # --- The key change: Process the original condition ONLY with Comprehend ---
+    processed_condition = process_with_comprehend(original_condition)
+    
+    # If Comprehend returns empty (e.g., very short input, no key phrases detected),
+    # fall back to using the original user input, then normalize it.
+    if not processed_condition:
+        log.warning(f"Comprehend returned empty key phrases for '{original_condition}', falling back to original text.")
+        processed_condition = original_condition # Use original if Comprehend fails to find anything
+
+    log.info(f"Final condition for lookup (after Comprehend/fallback): {processed_condition}")
+
     plans = [str(p["value"]).strip() for p in params if p["name"] == "plan"]
 
     available_options = payload.get("availableOptions", [])
     elected_option = payload.get("electedOption")
 
-    if not condition and not user_input_text:
+    if not original_condition and not user_input_text:
         return wrap_response(400, {"error": "Missing 'condition' parameter or 'inputText' in payload"})
     if not plans:
         return wrap_response(400, {"error": "Missing 'plan' parameter(s)"})
-
-    processed_condition = process_with_comprehend(condition)
-    if not processed_condition:
-        processed_condition = condition
-    log.info(f"Comprehend processed condition: {processed_condition}")
 
     plan_desc_map = {
         str(opt.get("optionId")): opt.get("optionDescription")
@@ -279,12 +287,14 @@ def lambda_handler(event, _context):
         if desc.lower() == "no coverage":
             log.info(f"Skipping plan {plan} ('{desc}') due to no coverage")
             continue
+
+        # Pass the Comprehend-processed string directly to get_plan_value
         status, data = get_plan_value(processed_condition, plan)
         if status != 200:
             log.warning(f"CSV lookup failed for plan {plan} with condition '{processed_condition}'. Status: {status}, Data: {data}")
             fallback_body = {
                 "parameters": [
-                    {"name": "condition",        "value": processed_condition},
+                    {"name": "condition",        "value": processed_condition}, # Pass processed condition
                     {"name": "optionDescription","value": desc or plan},
                     {"name": "populationType",  "value": payload.get("populationType")},
                     {"name": "userQuery",        "value": user_input_text}
