@@ -1,26 +1,32 @@
+    raise error_class(parsed_response, operation_name)
+botocore.exceptions.ClientError: An error occurred (ValidationException) when calling the Query operation: Query condition missed key schema element: SessionId
+
 import logging
 import json
 import re
 import difflib
 from io import StringIO
 import boto3
+from datetime import datetime, timezone
 import pandas as pd
 import time # For timestamp in DynamoDB
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-S3_BUCKET = "pai"
-S3_KEY = "2025 Meined.csv"
-FALLBACK_LAMBDA_NAME = "Pocda1"
-BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-220-v1:0"
+S3_BUCKET = "pocbotai"
+S3_KEY = "2025 Medical HPCC Combined.csv"
+FALLBACK_LAMBDA_NAME = "Poc_Bot_lambda1"
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
 # New Constants for DynamoDB
-DYNAMODB_TABLE_NAME = "ChatHistoryTable" # You'll need to create this table in DynamoDB
+DYNAMODB_TABLE_NAME = "POC-Chatbot-ChatSession" # You'll need to create this table in DynamoDB
 # Ensure this table has a primary key, e.g., 'sessionId' (Partition Key)
 # and 'timestamp' (Sort Key) or a single 'id' which can be a UUID.
 # For simplicity, let's use 'sessionId' and 'timestamp' for this example.
 
+##(Partition Key) SessionId (String)
+##(Sort Key) Timestamp (Number)
 _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
 _bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
@@ -198,14 +204,16 @@ def process_with_comprehend(text: str) -> str:
 # New functions for DynamoDB Chat History
 def save_chat_history(session_id: str, user_input: str, bot_response: str, timestamp: int = None):
     """Saves the chat interaction to DynamoDB."""
+    created = datetime.now(timezone.utc).isoformat()
     if not timestamp:
         timestamp = int(time.time()) # Unix timestamp
     try:
         _dynamodb_table.put_item(
             Item={
-                'sessionId': session_id,
-                'timestamp': timestamp,
+                'SessionId': session_id,
+                'Timestamp': timestamp,
                 'user_input': user_input,
+                "CreatedAt": created,
                 'bot_response': bot_response
             }
         )
