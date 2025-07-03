@@ -1,6 +1,3 @@
-    raise error_class(parsed_response, operation_name)
-botocore.exceptions.ClientError: An error occurred (ValidationException) when calling the Query operation: Query condition missed key schema element: SessionId
-
 import logging
 import json
 import re
@@ -25,8 +22,6 @@ DYNAMODB_TABLE_NAME = "POC-Chatbot-ChatSession" # You'll need to create this tab
 # and 'timestamp' (Sort Key) or a single 'id' which can be a UUID.
 # For simplicity, let's use 'sessionId' and 'timestamp' for this example.
 
-##(Partition Key) SessionId (String)
-##(Sort Key) Timestamp (Number)
 _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
 _bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
@@ -201,20 +196,20 @@ def process_with_comprehend(text: str) -> str:
         log.exception("Comprehend NLP processing failed")
         return text # Fallback to original text if Comprehend fails
 
-# New functions for DynamoDB Chat History
-def save_chat_history(session_id: str, user_input: str, bot_response: str, timestamp: int = None):
+# Modified functions for DynamoDB Chat History
+def save_chat_history(session_id: str, user_input: str, bot_response: str):
     """Saves the chat interaction to DynamoDB."""
-    created = datetime.now(timezone.utc).isoformat()
-    if not timestamp:
-        timestamp = int(time.time()) # Unix timestamp
+    # Ensure timestamp is an integer (Unix timestamp in seconds)
+    timestamp = int(time.time())
+    created_at = datetime.now(timezone.utc).isoformat()
     try:
         _dynamodb_table.put_item(
             Item={
-                'SessionId': session_id,
-                'Timestamp': timestamp,
+                'SessionId': session_id, # Partition Key (String)
+                'Timestamp': timestamp, # Sort Key (Number)
                 'user_input': user_input,
-                "CreatedAt": created,
-                'bot_response': bot_response
+                'bot_response': bot_response,
+                'CreatedAt': created_at
             }
         )
         log.info(f"Chat history saved for session {session_id} at {timestamp}")
@@ -225,7 +220,7 @@ def get_chat_history(session_id: str, limit: int = 5) -> list:
     """Retrieves the most recent chat history for a given session ID."""
     try:
         response = _dynamodb_table.query(
-            KeyConditionExpression='sessionId = :sid',
+            KeyConditionExpression='SessionId = :sid', # Use correct casing for SessionId
             ExpressionAttributeValues={
                 ':sid': session_id
             },
@@ -233,8 +228,8 @@ def get_chat_history(session_id: str, limit: int = 5) -> list:
             ScanIndexForward=False # Get most recent first
         )
         items = response.get('Items', [])
-        # Sort by timestamp in ascending order to maintain chronological context
-        sorted_items = sorted(items, key=lambda x: x.get('timestamp', 0))
+        # Sort by Timestamp in ascending order to maintain chronological context
+        sorted_items = sorted(items, key=lambda x: x.get('Timestamp', 0)) # Use correct casing for Timestamp
         log.info(f"Retrieved {len(sorted_items)} chat history items for session {session_id}")
         return sorted_items
     except Exception:
@@ -254,7 +249,6 @@ def lambda_handler(event, _context):
         return wrap_response(400, {"error": "Invalid JSON in body"})
 
     # Extract session ID for context and history
-    # You might get this from API Gateway context, or pass it in the payload
     session_id = payload.get("sessionId", "default-session")
     user_input_text = payload.get("inputText", "") # Assuming original user query is in 'inputText'
 
@@ -262,8 +256,6 @@ def lambda_handler(event, _context):
     chat_history = get_chat_history(session_id)
     log.info(f"Current chat history for {session_id}: {chat_history}")
 
-    # For now, let's keep the parameter extraction as is, but in a real scenario
-    # the 'condition' might be derived more heavily from Comprehend or the LLM.
     params = payload.get("parameters") or []
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
@@ -309,10 +301,10 @@ def lambda_handler(event, _context):
             # --- Fallback to another Lambda (with processed condition) ---
             fallback_body = {
                 "parameters": [
-                    {"name": "condition",       "value": processed_condition}, # Pass processed condition
+                    {"name": "condition",        "value": processed_condition}, # Pass processed condition
                     {"name": "optionDescription","value": desc or plan},
                     {"name": "populationType",  "value": payload.get("populationType")},
-                    {"name": "userQuery",       "value": user_input_text} # Pass original user query
+                    {"name": "userQuery",        "value": user_input_text} # Pass original user query
                 ],
                 "availableOptions": available_options,
                 "electedOption":    elected_option,
@@ -332,9 +324,9 @@ def lambda_handler(event, _context):
                 return fallback_response
 
         composite.append({
-            "optionId":          plan,
+            "optionId":            plan,
             "optionDescription": desc,
-            "data":              data
+            "data":                data
         })
 
     if not composite:
