@@ -4,41 +4,48 @@ import os
 import sys
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 
-# Configure AWS credentials in one of these ways:
-# 1. Environment variables:
-#    setx AWS_ACCESS_KEY_ID "YOUR_ACCESS_KEY_ID"
-#    setx AWS_SECRET_ACCESS_KEY "YOUR_SECRET_ACCESS_KEY"
-#    setx AWS_DEFAULT_REGION "us-east-1"
-# 2. AWS CLI:
-#    aws configure
-# 3. Shared credentials file (~/.aws/credentials) and config (~/.aws/config)
-# 4. Explicitly in code (not recommended for production):
-#    boto3.client('comprehend', aws_access_key_id='KEY', aws_secret_access_key='SECRET', region_name='REGION')
+# Ensure you have configured AWS credentials and region via one of:
+#  - Environment variables (setx AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION)
+#  - AWS CLI (aws configure)
+#  - Shared credentials file (~/.aws/credentials) and config (~/.aws/config)
 
 
 def get_comprehend_client():
-    """Returns a Comprehend client, handling missing credentials."""
+    """Returns a Comprehend client, handling missing credentials and providing debug info."""
+    # Create a session to inspect credentials
+    session = boto3.Session()
+    creds = session.get_credentials()
+    region = session.region_name or os.environ.get('AWS_DEFAULT_REGION')
+
+    # Debug: Print out what boto3 sees
+    print(f"DEBUG: AWS Access Key ID: {getattr(creds, 'access_key', None)}")
+    print(f"DEBUG: AWS Secret Key present: {bool(getattr(creds, 'secret_key', None))}")
+    print(f"DEBUG: AWS Session Token present: {bool(getattr(creds, 'token', None))}")
+    print(f"DEBUG: AWS Region: {region}")
+
+    if not creds or not creds.access_key or not creds.secret_key:
+        print("ERROR: AWS credentials not found. Please configure them via AWS CLI or environment variables.")
+        sys.exit(1)
+    if not region:
+        print("ERROR: AWS region not set. Please set AWS_DEFAULT_REGION or configure in ~/.aws/config.")
+        sys.exit(1)
+
     try:
-        client = boto3.client('comprehend')
-        # Simple call to verify credentials
+        client = session.client('comprehend', region_name=region)
+        # Verify by making a lightweight call
         client.list_key_phrases_detection_jobs(MaxResults=1)
         return client
     except (NoCredentialsError, PartialCredentialsError):
-        print("ERROR: AWS credentials not found. Please configure them via AWS CLI or environment variables.")
+        print("ERROR: Invalid AWS credentials. Please check your configuration.")
         sys.exit(1)
-    except client.exceptions.UnsupportedLanguageException:
-        # ignore language exception for this check
-        return client
+    except Exception as e:
+        print(f"ERROR: Failed to create Comprehend client: {e}")
+        sys.exit(1)
 
 
 def detect_key_phrases(client, text, language_code='en'):
     """
     Detects key phrases in the given text using Amazon Comprehend.
-
-    :param client: Boto3 Comprehend client
-    :param text: The input text to analyze.
-    :param language_code: The language code of the input text (default 'en').
-    :return: A list of detected key phrases with score.
     """
     response = client.detect_key_phrases(Text=text, LanguageCode=language_code)
     return response.get('KeyPhrases', [])
