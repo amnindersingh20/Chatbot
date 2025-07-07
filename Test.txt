@@ -1,104 +1,48 @@
-import json
 import boto3
-from botocore.config import Config
-import traceback
+import os
+import sys
 
-bedrock_agent = boto3.client(
-    'bedrock-agent-runtime',
-    region_name='us-east-1',
-    config=Config(read_timeout=45)
- 
-def lambda_handler(event, context):
-    try:
-        # Original input parsing (unchanged)
-        body = json.loads(event.get('body', '{}'))
-        user_input = body.get('message') or body.get('prompt')
-        session_id = body.get('sessionId', context.aws_request_id)
-
-        # 1. Changed: Yield initial headers instead of return
-        yield {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'text/plain',  # 2. Changed from JSON
-                'Access-Control-Allow-Origin': '*'
-            }
-        }
-
-        response = bedrock_agent.invoke_agent(
-            agentId='YOUR_ID',
-            agentAliasId='YOUR_ALIAS',
-            sessionId=session_id,
-            inputText=user_input
-        )
-
-        # 3. Changed: Stream raw chunks instead of building completion
-        for event in response['completion']:
-            chunk = event['chunk']['bytes'].decode('utf-8')
-            # 4. Changed: Yield raw text chunks
-            yield {'body': chunk}
-
-    except Exception as e:
-        # 5. Changed: Stream error instead of returning JSON
-        yield {'body': f"\nERROR: {str(e)}"}
+# Ensure AWS credentials and region are set in your environment, e.g.:
+#   setx AWS_ACCESS_KEY_ID "YOUR_ACCESS_KEY_ID"
+#   setx AWS_SECRET_ACCESS_KEY "YOUR_SECRET_ACCESS_KEY"
+#   setx AWS_DEFAULT_REGION "us-east-1"
+# Or configure via AWS CLI: aws configure
 
 
+def detect_key_phrases(text, language_code='en'):
+    """
+    Detects key phrases in the given text using Amazon Comprehend.
 
-//Javascript Basic streaming consumer
-async function askQuestion(question) {
-  const response = await fetch(LAMBDA_URL, {
-    method: 'POST',
-    body: JSON.stringify({ message: question })
-  });
-  
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  
-  while(true) {
-    const { done, value } = await reader.read();
-    if(done) break;
-    console.log(decoder.decode(value));
-  }
-}
-//HTML
-<!DOCTYPE html>
-<html>
-<body>
-    <input type="text" id="questionInput" placeholder="Ask something...">
-    <button onclick="askQuestion()">Ask</button>
-    <div id="responseArea" style="white-space: pre-wrap;"></div>
+    :param text: The input text to analyze.
+    :param language_code: The language code of the input text (default 'en').
+    :return: A list of detected key phrases with score.
+    """
+    client = boto3.client('comprehend')
+    response = client.detect_key_phrases(
+        Text=text,
+        LanguageCode=language_code
+    )
+    return response.get('KeyPhrases', [])
 
-<script>
-async function askQuestion() {
-    const question = document.getElementById('questionInput').value;
-    const responseArea = document.getElementById('responseArea');
-    responseArea.textContent = ''; // Clear previous response
-    
-    try {
-        const response = await fetch('YOUR_LAMBDA_FUNCTION_URL', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ message: question })
-        });
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        
-        while(true) {
-            const { done, value } = await reader.read();
-            if(done) break;
-            
-            // Append each chunk to the display
-            responseArea.textContent += decoder.decode(value);
-            
-            // Optional: Auto-scroll to bottom
-            responseArea.scrollTop = responseArea.scrollHeight;
-        }
-    } catch (error) {
-        responseArea.textContent += '\nError: ' + error.message;
-    }
-}
-</script>
-</body>
-</html>
+def main():
+    # Read text from command line argument or prompt
+    if len(sys.argv) > 1:
+        input_text = ' '.join(sys.argv[1:])
+    else:
+        input_text = input("Enter text to analyze for key phrases: ")
+
+    print(f"Analyzing text: {input_text}\n")
+    key_phrases = detect_key_phrases(input_text)
+    if not key_phrases:
+        print("No key phrases detected.")
+    else:
+        print("Detected Key Phrases:")
+        for phrase in key_phrases:
+            text = phrase['Text']
+            score = phrase['Score']
+            print(f" - {text} (Score: {score:.2f})")
+
+
+if __name__ == '__main__':
+    main()
