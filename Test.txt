@@ -2,86 +2,110 @@
 import boto3
 import os
 import sys
+import argparse
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 
-# Ensure you have configured AWS credentials and region via one of:
-#  - Environment variables (setx AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION)
-#  - AWS CLI (aws configure)
-#  - Shared credentials file (~/.aws/credentials) and config (~/.aws/config)
-
+# Ensure AWS credentials are configured via:
+#   Environment variables, AWS CLI (aws configure), or ~/.aws/credentials
 
 def get_comprehend_client():
-    """Returns a Comprehend client, handling missing credentials and providing debug info."""
-    # Create a session to inspect credentials
+    """Returns an authenticated Amazon Comprehend client, handling missing credentials."""
     session = boto3.Session()
     creds = session.get_credentials()
     region = session.region_name or os.environ.get('AWS_DEFAULT_REGION')
-
-    # Debug: Print out what boto3 sees
-    print(f"DEBUG: AWS Access Key ID: {getattr(creds, 'access_key', None)}")
-    print(f"DEBUG: AWS Secret Key present: {bool(getattr(creds, 'secret_key', None))}")
-    print(f"DEBUG: AWS Session Token present: {bool(getattr(creds, 'token', None))}")
-    print(f"DEBUG: AWS Region: {region}")
-
     if not creds or not creds.access_key or not creds.secret_key:
-        print("ERROR: AWS credentials not found. Please configure them via AWS CLI or environment variables.")
+        print("ERROR: AWS credentials not found. Configure via AWS CLI or environment variables.")
         sys.exit(1)
     if not region:
-        print("ERROR: AWS region not set. Please set AWS_DEFAULT_REGION or configure in ~/.aws/config.")
+        print("ERROR: AWS region not set. Set AWS_DEFAULT_REGION or configure ~/.aws/config.")
         sys.exit(1)
 
     try:
         client = session.client('comprehend', region_name=region)
-        # Verify by making a lightweight call
+        # Lightweight call to verify
         client.list_key_phrases_detection_jobs(MaxResults=1)
         return client
     except (NoCredentialsError, PartialCredentialsError):
-        print("ERROR: Invalid AWS credentials. Please check your configuration.")
+        print("ERROR: Invalid AWS credentials. Check your configuration.")
         sys.exit(1)
     except Exception as e:
         print(f"ERROR: Failed to create Comprehend client: {e}")
         sys.exit(1)
 
 
-def detect_key_phrases(client, text, language_code='en'):
+def merge_phrases(phrases, text):
     """
-    Detects key phrases in the given text using Amazon Comprehend.
+    Merge overlapping or adjacent key phrases into continuous spans.
+    :param phrases: List of dicts with 'Text', 'Score', 'BeginOffset', 'EndOffset'
+    :param text: Original input string
+    :return: List of (merged_text, avg_score)
     """
-    response = client.detect_key_phrases(Text=text, LanguageCode=language_code)
-    return response.get('KeyPhrases', [])
+    phrases = sorted(phrases, key=lambda x: x['BeginOffset'])
+    merged = []
+    for ph in phrases:
+        if not merged:
+            merged.append(ph.copy())
+            continue
+        last = merged[-1]
+        # Merge if overlapping or gap <= 1 character
+        if ph['BeginOffset'] <= last['EndOffset'] + 1:
+            last['EndOffset'] = max(last['EndOffset'], ph['EndOffset'])
+            last['Score'] = (last['Score'] + ph['Score']) / 2
+            last['Text'] = text[last['BeginOffset']:last['EndOffset']]
+        else:
+            merged.append(ph.copy())
+    return [(p['Text'], p['Score']) for p in merged]
+
+
+def detect_key_phrases(client, text, language_code='en', min_score=0.0):
+    """
+    Detect key phrases and merge adjacent ones, filtering by confidence.
+    """
+    resp = client.detect_key_phrases(Text=text, LanguageCode=language_code)
+    raw = resp.get('KeyPhrases', [])
+    # Filter
+    filtered = [p for p in raw if p['Score'] >= min_score]
+    if not filtered:
+        return []
+    # Merge
+    return merge_phrases(filtered, text)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Detect merged key phrases via Amazon Comprehend.")
+    parser.add_argument('-t', '--text', help="Single text input")
+    parser.add_argument('-f', '--file', type=argparse.FileType('r'),
+                        help="Path to text file (one input per line)")
+    parser.add_argument('-l', '--language', default='en',help="Language code (default 'en')")
+    parser.add_argument('-s', '--min-score', type=float, default=0.0,
+                        help="Minimum confidence score (0.0-1.0)")
+    args = parser.parse_args()
+    if not args.text and not args.file:
+        parser.error('Either --text or --file must be provided')
+    return args
 
 
 def main():
-    # Initialize client
+    args = parse_args()
     client = get_comprehend_client()
 
-    # Read input text
-    if len(sys.argv) > 1:
-        input_text = ' '.join(sys.argv[1:])
+    if args.text:
+        inputs = [args.text]
     else:
-        input_text = input("Enter text to analyze for key phrases: ")
+        inputs = [line.strip() for line in args.file if line.strip()]
 
-    if not input_text.strip():
-        print("No text provided. Exiting.")
-        sys.exit(0)
-
-    print(f"\nAnalyzing text: {input_text}\n")
-
-    try:
-        key_phrases = detect_key_phrases(client, input_text)
-    except Exception as e:
-        print(f"Error calling Comprehend: {e}")
-        sys.exit(1)
-
-    if not key_phrases:
-        print("No key phrases detected.")
-    else:
-        print("Detected Key Phrases:")
-        for phrase in key_phrases:
-            text = phrase['Text']
-            score = phrase['Score']
-            print(f" - {text} (Score: {score:.2f})")
-
+    for text in inputs:
+        print(f"\nAnalyzing: {text}\n")
+        phrases = detect_key_phrases(client, text,
+                                     language_code=args.language,
+                                     min_score=args.min_score)
+        if phrases:
+            print("Detected Merged Key Phrases:")
+            for ph, score in phrases:
+                print(f" - {ph} (Score: {score:.2f})")
+        else:
+            print("No key phrases detected above threshold.")
 
 if __name__ == '__main__':
     main()
+```
