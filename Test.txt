@@ -1,59 +1,81 @@
-Traceback (most recent call last):
-  File "D:\Users\A1053499\Downloads\Langchain_code\comprehend.py", line 48, in <module>
+```python
+import boto3
+import os
+import sys
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+
+# Configure AWS credentials in one of these ways:
+# 1. Environment variables:
+#    setx AWS_ACCESS_KEY_ID "YOUR_ACCESS_KEY_ID"
+#    setx AWS_SECRET_ACCESS_KEY "YOUR_SECRET_ACCESS_KEY"
+#    setx AWS_DEFAULT_REGION "us-east-1"
+# 2. AWS CLI:
+#    aws configure
+# 3. Shared credentials file (~/.aws/credentials) and config (~/.aws/config)
+# 4. Explicitly in code (not recommended for production):
+#    boto3.client('comprehend', aws_access_key_id='KEY', aws_secret_access_key='SECRET', region_name='REGION')
+
+
+def get_comprehend_client():
+    """Returns a Comprehend client, handling missing credentials."""
+    try:
+        client = boto3.client('comprehend')
+        # Simple call to verify credentials
+        client.list_key_phrases_detection_jobs(MaxResults=1)
+        return client
+    except (NoCredentialsError, PartialCredentialsError):
+        print("ERROR: AWS credentials not found. Please configure them via AWS CLI or environment variables.")
+        sys.exit(1)
+    except client.exceptions.UnsupportedLanguageException:
+        # ignore language exception for this check
+        return client
+
+
+def detect_key_phrases(client, text, language_code='en'):
+    """
+    Detects key phrases in the given text using Amazon Comprehend.
+
+    :param client: Boto3 Comprehend client
+    :param text: The input text to analyze.
+    :param language_code: The language code of the input text (default 'en').
+    :return: A list of detected key phrases with score.
+    """
+    response = client.detect_key_phrases(Text=text, LanguageCode=language_code)
+    return response.get('KeyPhrases', [])
+
+
+def main():
+    # Initialize client
+    client = get_comprehend_client()
+
+    # Read input text
+    if len(sys.argv) > 1:
+        input_text = ' '.join(sys.argv[1:])
+    else:
+        input_text = input("Enter text to analyze for key phrases: ")
+
+    if not input_text.strip():
+        print("No text provided. Exiting.")
+        sys.exit(0)
+
+    print(f"\nAnalyzing text: {input_text}\n")
+
+    try:
+        key_phrases = detect_key_phrases(client, input_text)
+    except Exception as e:
+        print(f"Error calling Comprehend: {e}")
+        sys.exit(1)
+
+    if not key_phrases:
+        print("No key phrases detected.")
+    else:
+        print("Detected Key Phrases:")
+        for phrase in key_phrases:
+            text = phrase['Text']
+            score = phrase['Score']
+            print(f" - {text} (Score: {score:.2f})")
+
+
+if __name__ == '__main__':
     main()
-    ~~~~^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\comprehend.py", line 36, in main
-    key_phrases = detect_key_phrases(input_text)
-  File "D:\Users\A1053499\Downloads\Langchain_code\comprehend.py", line 21, in detect_key_phrases
-    response = client.detect_key_phrases(
-        Text=text,
-        LanguageCode=language_code
-    )
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\client.py", line 595, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\context.py", line 123, in wrapper
-    return func(*args, **kwargs)
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\client.py", line 1040, in _make_api_call
-    http, parsed_response = self._make_request(
-                            ~~~~~~~~~~~~~~~~~~^
-        operation_model, request_dict, request_context
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\client.py", line 1064, in _make_request
-    return self._endpoint.make_request(operation_model, request_dict)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\endpoint.py", line 119, in make_request
-    return self._send_request(request_dict, operation_model)
-           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\endpoint.py", line 196, in _send_request
-    request = self.create_request(request_dict, operation_model)
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\endpoint.py", line 132, in create_request
-    self._event_emitter.emit(
-    ~~~~~~~~~~~~~~~~~~~~~~~~^
-        event_name,
-        ^^^^^^^^^^^
-        request=request,
-        ^^^^^^^^^^^^^^^^
-        operation_name=operation_model.name,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\hooks.py", line 412, in emit
-    return self._emitter.emit(aliased_event_name, **kwargs)
-           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\hooks.py", line 256, in emit
-    return self._emit(event_name, kwargs)
-           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\hooks.py", line 239, in _emit
-    response = handler(**kwargs)
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\signers.py", line 107, in handler
-    return self.sign(operation_name, request)
-           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\signers.py", line 199, in sign
-    auth.add_auth(request)
-    ~~~~~~~~~~~~~^^^^^^^^^
-  File "D:\Users\A1053499\Downloads\Langchain_code\langchain\Lib\site-packages\botocore\auth.py", line 421, in add_auth
-    raise NoCredentialsError()
-botocore.exceptions.NoCredentialsError: Unable to locate credentials
+```
