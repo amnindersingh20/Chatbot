@@ -1,49 +1,175 @@
-{
-  "body": {
-    "sessionId": "test-session-123",  // Add a unique session ID for testing
-    "inputText": "whats my oop?",     // Add the original user query here
-    "parameters": [
-      { "name": "condition", "value": "whats my oop?" },
-      { "name": "plan",      "value": "1284"      },
-      { "name": "plan",      "value": "14512"     },
-      { "name": "plan",      "value": "1276"      },
-      { "name": "plan",      "value": "1273"      },
-      { "name": "plan",      "value": "11020"     },
-      { "name": "plan",      "value": "1284"      }
-    ],
-    "pageName":              "Annual Enrollment - Medical - AT&T",
-    "populationType":        "ATMGMT",
-    "enrollmentDeadlineDate":"",
-    "availableOptions": [
-      {
-        "optionId": 1284,
-        "optionDescription": "Low Deductible Select",
-        "coverageAmount": ""
-      },
-      {
-        "optionId": 14512,
-        "optionDescription": "Kaiser S Cal High Ded Plan",
-        "coverageAmount": ""
-      },
-      {
-        "optionId": 1276,
-        "optionDescription": "High Deductible Select",
-        "coverageAmount": ""
-      },
-      {
-        "optionId": 1273,
-        "optionDescription": "High Deductible Broad",
-        "coverageAmount": ""
-      },
-      {
-        "optionId": 11020,
-        "optionDescription": "Kaiser South California Plan",
-        "coverageAmount": ""
-      }
-    ],
-    "electedOption": {
-      "optionId": 1284,
-      "optionDescription": "Low Deductible Select"
-    }
-  }
+import json
+import boto3
+import logging
+
+log = logging.getLogger()
+log.setLevel(logging.INFO)
+
+client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+
+POPULATION_KB_MAP = {
+    "AMGMT99": "RIBHZRVAQA",
+    "BLKACTIVE": "TGZMV97MNY",
+    "MWTIBEWACTIVE": "L9JYLI9PBF"
 }
+DEFAULT_KB_ID = "RIBHZRVAQA"
+
+PROMPT_INSTRUCTIONS = """
+You are a strictly factual question‑answering agent.  
+Use only the retrieved search results; do not hallucinate or invent data.
+
+Pre‑processing:
+- Identify whether the user’s question explicitly mentions exactly one option name (matching one of the retrieved plan identifiers).
+  - If exactly one valid option name is found in the user’s question, select that option for a single‑option response.
+  - Otherwise, proceed with a multi‑option response for all available plans.
+
+Behavior:
+1. **Single‑plan response** (triggered when the question names exactly one plan)
+   - Output only for the named plan.
+   - If there is data:
+     - Network: …  
+     - Non‑Network: …  
+   - If neither network nor non‑network data exists:
+     - “No information available.”
+
+2. **Multi‑plan response** (default when no single plan is identified)
+   - Elected Option  
+     - [Plan Name]: Brief answer (or “No information available.”)  
+   - Available Options  
+     - [Plan Name]  
+       - Network: … (if data exists)  
+       - Non‑Network: … (if data exists)  
+     - [Next Plan Name]  
+       - Network: …  
+       - Non‑Network: …  
+     - [Next Plan Name]  
+       - No information available.  
+     - …  
+
+Formatting rules:
+- Do not include any plans other than those retrieved.
+- For any plan lacking data, explicitly state “No information available.”
+- Do not add any sections or text beyond those described above.
+"""
+
+
+def lambda_handler(event, context):
+    try:
+        raw_body = event.get('body', {})
+        body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+
+        params = {p['name']: p['value'] for p in body.get('parameters', [])}
+        condition = params.get('condition', '').strip()
+        population_type = params.get('populationType', '')
+        available_options = body.get('availableOptions', [])
+        elected_option = body.get('electedOption', {})
+
+        if not condition or not available_options:
+            log.warning("Request is missing 'condition' or 'availableOptions'.")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing condition or availableOptions'})
+            }
+
+        kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
+        log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
+
+        available_list = []
+        elected_desc = None
+
+        for opt in available_options:
+            desc = opt.get('optionDescription', '').strip()
+            if desc.lower() == 'no coverage':
+                log.info(f"Skipping option '{desc}' due to no coverage")
+                continue
+
+            if elected_option and opt.get('optionId') == elected_option.get('optionId'):
+                elected_desc = desc
+            else:
+                available_list.append(desc)
+
+        if not elected_desc and not available_list:
+            log.info("No applicable options to process after filtering.")
+            return {
+                'statusCode': 200,
+                'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+                'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
+            }
+
+        blocks = []
+        if elected_desc:
+            blocks.append(f"Elected Option: {elected_desc}")
+
+        if available_list:
+            blocks.append("Available Options:")
+            for desc in available_list:
+                blocks.append(f"- {desc}")
+
+        option_list_block = "\n\n".join(blocks)
+        prompt = f"""
+            
+            """
+
+        final_input_text = PROMPT_INSTRUCTIONS.strip() + "\n\n" + \
+            "Here are the benefit plan options:\n" + option_list_block + "\n\n" + \
+            "Here is the user's question:\n" + f"What is the {condition} for each of these options?"
+
+        log.info(f"Final input text for Bedrock:\n{final_input_text}")
+
+        response = client_bedrock.retrieve_and_generate(
+            input={'text': final_input_text},
+            retrieveAndGenerateConfiguration={
+                'type': 'KNOWLEDGE_BASE',
+                'knowledgeBaseConfiguration': {
+                    'knowledgeBaseId': kb_id,
+                    'modelArn': (
+                        'arn:aws:bedrock:us-east-1::foundation-model/'  
+                        'anthropic.claude-3-5-sonnet-2020-v1:0'
+                    ),
+                    'retrievalConfiguration': {
+                        'vectorSearchConfiguration': {
+                            'overrideSearchType': 'HYBRID',
+                            'numberOfResults': 100
+                        }
+                    },
+                    'generationConfiguration': {
+                        "inferenceConfig": { 
+                            'textInferenceConfig': {
+                                "maxTokens": 1024,
+                                "temperature": 0.0,
+                                "topP": 1.0
+
+                            }
+               
+                }
+                }
+                }
+            }
+        )
+
+        answer = response['output']['text']
+        citations = []
+        for cit in response.get('citations', []):
+            for ref in cit.get('retrievedReferences', []):
+                loc = ref.get('location', {})
+                content = ref.get('content', {}).get('text')
+                uri = loc.get('s3Location', {}).get('uri')
+                if uri and content:
+                    citations.append({'source': uri, 'text': content})
+                else:
+                    log.warning(f"Skipping malformed reference: {ref}")
+
+        log.info(f"Successfully generated answer and found {len(citations)} citation references.")
+
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
+        }
+
+    except Exception as e:
+        log.exception("An error occurred in the lambda_handler")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
