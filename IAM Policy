@@ -1,171 +1,74 @@
-import json
 import boto3
-import logging
+import json
+import os
 
-log = logging.getLogger()
-log.setLevel(logging.INFO)
-
-client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
-
-POPULATION_KB_MAP = {
-    "AMGMT99": "RIBHZRVAQA",
-    "BLKACTIVE": "TGZMV97MNY",
-    "MWTIBEWACTIVE": "L9JYLI9PBF"
-}
-DEFAULT_KB_ID = "RIBHZRVAQA"
-
-# Updated instructions with variable detection and clarification loop
-PROMPT_INSTRUCTIONS = """
-You are a strictly factual question‑answering agent.
-Use only the retrieved search results; do not hallucinate or invent data.
-
-Pre‑processing:
-1. **Detect Named Plan**  
-   - If the user’s question explicitly mentions exactly one plan name, proceed with a single‑plan response.
-   - Otherwise, proceed with a multi‑plan response.
-
-2. **Detect Variable Dimensions**  
-   - Scan retrieved data for multiple dimensions, such as:
-     • Employment type (e.g., full-time, part-time, part-time >20 yrs)  
-     • Network classification (e.g., in‑network vs. out‑of‑network)  
-     • Any other categorical splits
-   - If only one value exists per dimension, answer directly.
-   - If multiple values exist for any dimension, output a disambiguation prompt by prefixing your response with `CLARIFY:` followed by the question (e.g. `CLARIFY: Would you like in‑network or out‑of‑network?`).
-
-Behavior:
-- When you send a `CLARIFY:` response, **do not** include any plan data or citations.
-- If no disambiguation is needed, respond with the final answer for the requested dimension(s).
-
-Formatting rules:
-- Do not include unrequested plans or dimensions.
-- For missing data state "No information available."
-- Do not add any extra sections beyond those specified.
-"""
-
+# Initialize Bedrock Runtime client
+bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
 
 def lambda_handler(event, context):
+    # Extract user query from the event
+    user_query = event.get("user_query", "")
+    
+    if not user_query:
+        return {
+            "statusCode": 400,
+            "body": json.dumps("Missing 'user_query' in the input.")
+        }
+
+    # Define the prompt
+    prompt = f"""
+    You are a knowledgeable and friendly virtual benefits advisor specializing in U.S. health insurance and employee benefits use the User Query.
+When a user mentions the word "contribution" in the context of health plans, your first task is to ask them to confirm their employee type. Do not proceed with any explanation or calculation until the user specifies whether they are a:
+- Permanent employee
+- Part-time employee
+- Contractual employee
+-
+Once the employee type is confirmed, provide tailored guidance basis option mentioned below:
+- Search the attached knowledge Base for response generation using the User Query.
+Ensure your responses are clear, accurate, and actionable, based on U.S. health insurance laws and best practices.
+
+Extract the key phrases from the "{user_query}" and return
+User Query: "{user_query}"
+
+Key Phrases:
+"""
+
+    # Prepare the payload for Claude 3
+    body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 100,
+        "temperature": 0.3
+    }
+
     try:
-        raw_body = event.get('body', {})
-        body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
-
-        params = {p['name']: p['value'] for p in body.get('parameters', [])}
-        condition = params.get('condition', '').strip()
-        population_type = params.get('populationType', '')
-        available_options = body.get('availableOptions', [])
-        elected_option = body.get('electedOption', {})
-
-        # Handle missing inputs
-        if not condition or not available_options:
-            log.warning("Request is missing 'condition' or 'availableOptions'.")
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing condition or availableOptions'})
-            }
-
-        # Choose KB
-        kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
-        log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
-
-        # Filter out 'no coverage' and build option list
-        available_list = []
-        elected_desc = None
-        for opt in available_options:
-            desc = opt.get('optionDescription', '').strip()
-            if desc.lower() == 'no coverage':
-                continue
-            if elected_option and opt.get('optionId') == elected_option.get('optionId'):
-                elected_desc = desc
-            else:
-                available_list.append(desc)
-
-        if not elected_desc and not available_list:
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
-                'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
-            }
-
-        # Build prompt context
-        blocks = []
-        if elected_desc:
-            blocks.append(f"Elected Option: {elected_desc}")
-        if available_list:
-            blocks.append("Available Options:")
-            for desc in available_list:
-                blocks.append(f"- {desc}")
-        option_list_block = "\n\n".join(blocks)
-
-        # Final prompt: instructions + options + user question
-        final_input_text = (
-            PROMPT_INSTRUCTIONS.strip()
-            + "\n\nHere are the benefit plan options:\n"
-            + option_list_block
-            + "\n\nHere is the user's question:\n"
-            + f"What is the {condition} for each of these options?"
-        )
-        log.info(f"Final input text for Bedrock:\n{final_input_text}")
-
-        # Invoke Bedrock retrieve_and_generate
-        response = client_bedrock.retrieve_and_generate(
-            input={'text': final_input_text},
-            retrieveAndGenerateConfiguration={
-                'type': 'KNOWLEDGE_BASE',
-                'knowledgeBaseConfiguration': {
-                    'knowledgeBaseId': kb_id,
-                    'modelArn': (
-                        'arn:aws:bedrock:us-east-1::foundation-model/'  
-                        'anthropic.claude-3-5-sonnet-2020-v1:0'
-                    ),
-                    'retrievalConfiguration': {
-                        'vectorSearchConfiguration': {
-                            'overrideSearchType': 'HYBRID',
-                            'numberOfResults': 100
-                        }
-                    },
-                    'generationConfiguration': {
-                        'inferenceConfig': {
-                            'textInferenceConfig': {
-                                'maxTokens': 1024,
-                                'temperature': 0.0,
-                                'topP': 1.0
-                            }
-                        }
-                    }
-                }
-            }
+        # Invoke the Claude model
+        response = bedrock.invoke_model(
+            modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
+            body=json.dumps(body),
+            contentType="application/json",
+            accept="application/json"
         )
 
-        # Extract raw text
-        answer = response['output']['text'].strip()
-
-        # If model asks for clarification, return that directly
-        if answer.startswith("CLARIFY:"):
-            clarification = answer[len("CLARIFY:"):].strip()
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
-                'body': json.dumps({'clarification': clarification})
-            }
-
-        # Otherwise, extract citations and return final answer
-        citations = []
-        for cit in response.get('citations', []):
-            for ref in cit.get('retrievedReferences', []):
-                loc = ref.get('location', {})
-                content = ref.get('content', {}).get('text')
-                uri = loc.get('s3Location', {}).get('uri')
-                if uri and content:
-                    citations.append({'source': uri, 'text': content})
+        # Parse and return the response
+        response_body = json.loads(response['body'].read())
+        output = response_body['content'][0]['text'].strip()
+        # return {
+        #     "statusCode": 200,
+        #     "body": json.dumps({'message': output})
+        # }
 
         return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
+            "statusCode": 200,
+            "body": json.dumps({
+                "key_phrases": output
+            })
         }
 
     except Exception as e:
-        log.exception("An error occurred in the lambda_handler")
         return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+            "statusCode": 500,
+            "body": json.dumps(f"Error: {str(e)}")
         }
