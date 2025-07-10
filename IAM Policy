@@ -1,74 +1,100 @@
-import boto3
 import json
+import logging
 import os
 
-# Initialize Bedrock Runtime client
-bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
+import boto3
+from botocore.exceptions import ClientError
+
+# --- Configuration via Environment Variables ---
+OTHER_LAMBDA_NAME = os.environ.get("OTHER_LAMBDA_NAME", "my-second-lambda")
+REGION_NAME         = os.environ.get("AWS_REGION", "us-east-1")
+MODEL_ID            = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-3.5-v1")
+
+# --- Clients ---
+logger        = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+bedrock       = boto3.client("bedrock-runtime", region_name=REGION_NAME)
+lambda_client = boto3.client("lambda",          region_name=REGION_NAME)
 
 def lambda_handler(event, context):
-    # Extract user query from the event
-    user_query = event.get("user_query", "")
-    
-    if not user_query:
-        return {
-            "statusCode": 400,
-            "body": json.dumps("Missing 'user_query' in the input.")
-        }
+    """
+    Extract key phrases from the 'condition' parameter in event['parameters']
+    and forward the full payload along with the extracted phrases.
+    """
+    # 1) Log the original payload
+    logger.info("📥 Received payload: %s", json.dumps(event))
 
-    # Define the prompt
-    prompt = f"""
-    You are a knowledgeable and friendly virtual benefits advisor specializing in U.S. health insurance and employee benefits use the User Query.
-When a user mentions the word "contribution" in the context of health plans, your first task is to ask them to confirm their employee type. Do not proceed with any explanation or calculation until the user specifies whether they are a:
-- Permanent employee
-- Part-time employee
-- Contractual employee
--
-Once the employee type is confirmed, provide tailored guidance basis option mentioned below:
-- Search the attached knowledge Base for response generation using the User Query.
-Ensure your responses are clear, accurate, and actionable, based on U.S. health insurance laws and best practices.
+    # 2) Locate the 'condition' parameter
+    condition_param = None
+    for param in event.get("parameters", []):
+        if param.get("name") == "condition":
+            condition_param = param
+            break
 
-Extract the key phrases from the "{user_query}" and return
-User Query: "{user_query}"
+    if not condition_param or not condition_param.get("value"):
+        logger.warning("No 'condition' parameter found or empty; skipping extraction.")
+        key_phrases = []
+    else:
+        text = condition_param["value"]
+        # ==== Use Bedrock Anthropic Claude to extract key phrases via prompt ====        
+        try:
+            prompt = (
+                "Extract the key phrases from the following condition text. "
+                "Respond with a JSON array of strings only."
+                f"\n\nCondition Text:\n\"\"\"\n{text}\n\"\"\""
+            )
+            response = bedrock.invoke_model(
+                modelId=MODEL_ID,
+                inputStream=json.dumps({"prompt": prompt}).encode("utf-8"),
+                contentType="application/json"
+            )
+            body = response["body"].read().decode("utf-8")
+            output = json.loads(body)
+            raw_text = output.get("completions", [{}])[0].get("data", {}).get("text", "[]")
+            key_phrases = json.loads(raw_text)
+            logger.info("✅ Extracted key phrases for 'condition': %s", key_phrases)
 
-Key Phrases:
-"""
+        except ClientError as e:
+            logger.error("❌ Bedrock invocation error: %s", e)
+            key_phrases = []
+        except (ValueError, json.JSONDecodeError) as e:
+            logger.error("❌ Failed to parse model output as JSON: %s", e)
+            key_phrases = []
 
-    # Prepare the payload for Claude 3
-    body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 100,
-        "temperature": 0.3
-    }
+    # 3) Annotate the condition parameter and build enriched payload
+    enriched = dict(event)  # shallow copy
+    enriched_parameters = []
+    for param in event.get("parameters", []):
+        p = dict(param)
+        if p.get("name") == "condition":
+            p["keyPhrases"] = key_phrases
+        enriched_parameters.append(p)
+    enriched["parameters"] = enriched_parameters
 
+    # 4) Log the enriched payload
+    logger.info("📤 Enriched payload: %s", json.dumps(enriched))
+
+    # 5) Invoke downstream Lambda asynchronously
     try:
-        # Invoke the Claude model
-        response = bedrock.invoke_model(
-            modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
-            body=json.dumps(body),
-            contentType="application/json",
-            accept="application/json"
+        invoke_resp = lambda_client.invoke(
+            FunctionName   = OTHER_LAMBDA_NAME,
+            InvocationType = "Event",
+            Payload        = json.dumps(enriched),
         )
+        logger.info(
+            "🚀 Successfully invoked '%s' (status code %s)",
+            OTHER_LAMBDA_NAME,
+            invoke_resp.get("StatusCode")
+        )
+    except ClientError as e:
+        logger.error("❌ Failed to invoke '%s': %s", OTHER_LAMBDA_NAME, e)
 
-        # Parse and return the response
-        response_body = json.loads(response['body'].read())
-        output = response_body['content'][0]['text'].strip()
-        # return {
-        #     "statusCode": 200,
-        #     "body": json.dumps({'message': output})
-        # }
-
-        return {
-            "statusCode": 200,
-            "body": json.dumps({
-                "key_phrases": output
-            })
-        }
-
-    except Exception as e:
-        return {
-            "statusCode": 500,
-            "body": json.dumps(f"Error: {str(e)}")
-        }
+    # 6) Return a 200 OK with key phrases extracted
+    return {
+        "statusCode": 200,
+        "body": json.dumps({
+            "message": "Processed successfully",
+            "key_phrases": key_phrases
+        })
+    }
