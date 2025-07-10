@@ -6,22 +6,14 @@
 
 
  {
-#   "parameters": [
-#     {"name": "condition", "value": "what is the contribution policy option 2?"},
-#     {"name": "populationType", "value": "BLKACTIVE"},
-#     {"name": "plan", "value": "9960"},
-#     {"name": "plan", "value": "1234"},
-#     {"name": "plan", "value": "1994"},
-#     {"name": "plan", "value": "1992"}
-#   ],
-#   "pageName": "Annual Enrollment - Medical - AT&T",
-#   "populationType": "BLKACTIVE",
-#   "enrollmentDeadlineDate": "",
-#   "availableOptions": [
-#     {"optionId": 9960, "optionDescription": "No Coverage", "coverageAmount": ""},
-#     {"optionId": 1234, "optionDescription": "Mobility HCN Option 3", "coverageAmount": ""},
-#     {"optionId": 1994, "optionDescription": "Mobility HCN Option 2", "coverageAmount": ""},
-#     {"optionId": 1992, "optionDescription": "Mobility HCN Option 1", "coverageAmount": ""}
-#   ],
-#   "electedOption": {"optionId": 1992, "optionDescription": "Mobility HCN Option 1"}
-# }
+  "errorMessage": "Parameter validation failed:\nUnknown parameter in input: \"inputStream\", must be one of: body, contentType, accept, modelId, trace, guardrailIdentifier, guardrailVersion, performanceConfigLatency",
+  "errorType": "ParamValidationError",
+  "requestId": "4a1d579d-37f4-4c62-b3d2-446d16c5d302",
+  "stackTrace": [
+    "  File \"/var/task/lambda_function.py\", line 47, in lambda_handler\n    response = bedrock.invoke_model(\n",
+    "  File \"/var/lang/lib/python3.13/site-packages/botocore/client.py\", line 569, in _api_call\n    return self._make_api_call(operation_name, kwargs)\n",
+    "  File \"/var/lang/lib/python3.13/site-packages/botocore/client.py\", line 980, in _make_api_call\n    request_dict = self._convert_to_request_dict(\n",
+    "  File \"/var/lang/lib/python3.13/site-packages/botocore/client.py\", line 1047, in _convert_to_request_dict\n    request_dict = self._serializer.serialize_to_request(\n",
+    "  File \"/var/lang/lib/python3.13/site-packages/botocore/validate.py\", line 381, in serialize_to_request\n    raise ParamValidationError(report=report.generate_report())\n"
+  ]
+}
