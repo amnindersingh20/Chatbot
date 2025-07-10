@@ -30,35 +30,16 @@ Pre‑processing:
      • Network classification (e.g., in‑network vs. out‑of‑network)  
      • Any other categorical splits
    - If only one value exists per dimension, answer directly.
-   - If multiple values exist for any dimension, you must disambiguate:
-     - Ask the user which category they want (e.g. "In‑network or out‑of‑network?").
-     - Do not include plan data in that follow-up—only ask.
-
-Clarification Loop:
-- Wait for the user’s clarification.
-- Once exactly one category per dimension is specified, re-run as a single‑plan, single‑dimension response.
+   - If multiple values exist for any dimension, output a disambiguation prompt by prefixing your response with `CLARIFY:` followed by the question (e.g. `CLARIFY: Would you like in‑network or out‑of‑network?`).
 
 Behavior:
-1. **Single‑plan, single‑dimension response**  
-   - Format:
-     [Plan Name] – [Dimension]:
-       • [Sub‑dimension]: [Value]
-   - If no data: "No information available."
-
-2. **Multi‑plan, single‑dimension response**  
-   - Elected Option:
-       • [Plan Name]: [Value] (or "No information available")
-   - Available Options:
-       • [Plan A]: [Value]
-       • [Plan B]: No information available
-
-3. **Multi‑plan, multi‑dimension**  
-   - Only if user explicitly names multiple dimensions; show each per plan.
+- When you send a `CLARIFY:` response, **do not** include any plan data or citations.
+- If no disambiguation is needed, respond with the final answer for the requested dimension(s).
 
 Formatting rules:
 - Do not include unrequested plans or dimensions.
 - For missing data state "No information available."
-- Do not add extra sections beyond those specified.
+- Do not add any extra sections beyond those specified.
 """
 
 
@@ -125,6 +106,7 @@ def lambda_handler(event, context):
         log.info(f"Final input text for Bedrock:\n{final_input_text}")
 
         # Invoke Bedrock retrieve_and_generate
+                # Invoke Bedrock retrieve_and_generate
         response = client_bedrock.retrieve_and_generate(
             input={'text': final_input_text},
             retrieveAndGenerateConfiguration={
@@ -135,6 +117,52 @@ def lambda_handler(event, context):
                         'arn:aws:bedrock:us-east-1::foundation-model/'  
                         'anthropic.claude-3-5-sonnet-2020-v1:0'
                     ),
+                    'retrievalConfiguration': {
+                        'vectorSearchConfiguration': {
+                            'overrideSearchType': 'HYBRID',
+                            'numberOfResults': 100
+                        }
+                    },
+                    'generationConfiguration': {
+                        'inferenceConfig': { 
+                            'textInferenceConfig': {
+                                'maxTokens': 1024,
+                                'temperature': 0.0,
+                                'topP': 1.0
+                            }
+                        }
+                    }
+                }
+            }
+        )
+
+        # Extract raw text
+        answer = response['output']['text'].strip()
+
+        # If model asks for clarification, return that directly
+        if answer.startswith("CLARIFY:"):
+            question_text = answer[len("CLARIFY:"):].strip()
+            return {
+                'statusCode': 200,
+                'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+                'body': json.dumps({'clarification': question_text})
+            }
+
+        # Otherwise, extract citations and return final answer
+        citations = []
+        for cit in response.get('citations', []):
+            for ref in cit.get('retrievedReferences', []):
+                loc = ref.get('location', {})
+                content = ref.get('content', {}).get('text')
+                uri = loc.get('s3Location', {}).get('uri')
+                if uri and content:
+                    citations.append({'source': uri, 'text': content})
+
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
+        },
                     'retrievalConfiguration': {
                         'vectorSearchConfiguration': {
                             'overrideSearchType': 'HYBRID',
