@@ -1,3 +1,7 @@
+[ERROR]	2025-07-10T16:24:16.488Z	32447e25-7af1-438e-b6fe-41ca8f7344aa	❌ Failed to invoke 'Poc_Bot_lambda2': An error occurred (AccessDeniedException) when calling the Invoke operation: User: arn:aws:sts::653858776174:assumed-role/pocBotPandasQuery-role-rnavlka9/pocBotPandasQuery is not authorized to perform: lambda:InvokeFunction on resource: arn:aws:lambda:us-east-1:653858776174:function:Poc_Bot_lambda2 because no identity-based policy allows the lambda:InvokeFunction action
+END RequestId: 32447e25-7af1-438e-b6fe-41ca8f7344aa
+
+
 import json
 import logging
 import os
@@ -6,9 +10,9 @@ import boto3
 from botocore.exceptions import ClientError
 
 # --- Configuration via Environment Variables ---
-OTHER_LAMBDA_NAME = os.environ.get("OTHER_LAMBDA_NAME", "my-second-lambda")
+OTHER_LAMBDA_NAME = os.environ.get("OTHER_LAMBDA_NAME", "Poc_Bot_lambda2")
 REGION_NAME      = os.environ.get("AWS_REGION", "us-east-1")
-MODEL_ID         = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-3.5-v1")
+MODEL_ID         = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
 
 # --- Logger Setup ---
 logger = logging.getLogger()
@@ -45,20 +49,17 @@ def lambda_handler(event, context):
                 f"\n\nCondition Text:\n\"\"\"\n{text}\n\"\"\""
             )
             # Construct chat payload with required 'messages' key
-            chat_payload = {
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ],
-                "modelParameters": {
-                    "maxTokensToSample": 256,
-                    "temperature": 0.0
-                }
-            }
             response = bedrock.invoke_model(
                 modelId=MODEL_ID,
-                body=json.dumps(chat_payload).encode("utf-8"),
-                contentType="application/json"
-            )
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1024,
+                    "temperature": 0.5
+                })
+        )
             # Parse response body
             body_bytes = response.get("body").read()
             body_str   = body_bytes.decode("utf-8")
@@ -112,3 +113,4 @@ def lambda_handler(event, context):
             "key_phrases": key_phrases
         })
     }
+[INFO]	2025-07-10T16:24:16.254Z	32447e25-7af1-438e-b6fe-41ca8f7344aa	✅ Extracted key phrases for 'condition': []
