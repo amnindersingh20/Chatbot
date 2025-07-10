@@ -106,7 +106,6 @@ def lambda_handler(event, context):
         log.info(f"Final input text for Bedrock:\n{final_input_text}")
 
         # Invoke Bedrock retrieve_and_generate
-                # Invoke Bedrock retrieve_and_generate
         response = client_bedrock.retrieve_and_generate(
             input={'text': final_input_text},
             retrieveAndGenerateConfiguration={
@@ -124,7 +123,7 @@ def lambda_handler(event, context):
                         }
                     },
                     'generationConfiguration': {
-                        'inferenceConfig': { 
+                        'inferenceConfig': {
                             'textInferenceConfig': {
                                 'maxTokens': 1024,
                                 'temperature': 0.0,
@@ -141,49 +140,14 @@ def lambda_handler(event, context):
 
         # If model asks for clarification, return that directly
         if answer.startswith("CLARIFY:"):
-            question_text = answer[len("CLARIFY:"):].strip()
+            clarification = answer[len("CLARIFY:"):].strip()
             return {
                 'statusCode': 200,
                 'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
-                'body': json.dumps({'clarification': question_text})
+                'body': json.dumps({'clarification': clarification})
             }
 
         # Otherwise, extract citations and return final answer
-        citations = []
-        for cit in response.get('citations', []):
-            for ref in cit.get('retrievedReferences', []):
-                loc = ref.get('location', {})
-                content = ref.get('content', {}).get('text')
-                uri = loc.get('s3Location', {}).get('uri')
-                if uri and content:
-                    citations.append({'source': uri, 'text': content})
-
-        return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
-        },
-                    'retrievalConfiguration': {
-                        'vectorSearchConfiguration': {
-                            'overrideSearchType': 'HYBRID',
-                            'numberOfResults': 100
-                        }
-                    },
-                    'generationConfiguration': {
-                        'inferenceConfig': { 
-                            'textInferenceConfig': {
-                                'maxTokens': 1024,
-                                'temperature': 0.0,
-                                'topP': 1.0
-                            }
-                        }
-                    }
-                }
-            }
-        )
-
-        # Extract answer and citations
-        answer = response['output']['text']
         citations = []
         for cit in response.get('citations', []):
             for ref in cit.get('retrievedReferences', []):
