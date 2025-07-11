@@ -1,4 +1,123 @@
-{
-  "statusCode": 200,
-  "body": "{\"statusCode\": 400, \"headers\": {\"Content-Type\": \"application/json\", \"Access-Control-Allow-Origin\": \"*\", \"Access-Control-Allow-Methods\": \"OPTIONS,POST\"}, \"body\": \"{\\\"error\\\": \\\"Missing: condition, plan\\\"}\"}"
-}
+import json
+import logging
+import os
+
+import boto3
+from botocore.exceptions import ClientError
+
+OTHER_LAMBDA_NAME = os.environ.get("OTHER_LAMBDA_NAME", "Poc_bot_lambda2")
+REGION_NAME      = os.environ.get("AWS_REGION", "us-east-1")
+MODEL_ID         = os.environ.get(
+    "BEDROCK_MODEL_ID",
+    "anthropic.claude-3-5-sonnet-20240620-v1:0"
+)
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+bedrock       = boto3.client("bedrock-runtime", region_name=REGION_NAME)
+lambda_client = boto3.client("lambda",          region_name=REGION_NAME)
+
+
+def lambda_handler(event, context):
+    # 1) Log raw event
+    logger.info("Raw event: %s", json.dumps(event))
+
+    # 2) Unwrap body if present (API Gateway style). If it's a JSON string, parse it.
+    body = event.get("body", event)
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except json.JSONDecodeError:
+            logger.warning("Event.body was a string but not valid JSON; using empty dict")
+            body = {}
+
+    # 3) Pull out parameters list (or empty list if missing)
+    parameters = body.get("parameters", [])
+    logger.info("Parameters payload: %s", json.dumps(parameters))
+
+    # 4) Find the 'condition' parameter
+    condition_param = next(
+        (p for p in parameters if p.get("name") == "condition"),
+        None
+    )
+
+    # Default to empty key_phrase
+    key_phrase = ""
+    if condition_param and condition_param.get("value"):
+        text = condition_param["value"]
+        logger.info("Condition text: %s", text)
+
+        prompt = (
+            "Extract the most important key phrase from the following text. "
+            "Respond with a single string only. Do not include any other text.\n\n"
+            f"Text:\n\"\"\"\n{text}\n\"\"\""
+        )
+
+        try:
+            response = bedrock.invoke_model(
+                modelId=MODEL_ID,
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1024,
+                    "temperature": 0
+                })
+            )
+            logger.info("Bedrock raw response: %s", response)
+
+            body_str = response["body"].read().decode("utf-8")
+            output = json.loads(body_str)
+
+            content = output.get("content")
+            if isinstance(content, list) and content:
+                key_phrase = content[0].get("text", "").strip().strip('"')
+            else:
+                logger.warning("Unexpected format from Bedrock: %s", output)
+        except (ClientError, ValueError, json.JSONDecodeError) as e:
+            logger.error("Error extracting key phrase: %s", e)
+
+    logger.info("Extracted key phrase: %s", key_phrase)
+
+    # 5) Build enriched payload
+    enriched = body.copy()
+    enriched_parameters = []
+    for p in parameters:
+        item = p.copy()
+        if item.get("name") == "condition":
+            item["value"] = key_phrase
+        enriched_parameters.append(item)
+    enriched["parameters"] = enriched_parameters
+
+    logger.info("Enriched payload (to wrap): %s", json.dumps(enriched))
+
+    # 6) Wrap for downstream and invoke
+    downstream_event = {
+        "body": json.dumps(enriched)
+    }
+    logger.info("Downstream event shape: %s", json.dumps(downstream_event))
+
+    try:
+        invoke_resp = lambda_client.invoke(
+            FunctionName   = OTHER_LAMBDA_NAME,
+            InvocationType = "RequestResponse",
+            Payload        = json.dumps(downstream_event),
+        )
+        payload_bytes = invoke_resp["Payload"].read()
+        payload_str   = payload_bytes.decode("utf-8")
+        downstream_output = json.loads(payload_str)
+
+        logger.info("Downstream Lambda response: %s", payload_str)
+        return {
+            "statusCode": downstream_output.get("statusCode", 200),
+            "body": downstream_output.get("body", "{}")
+        }
+
+    except ClientError as e:
+        logger.error("Failed to invoke '%s': %s", OTHER_LAMBDA_NAME, e)
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)})
+        }
