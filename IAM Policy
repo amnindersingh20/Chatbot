@@ -5,96 +5,103 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 
-# --- Configuration via Environment Variables ---
-OTHER_LAMBDA_NAME = os.environ.get("OTHER_LAMBDA_NAME", "my-second-lambda")
-REGION_NAME         = os.environ.get("AWS_REGION", "us-east-1")
-MODEL_ID            = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-3.5-v1")
+OTHER_LAMBDA_NAME = os.environ.get("OTHER_LAMBDA_NAME", "Poc_bot_lambda2")
+REGION_NAME = os.environ.get("AWS_REGION", "us-east-1")
+MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
 
-# --- Clients ---
-logger        = logging.getLogger()
+logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-bedrock       = boto3.client("bedrock-runtime", region_name=REGION_NAME)
-lambda_client = boto3.client("lambda",          region_name=REGION_NAME)
+bedrock = boto3.client("bedrock-runtime", region_name=REGION_NAME)
+lambda_client = boto3.client("lambda", region_name=REGION_NAME)
 
 def lambda_handler(event, context):
     """
-    Extract key phrases from the 'condition' parameter in event['parameters']
-    and forward the full payload along with the extracted phrases.
+    Extract key phrases from the 'condition' parameter in event['parameters'],
+    replace the 'condition' value with the extracted key phrase as a plain string,
+    and forward the enriched payload to Lambda 2.
     """
-    # 1) Log the original payload
-    logger.info("📥 Received payload: %s", json.dumps(event))
 
-    # 2) Locate the 'condition' parameter
-    condition_param = None
-    for param in event.get("parameters", []):
-        if param.get("name") == "condition":
-            condition_param = param
-            break
+    logger.info("Received payload: %s", json.dumps(event))
 
+    condition_param = next(
+        (p for p in event.get("parameters", []) if p.get("name") == "condition"),
+        None
+    )
     if not condition_param or not condition_param.get("value"):
         logger.warning("No 'condition' parameter found or empty; skipping extraction.")
-        key_phrases = []
+        key_phrase = ""
     else:
         text = condition_param["value"]
-        # ==== Use Bedrock Anthropic Claude to extract key phrases via prompt ====        
+        logger.info("Condition text: %s", text)      
         try:
             prompt = (
-                "Extract the key phrases from the following condition text. "
-                "Respond with a JSON array of strings only."
-                f"\n\nCondition Text:\n\"\"\"\n{text}\n\"\"\""
+                "Extract the most important key phrase from the following text. "
+                "Respond with a single string only. Do not include any other text."
+                f"\n\nText:\n\"\"\"\n{text}\n\"\"\""
             )
+
             response = bedrock.invoke_model(
                 modelId=MODEL_ID,
-                inputStream=json.dumps({"prompt": prompt}).encode("utf-8"),
-                contentType="application/json"
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1024,
+                    "temperature": 0.5
+                })
             )
-            body = response["body"].read().decode("utf-8")
-            output = json.loads(body)
-            raw_text = output.get("completions", [{}])[0].get("data", {}).get("text", "[]")
-            key_phrases = json.loads(raw_text)
-            logger.info("✅ Extracted key phrases for 'condition': %s", key_phrases)
+            logger.debug("Raw Bedrock response: %s", response)
+            body_bytes = response.get("body").read()
+            body_str = body_bytes.decode("utf-8")
+            output = json.loads(body_str)
+
+            try:
+                content = output.get("content", [])
+                if content and isinstance(content, list):
+                    key_phrase = content[0].get("text", "").strip('"')
+                else:
+                    logger.warning("Unexpected response format: 'content' field is missing or invalid.")
+                    key_phrase = ""
+                logger.info("Extracted key phrase for 'condition': %s", key_phrase)
+            except (ValueError, json.JSONDecodeError) as e:
+                logger.error("Failed to parse model output as JSON: %s", e)
+                key_phrase = ""
 
         except ClientError as e:
-            logger.error("❌ Bedrock invocation error: %s", e)
-            key_phrases = []
-        except (ValueError, json.JSONDecodeError) as e:
-            logger.error("❌ Failed to parse model output as JSON: %s", e)
-            key_phrases = []
+            logger.error("Bedrock invocation error: %s", e)
+            key_phrase = ""
 
-    # 3) Annotate the condition parameter and build enriched payload
-    enriched = dict(event)  # shallow copy
+    enriched = dict(event)
     enriched_parameters = []
-    for param in event.get("parameters", []):
-        p = dict(param)
-        if p.get("name") == "condition":
-            p["keyPhrases"] = key_phrases
-        enriched_parameters.append(p)
+    for p in event.get("parameters", []):
+        item = dict(p)
+        if item.get("name") == "condition":
+            item["value"] = key_phrase
+        enriched_parameters.append(item)
     enriched["parameters"] = enriched_parameters
 
-    # 4) Log the enriched payload
-    logger.info("📤 Enriched payload: %s", json.dumps(enriched))
+    logger.info("Enriched payload: %s", json.dumps(enriched))
 
-    # 5) Invoke downstream Lambda asynchronously
     try:
         invoke_resp = lambda_client.invoke(
-            FunctionName   = OTHER_LAMBDA_NAME,
-            InvocationType = "Event",
-            Payload        = json.dumps(enriched),
+            FunctionName=OTHER_LAMBDA_NAME,
+            InvocationType="Event",
+            Payload=json.dumps(enriched),
         )
         logger.info(
-            "🚀 Successfully invoked '%s' (status code %s)",
+            "Successfully invoked '%s' (status code %s)",
             OTHER_LAMBDA_NAME,
             invoke_resp.get("StatusCode")
         )
     except ClientError as e:
-        logger.error("❌ Failed to invoke '%s': %s", OTHER_LAMBDA_NAME, e)
+        logger.error("Failed to invoke '%s': %s", OTHER_LAMBDA_NAME, e)
 
-    # 6) Return a 200 OK with key phrases extracted
     return {
         "statusCode": 200,
         "body": json.dumps({
             "message": "Processed successfully",
-            "key_phrases": key_phrases
+            "key_phrase": key_phrase
         })
     }
