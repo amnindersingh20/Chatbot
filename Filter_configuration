@@ -1,93 +1,37 @@
-import json
-import boto3
-from botocore.config import Config
-import traceback
+PROMPT_INSTRUCTIONS = """
+You are a strictly factual question‑answering agent.  
+Use only the retrieved search results; do not hallucinate or invent data.
 
-# 1. Make sure you’re using the correct service name:
-bedrock_agent = boto3.client(
-    'bedrock-agent-runtime',
-    region_name='us-east-1',
-    config=Config(read_timeout=45)
-)
+Pre‑processing:
+- Identify whether the user’s question explicitly mentions exactly one option name (matching one of the retrieved plan identifiers).
+  - If exactly one valid option name is found in the user’s question, select that option for a single‑option response.
+  - Otherwise, proceed with a multi‑option response for all available plans.
 
-def lambda_handler(event, context):
-    try:
-        # Parse input
-        body = json.loads(event.get('body', '{}'))
-        user_input = body.get('message') or body.get('prompt')
-        if not user_input:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing message/prompt in request body'})
-            }
+Behavior:
+1. **Single‑plan response** (triggered when the question names exactly one plan)
+   - Output only for the named plan.
+   - If there is data:
+     - Network: …  
+     - Non‑Network: …  
+   - If neither network nor non‑network data exists:
+     - “No information available.”
 
-        # Session ID
-        session_id = body.get('sessionId', context.aws_request_id)
+2. **Multi‑plan response** (default when no single plan is identified)
+   - Elected Option  
+     - [Plan Name]: Brief answer (or “No information available.”)  
+   - Available Options  
+     - [Plan Name]  
+       - Network: … (if data exists)  
+       - Non‑Network: … (if data exists)  
+     - [Next Plan Name]  
+       - Network: …  
+       - Non‑Network: …  
+     - [Next Plan Name]  
+       - No information available.  
+     - …  
 
-        # 2. Build your invoke_agent call with proper keyword args (no quotes!), correct casing,
-        #    and using the `sessionState.knowledgeBaseConfigurations` list per the Boto3 docs.
-        response = bedrock_agent.invoke_agent(
-            agentId='YOUR_AGENT_ID',               # ← fill in your Agent ARN or ID
-            agentAliasId='YOUR_AGENT_ALIAS_ID',    # ← fill in the Alias ARN or ID
-            sessionId=session_id,
-            inputText=user_input,
-            sessionState={
-                'knowledgeBaseConfigurations': [
-                    {
-                        'knowledgeBaseId': 'YOUR_KB_ID',  # ← the KB you attached to your agent
-                        'retrievalConfiguration': {
-                            'vectorSearchConfiguration': {
-                                'overrideSearchType': 'HYBRID',
-                                'numberOfResults': 10
-                            },
-                            'filter': {
-                                'equals': {
-                                    'key': 'type',
-                                    'value': 'comprehensive'
-                                }
-                            }
-                        }
-                    }
-                ]
-            }
-        )
-
-        # 3. Collect the streamed chunks and any citations
-        completion = ""
-        citations = []
-        for ev in response['completion']:
-            chunk = ev.get('chunk', {})
-            if 'bytes' in chunk:
-                completion += chunk['bytes'].decode('utf-8')
-            if 'attribution' in chunk and 'citations' in chunk['attribution']:
-                for c in chunk['attribution']['citations']:
-                    ref = c['retrievedReferences'][0]
-                    citations.append({
-                        'source': ref['location']['s3Location']['uri'],
-                        'text': ref['content']['text']
-                    })
-
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'message': completion,
-                'citations': citations,
-                'sessionId': session_id
-            })
-        }
-
-    except Exception as e:
-        # Log and return errors
-        print(f"Error: {str(e)}")
-        traceback.print_exc()
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': str(e),
-                'stackTrace': traceback.format_exc()
-            })
-        }
+Formatting rules:
+- Do not include any plans other than those retrieved.
+- For any plan lacking data, explicitly state “No information available.”
+- Do not add any sections or text beyond those described above.
+"""
