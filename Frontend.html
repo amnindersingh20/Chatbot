@@ -14,213 +14,95 @@ POPULATION_KB_MAP = {
 }
 DEFAULT_KB_ID = "RIBHZRVAQA"
 
-
-# PROMPT_INSTRUCTIONS = """
-# You are a strictly factual question-answering agent.
-# Answer only the specific question provided with a concise summary
-# Use only the retrieved search results; do not hallucinate or invent data.
-
-# Structure your response as follows:
-# 1. Elected Option: [Plan Name]
-#    - Brief answer to the question for this plan.
-# 2. Available Options:
-#    - [Plan Name]: Brief answer for each.
-
-# If both in-network and out-of-network details exist for any plan, include them as two sub-bullets under that plan:
-# - In-Network: ...
-# - Out-of-Network: ...
-
-# Do not include any sections beyond these or any additional text.
-# """
-PROMPT_INSTRUCTIONS = """
-You are a strictly factual question‑answering agent.  
-
-Use only the retrieved search results; do not hallucinate or invent data.
-
-
-
-Pre‑processing:
-
-- Identify whether the user’s question explicitly mentions exactly one option name (matching one of the retrieved plan identifiers).
-
-  - If exactly one valid option name is found in the user’s question, select that option for a single‑option response.
-
-  - Otherwise, proceed with a multi‑option response for all available plans.
-
-
-
-Behavior:
-
-1. **Single‑plan response** (triggered when the question names exactly one plan)
-
-   - Output only for the named plan.
-
-   - If there is data:
-
-     - Network: …  
-
-     - Non‑Network: …  
-
-   - If neither network nor non‑network data exists:
-
-     - “No information available.”
-
-
-
-2. **Multi‑plan response** (default when no single plan is identified)
-
-   - Elected Option  
-
-     - [Plan Name]: Brief answer (or “No information available.”)  
-
-   - Available Options  
-
-     - [Plan Name]  
-
-       - Network: … (if data exists)  
-
-       - Non‑Network: … (if data exists)  
-
-     - [Next Plan Name]  
-
-       - Network: …  
-
-       - Non‑Network: …  
-
-     - [Next Plan Name]  
-
-       - No information available.  
-
-3.  **Complex or variable responses** (Provide the Page number where the response is available in the source)
-
-
-
-Formatting rules:
-
-- Do not include any plans other than those retrieved.
-
-- For any plan lacking data, explicitly state “No information available.”
-
-- Do not add any sections or text beyond those described above.
-"""
+# New simple prompt instruction
+def build_prompt(user_query: str) -> str:
+    return f"Answer the following question based on the knowledge base:\n{user_query.strip()}"
 
 
 def lambda_handler(event, context):
     try:
+        # Parse incoming request
         raw_body = event.get('body', {})
         body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
 
         params = {p['name']: p['value'] for p in body.get('parameters', [])}
-        condition = params.get('condition', '').strip()
+        user_query = params.get('condition', '').strip()
         population_type = params.get('populationType', '')
+        metadata_filters = params.get('metadataFilters', [])  # expect list of {name, values}
         available_options = body.get('availableOptions', [])
-        elected_option = body.get('electedOption', {})
 
-        if not condition or not available_options:
-            log.warning("Request is missing 'condition' or 'availableOptions'.")
+        if not user_query or not available_options:
+            log.warning("Missing user_query or availableOptions")
             return {
                 'statusCode': 400,
-                'body': json.dumps({'error': 'Missing condition or availableOptions'})
+                'body': json.dumps({'error': 'Missing user_query or availableOptions'})
             }
 
+        # Select KB based on population type
         kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
-        log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
+        log.info(f"Using Knowledge Base ID: {kb_id}")
 
-        available_list = []
-        elected_desc = None
+        # Build the simple prompt
+        prompt_text = build_prompt(user_query)
 
-        for opt in available_options:
-            desc = opt.get('optionDescription', '').strip()
-            if desc.lower() == 'no coverage':
-                log.info(f"Skipping option '{desc}' due to no coverage")
-                continue
-
-            if elected_option and opt.get('optionId') == elected_option.get('optionId'):
-                elected_desc = desc
-            else:
-                available_list.append(desc)
-
-        if not elected_desc and not available_list:
-            log.info("No applicable options to process after filtering.")
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
-                'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
+        # Configure retrieval with metadata filters if provided
+        retrieval_config = {
+            'vectorSearchConfiguration': {
+                'overrideSearchType': 'HYBRID',
+                'numberOfResults': 100
+            }
+        }
+        if metadata_filters:
+            retrieval_config['metadataConfiguration'] = {
+                'metadataFilterList': metadata_filters
             }
 
-        blocks = []
-        if elected_desc:
-            blocks.append(f"Elected Option: {elected_desc}")
-
-        if available_list:
-            blocks.append("Available Options:")
-            for desc in available_list:
-                blocks.append(f"- {desc}")
-
-        option_list_block = "\n\n".join(blocks)
-        prompt = f"""
-            
-            """
-
-        final_input_text = PROMPT_INSTRUCTIONS.strip() + "\n\n" + \
-            "Here are the benefit plan options:\n" + option_list_block + "\n\n" + \
-            "Here is the user's question:\n" + f"{condition} for each of these options?"
-
-        log.info(f"Final input text for Bedrock:\n{final_input_text}")   
-
+        # Call Bedrock retrieve-and-generate
         response = client_bedrock.retrieve_and_generate(
-            input={'text': final_input_text},
+            input={'text': prompt_text},
             retrieveAndGenerateConfiguration={
                 'type': 'KNOWLEDGE_BASE',
                 'knowledgeBaseConfiguration': {
                     'knowledgeBaseId': kb_id,
                     'modelArn': (
-                        'arn:aws:bedrock:us-east-1::foundation-model/'  
+                        'arn:aws:bedrock:us-east-1::foundation-model/'
                         'anthropic.claude-3-5-sonnet-20240620-v1:0'
                     ),
-                    'retrievalConfiguration': {
-                        'vectorSearchConfiguration': {
-                            'overrideSearchType': 'HYBRID',
-                            'numberOfResults': 100
-                        }
-                    },
+                    'retrievalConfiguration': retrieval_config,
                     'generationConfiguration': {
-                        "inferenceConfig": { 
+                        'inferenceConfig': {
                             'textInferenceConfig': {
-                                "maxTokens": 1024,
-                                "temperature": 0.0,
-                                "topP": 1.0
-
+                                'maxTokens': 1024,
+                                'temperature': 0.0,
+                                'topP': 1.0
                             }
-               
-                }
-                }
+                        }
+                    }
                 }
             }
         )
 
+        # Extract answer and citations
         answer = response['output']['text']
         citations = []
         for cit in response.get('citations', []):
             for ref in cit.get('retrievedReferences', []):
-                loc = ref.get('location', {})
-                content = ref.get('content', {}).get('text')
-                uri = loc.get('s3Location', {}).get('uri')
-                if uri and content:
-                    citations.append({'source': uri, 'text': content})
-                else:
-                    log.warning(f"Skipping malformed reference: {ref}")
-
-        log.info(f"Successfully generated answer and found {len(citations)} citation references.")
+                uri = ref.get('location', {}).get('s3Location', {}).get('uri')
+                text = ref.get('content', {}).get('text')
+                if uri and text:
+                    citations.append({'source': uri, 'text': text})
 
         return {
             'statusCode': 200,
-            'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+            'headers': {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Access-Control-Allow-Origin': '*'
+            },
             'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
         }
 
     except Exception as e:
-        log.exception("An error occurred in the lambda_handler")
+        log.exception("Error in lambda_handler")
         return {
             'statusCode': 500,
             'body': json.dumps({'error': str(e)})
