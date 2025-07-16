@@ -1,308 +1,227 @@
-<!DOCTYPE html>
-<html>
+import json
+import boto3
+import logging
 
-<head>
-    <title>AI Enrollment Chatbot</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            background: #fff;
-        }
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
-        #chat-container {
-            max-width: 800px;
-            margin: 0 auto;
-            width: 100%;
-            padding: 0;
-            margin-bottom: 20px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            height: calc(100vh - 120px);
-        }
+client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
 
-        #chat-history {
-            overflow-y: auto;
-            padding: 10px;
-            background: transparent;
-            border-radius: 10px;
-            margin-bottom: 25px;
-        }
+POPULATION_KB_MAP = {
+    "AMGMT99": "VY8BRE8SRT",
+    "BLKACTIVE": "TGZMV97MNY",
+    "MWTIBEWACTIVE": "L9JYLI9PBF"
+}
+DEFAULT_KB_ID = "RIBHZRVAQA"
 
-        .message {
-            margin-bottom: 15px;
-            display: flex;
-        }
 
-        .user-message {
-            justify-content: flex-end;
-        }
+# PROMPT_INSTRUCTIONS = """
+# You are a strictly factual question-answering agent.
+# Answer only the specific question provided with a concise summary
+# Use only the retrieved search results; do not hallucinate or invent data.
 
-        .bot-message {
-            justify-content: flex-start;
-        }
+# Structure your response as follows:
+# 1. Elected Option: [Plan Name]
+#    - Brief answer to the question for this plan.
+# 2. Available Options:
+#    - [Plan Name]: Brief answer for each.
 
-        .message-bubble {
-            max-width: 100%;
-            padding: 12px 14px;
-            border-radius: 15px;
-            word-break: break-word;
-            white-space: pre-wrap;
-            font-size: 14px;
-        }
+# If both in-network and out-of-network details exist for any plan, include them as two sub-bullets under that plan:
+# - In-Network: ...
+# - Out-of-Network: ...
 
-        .user-message .message-bubble {
-            background: #007bff;
-            color: white;
-            border-bottom-right-radius: 5px;
-        }
+# Do not include any sections beyond these or any additional text.
+# """
+PROMPT_INSTRUCTIONS = """
+You are a strictly factual question‑answering agent.  
 
-        .bot-message .message-bubble {
-            background: #e9ecef;
-            color: #212529;
-            border-bottom-left-radius: 5px;
-        }
+Use only the retrieved search results; do not hallucinate or invent data.
 
-        #input-container {
-            display: inline-flex;
-            padding: 2%;
-            background: #fff;
-            position: fixed;
-            bottom: 0;
-            width: 96%;
-            margin: 0;
-        }
 
-        #message-input:focus {
-            border-color: #007bff;
-        }
 
-        #message-input {
-            padding: 15px 60px 15px 8px;
-            width: 100%;
-            border: 2px solid #ababab;
-            border-radius: 8px;
-            font-size: 14px;
-            outline: none;
-        }
+Pre‑processing:
 
-        #send-button {
-            padding: 2px 15px;
-            background: transparent;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            position: absolute;
-            right: 30px;
-            top: 28%;
-        }
+- Identify whether the user’s question explicitly mentions exactly one option name (matching one of the retrieved plan identifiers).
 
-        .typing-indicator {
-            display: none;
-            padding: 10px;
-            font-style: italic;
-            color: #6c757d;
-        }
+  - If exactly one valid option name is found in the user’s question, select that option for a single‑option response.
 
-        .error-message {
-            color: #dc3545;
-            padding: 10px;
-            text-align: center;
-        }
+  - Otherwise, proceed with a multi‑option response for all available plans.
 
-        .question-tile {
-            background-color: #f0f0f0;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            padding: 10px;
-            font-size: 14px;
-            margin: 5px 0;
-            cursor: pointer;
-            transition: background-color 0.3s, box-shadow 0.3s;
-        }
 
-        .suggested_messagep {
-            padding: 0;
-            margin: 0;
-            font-style: italic;
-            font-weight: 500;
-        }
 
-        .question-tile:hover {
-            background-color: #e0e0e0;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
+Behavior:
 
-        .question-tile:active {
-            background-color: #d0d0d0;
-        }
-    </style>
-</head>
+1. **Single‑plan response** (triggered when the question names exactly one plan)
 
-<body>
-    <div id="chat-container">
-        <div id="chat-history"></div>
-        <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
-    </div>
+   - Output only for the named plan.
 
-    <div class="error-message" id="error-message"></div>
-    <div id="input-container">
-        <input type="text" id="message-input" placeholder="Ask your question" onkeypress="handleEnterKey(event)">
-        <button id="send-button" onclick="sendMessage()">
-            <svg width="40px" height="40px" viewBox="0 0 24 24" fill="none">
-                <path d="M7.75778 6.14799C6.84443 5.77187 6.0833 5.45843 5.49196 5.30702C4.91915 5.16036 4.18085 5.07761 3.63766 5.62862C3.09447 6.17962 3.18776 6.91666 3.34259 7.48732C3.50242 8.07644 3.8267 8.83302 4.21583 9.7409L4.86259 11.25H10C10.4142 11.25 10.75 11.5858 10.75 12C10.75 12.4142 10.4142 12.75 10 12.75H4.8626L4.21583 14.2591C3.8267 15.167 3.50242 15.9236 3.34259 16.5127C3.18776 17.0833 3.09447 17.8204 3.63766 18.3714C4.18085 18.9224 4.91915 18.8396 5.49196 18.693C6.0833 18.5416 6.84443 18.2281 7.75777 17.852L19.1997 13.1406C19.4053 13.0561 19.6279 12.9645 19.7941 12.867C19.944 12.779 20.3434 12.5192 20.3434 12C20.3434 11.4808 19.944 11.221 19.7941 11.133C19.6279 11.0355 19.4053 10.9439 19.1997 10.8594L7.75778 6.14799Z" fill="#000000"/>
-            </svg>
-        </button>
-    </div>
+   - If there is data:
 
-    <script>
-        const constMsg = {
-            pageName: "Annual Enrollment - Medical Health Plan Election Page - AT&T",
-            planId: 1000,
-            populationType: "ATMGMT",
-            customText1: "This is an example of custom text with some <strong>html</strong> formatting",
-            customText2: "This is an example of custom text with some <strong>html</strong> formatting",
-            customText3: "This is an example of custom text with some <strong>html</strong> formatting",
-            customText4: "This is an example of custom text with some <strong>html</strong> formatting",
-            cddList: [
-                {
-                    questionsId: "HC-FSA-AUTOMAX",
-                    questionLabel: "Sometimes the IRS will increase contribution limits for next year’s plan after the Annual Enrollment period is over. If you’ve elected the maximum contribution, would you like us to automatically increase your election to match the new contribution limit"
-                }
-            ],
-            enrollmentDeadlineDate: "",
-            availableOptions: [
-                { optionId: 1650, optionDescription: "No Coverage" },
-                { optionId: 1651, optionDescription: "Medical Option 1234" },
-                { optionId: 1809, optionDescription: "Medical Option 9999" }
-            ],
-            electedOption: { optionId: 9424, optionDescription: "Medical Option 9999" }
-        };
-        sessionStorage.setItem("constMsg", JSON.stringify(constMsg));
-        const constMsg2 = JSON.parse(sessionStorage.getItem('constMsg') || '{}');
-        const messageRegistry = { suggested: new Set(), questions: new Set() };
-        window.addEventListener('message', event => {
-            const { questions, suggested_message } = event.data;
-            const chatHistory = document.getElementById('chat-history');
-            if (suggested_message) {
-                const div = document.createElement('div');
-                div.className = 'suggested_messagep';
-                div.textContent = suggested_message.trim();
-                chatHistory.appendChild(div);
+     - Network: …  
+
+     - Non‑Network: …  
+
+   - If neither network nor non‑network data exists:
+
+     - “No information available.”
+
+
+
+2. **Multi‑plan response** (default when no single plan is identified)
+
+   - Elected Option  
+
+     - [Plan Name]: Brief answer (or “No information available.”)  
+
+   - Available Options  
+
+     - [Plan Name]  
+
+       - Network: … (if data exists)  
+
+       - Non‑Network: … (if data exists)  
+
+     - [Next Plan Name]  
+
+       - Network: …  
+
+       - Non‑Network: …  
+
+     - [Next Plan Name]  
+
+       - No information available.  
+
+3.  **Complex or variable responses** (Provide the Page number where the response is available in the source)
+
+
+
+Formatting rules:
+
+- Do not include any plans other than those retrieved.
+
+- For any plan lacking data, explicitly state “No information available.”
+
+- Do not add any sections or text beyond those described above.
+"""
+
+
+def lambda_handler(event, context):
+    try:
+        raw_body = event.get('body', {})
+        body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+
+        params = {p['name']: p['value'] for p in body.get('parameters', [])}
+        condition = params.get('condition', '').strip()
+        population_type = params.get('populationType', '')
+        available_options = body.get('availableOptions', [])
+        elected_option = body.get('electedOption', {})
+
+        if not condition or not available_options:
+            log.warning("Request is missing 'condition' or 'availableOptions'.")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing condition or availableOptions'})
             }
-            questions.forEach(q => {
-                if (!messageRegistry.questions.has(q)) {
-                    const tile = document.createElement('div');
-                    tile.className = 'question-tile';
-                    tile.textContent = q.trim();
-                    tile.onclick = () => sendQuestion(q);
-                    chatHistory.appendChild(tile);
-                    messageRegistry.questions.add(q);
-                }
-            });
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        });
-        const optionMap = {};
-        constMsg2.availableOptions.forEach(o => optionMap[o.optionId] = o.optionDescription);
-        if (constMsg2.electedOption) optionMap[constMsg2.electedOption.optionId] = constMsg2.electedOption.optionDescription;
-        const availablePlanIds = constMsg2.availableOptions.map(o => String(o.optionId));
-        const electedPlanId = constMsg2.electedOption ? String(constMsg2.electedOption.optionId) : null;
-        const API_URL = 'https://0hh.execute-api.us-east-1.amazonaws.com/Dev/chat';
 
-        function handleEnterKey(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
+        kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
+        log.info(f"Using Knowledge Base ID: {kb_id} for population type: {population_type or 'Default'}")
+
+        available_list = []
+        elected_desc = None
+
+        for opt in available_options:
+            desc = opt.get('optionDescription', '').strip()
+            if desc.lower() == 'no coverage':
+                log.info(f"Skipping option '{desc}' due to no coverage")
+                continue
+
+            if elected_option and opt.get('optionId') == elected_option.get('optionId'):
+                elected_desc = desc
+            else:
+                available_list.append(desc)
+
+        if not elected_desc and not available_list:
+            log.info("No applicable options to process after filtering.")
+            return {
+                'statusCode': 200,
+                'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+                'body': json.dumps({'message': 'No applicable options to process.', 'citations': []})
             }
-        }
-        function sendQuestion(q) {
-            document.getElementById('message-input').value = q;
-            sendMessage();
-        }
-        function appendMessage(msg, isUser) {
-            const div = document.createElement('div');
-            div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            bubble.textContent = msg;
-            div.appendChild(bubble);
-            document.getElementById('chat-history').appendChild(div);
-            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
-        }
 
-        async function sendMessage() {
-            const inputEl = document.getElementById('message-input');
-            const text = inputEl.value.trim();
-            if (!text) return;
-            inputEl.value = '';
-            document.getElementById('error-message').textContent = '';
-            appendMessage(text, true);
-            document.getElementById('typing-indicator').style.display = 'block';
+        blocks = []
+        if elected_desc:
+            blocks.append(f"Elected Option: {elected_desc}")
 
-            // Build parameters
-            const params = [
-                { name: 'condition', value: text },
-                { name: 'populationType', value: constMsg2.populationType }
-            ];
-            availablePlanIds.forEach(id => params.push({ name: 'plan', value: id }));
-            if (electedPlanId) params.push({ name: 'plan', value: electedPlanId });
+        if available_list:
+            blocks.append("Available Options:")
+            for desc in available_list:
+                blocks.append(f"- {desc}")
 
-            // Full payload with all constMsg2 fields
-            const payload = {
-                parameters: params,
-                pageName: constMsg2.pageName,
-                populationType: constMsg2.populationType,
-                enrollmentDeadlineDate: constMsg2.enrollmentDeadlineDate,
-                availableOptions: constMsg2.availableOptions,
-                electedOption: constMsg2.electedOption
-            };
+        option_list_block = "\n\n".join(blocks)
+        prompt = f"""
+            
+            """
 
-            try {
-                const res = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                let data = await res.json();
-                if (data.body && typeof data.body === 'string') {
-                    data = JSON.parse(data.body);
-                }
+        final_input_text = PROMPT_INSTRUCTIONS.strip() + "\n\n" + \
+            "Here are the benefit plan options:\n" + option_list_block + "\n\n" + \
+            "Here is the user's question:\n" + f"{condition} for each of these options?"
 
-                let reply = '';
-                if (data && typeof data.message === 'string') {
-                    reply = data.message;
-                } else if (Array.isArray(data)) {
-                    reply = data.map(item => {
-                        if (item.data) {
-                            return item.data.map(d => {
-                                const desc = optionMap[d.plan] || d.plan;
-                                return `For "${d.condition}" under "${desc}", the value is: ${d.value}`;
-                            }).join('\n');
+        log.info(f"Final input text for Bedrock:\n{final_input_text}")   
+
+        response = client_bedrock.retrieve_and_generate(
+            input={'text': final_input_text},
+            retrieveAndGenerateConfiguration={
+                'type': 'KNOWLEDGE_BASE',
+                'knowledgeBaseConfiguration': {
+                    'knowledgeBaseId': kb_id,
+                    'modelArn': (
+                        'arn:aws:bedrock:us-east-1::foundation-model/'  
+                        'anthropic.claude-3-5-sonnet-20240620-v1:0'
+                    ),
+                    'retrievalConfiguration': {
+                        'vectorSearchConfiguration': {
+                            'overrideSearchType': 'HYBRID',
+                            'numberOfResults': 100
                         }
-                        if (item.value !== undefined) {
-                            const desc = optionMap[item.plan] || item.plan;
-                            return `For "${text}" under "${desc}", the value is: ${item.value}`;
-                        }
-                        const desc = optionMap[item.plan] || item.plan;
-                        return `For "${text}" under "${desc}", error: ${item.error}`;
-                    }).join('\n\n');
-                } else {
-                    reply = 'Sorry, I got an unexpected response.';
-                }
-                appendMessage(reply, false);
-            } catch (err) {
-                document.getElementById('error-message').textContent = `Error: ${err.message}`;
-            } finally {
-                document.getElementById('typing-indicator').style.display = 'none';
-            }
-        }
-    </script>
-</body>
+                    },
+                    'generationConfiguration': {
+                        "inferenceConfig": { 
+                            'textInferenceConfig': {
+                                "maxTokens": 1024,
+                                "temperature": 0.0,
+                                "topP": 1.0
 
-</html>
+                            }
+               
+                }
+                }
+                }
+            }
+        )
+
+        answer = response['output']['text']
+        citations = []
+        for cit in response.get('citations', []):
+            for ref in cit.get('retrievedReferences', []):
+                loc = ref.get('location', {})
+                content = ref.get('content', {}).get('text')
+                uri = loc.get('s3Location', {}).get('uri')
+                if uri and content:
+                    citations.append({'source': uri, 'text': content})
+                else:
+                    log.warning(f"Skipping malformed reference: {ref}")
+
+        log.info(f"Successfully generated answer and found {len(citations)} citation references.")
+
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
+        }
+
+    except Exception as e:
+        log.exception("An error occurred in the lambda_handler")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
