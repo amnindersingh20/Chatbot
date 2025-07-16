@@ -153,3 +153,22 @@ def lambda_handler(event, context):
             'statusCode': 500,
             'body': json.dumps({'error': str(e)})
         }
+
+
+
+{
+  "body": {
+    "parameters": [
+      { "name": "condition",       "value": "is acupuncture covered?" },
+      { "name": "populationType",  "value": "AMGMT99"    }
+    ],
+    "availableOptions": [
+      { "optionId": 1, "optionDescription": "Low deductible select" },
+      { "optionId": 2, "optionDescription": "High deductible broad" }
+    ],
+    "electedOption": {
+      "optionId": 2,
+      "optionDescription": "Hgh deductible select"
+    }
+  }
+}
