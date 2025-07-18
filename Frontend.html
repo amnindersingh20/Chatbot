@@ -1,3 +1,16 @@
-[ERROR] Runtime.HandlerNotFound: Handler 'lambda_handler' missing on module 'lambda_function'
+
+Message
+
+No older events at this moment. 
+Retry
+INIT_START Runtime Version: python:3.13.v50	Runtime Version ARN: arn:aws:lambda:us-east-1::runtime:83a0b29e480e14176225231a6e561282aa7732a24063ebab771b15e4c1a2c71c
+[INFO]	2025-07-18T14:54:43.204Z		Found credentials in environment variables.
+START RequestId: 0362f1cb-a812-4aa2-bc15-55744c4571fb Version: $LATEST
+[INFO]	2025-07-18T14:54:43.440Z	0362f1cb-a812-4aa2-bc15-55744c4571fb	Processing file: s3://redshiftpoctest/AMGMT99/master/20230101---SPD---ATT-Medical-Program---NIN-78-66930.pdf
+[ERROR]	2025-07-18T14:54:43.440Z	0362f1cb-a812-4aa2-bc15-55744c4571fb	Error processing record: Filename does not match expected pattern for NIN: '20230101---SPD---ATT-Medical-Program---NIN-78-66930.pdf'
 Traceback (most recent call last):
-INIT_REPORT Init Duration: 837.21 ms	Phase: invoke	Status: error	Error Type: Runtime.HandlerNotFound
+  File "/var/task/lambda_function.py", line 90, in lambda_handler
+    nin_priority = extract_nin(filename)
+  File "/var/task/lambda_function.py", line 47, in extract_nin
+    raise ValueError(f"Filename does not match expected pattern for NIN: '{filename}'")
+ValueError: Filename does not match expected pattern for NIN: '20230101---SPD---ATT-Medical-Program---NIN-78-66930.pdf'
