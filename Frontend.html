@@ -1,7 +1,7 @@
 import logging
 import json
 import re
-import difflib
+difflib
 from io import StringIO
 import boto3
 from datetime import datetime, timezone
@@ -18,14 +18,14 @@ BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
 DYNAMODB_TABLE_NAME = "POC-Chatbot-ChatSession"
 
-
+# AWS Clients
 _s3 = boto3.client('s3')
 _lambda = boto3.client('lambda')
 _bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
-_comprehend = boto3.client("comprehend", region_name="us-east-1")
-_dynamodb = boto3.resource('dynamodb', region_name="us-east-1") 
+_dynamodb = boto3.resource('dynamodb', region_name="us-east-1")
 _dynamodb_table = _dynamodb.Table(DYNAMODB_TABLE_NAME)
 
+# Text normalization utilities
 SYNONYMS = {
     r"\bco[\s\-]?pay(ment)?s?\b": "copayment",
     r"\bco[\s\-]?insurance\b": "coinsurance",
@@ -39,8 +39,10 @@ def normalize(text: str) -> str:
 def strip_filler(text: str) -> str:
     text = re.sub(r"[^\w\s]", "", text.lower().strip())
     fillers = [
-        r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b",r"\bwhat is the\b",r"\bis the\b", r"\btell me\b",
-        r"\bgive me\b", r"\bplease show\b",r"\bhelp me with\b",r"\bhelp me to\b",r"\bhelp me to\b", r"\bhow much is\b", r"\bis\b", r"\bmy\b"
+        r"\bwhat('?s)?\b", r"\bwhats\b", r"\bwhat is\b", r"\bwhat is the\b",
+        r"\bis the\b", r"\btell me\b", r"\bgive me\b", r"\bplease show\b",
+        r"\bhelp me with\b", r"\bhelp me to\b", r"\bhow much is\b", r"\bis\b",
+        r"\bmy\b"
     ]
     for pat in fillers:
         text = re.sub(pat, '', text).strip()
@@ -51,6 +53,7 @@ def expand_synonyms(text: str) -> str:
         text = re.sub(pat, rep, text, flags=re.IGNORECASE)
     return text
 
+# Load CSV from S3 into DataFrame
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
@@ -70,6 +73,7 @@ def load_dataframe():
 
 DF = load_dataframe()
 
+# Retrieve plan values from DataFrame
 def get_plan_value(raw_condition: str, plan_id: str):
     stripped = strip_filler(raw_condition)
     expanded = expand_synonyms(stripped)
@@ -104,6 +108,7 @@ def get_plan_value(raw_condition: str, plan_id: str):
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
     return 200, results
 
+# Generate summary using Bedrock model
 def summarize_with_claude35(composite_result: list, options: list, elected: dict) -> str:
     options_list = [
         {"optionId": opt["optionId"], "optionDescription": opt["optionDescription"]}
@@ -147,6 +152,8 @@ Your job:
         log.exception("LLM summarization failed")
         return None
 
+# Standard response wrapper for API Gateway
+
 def wrap_response(status, body):
     return {
         "statusCode": status,
@@ -157,6 +164,8 @@ def wrap_response(status, body):
         },
         "body": json.dumps(body)
     }
+
+# Invoke fallback Lambda on lookup failures
 
 def invoke_fallback(event_payload):
     log.info("Invoking fallback lambda")
@@ -171,26 +180,8 @@ def invoke_fallback(event_payload):
         log.exception("Fallback invocation failed")
         return wrap_response(500, {"error": f"Fallback error: {e}"})
 
-def process_with_comprehend(text: str) -> str:
-    """
-    Uses AWS Comprehend to detect key phrases from the input text.
-    Returns a concatenated string of key phrases.
-    """
-    try:
-        language_response = _comprehend.detect_dominant_language(Text=text)
-        dominant_language_code = language_response['Languages'][0]['LanguageCode']
-        log.info(f"Detected dominant language: {dominant_language_code}")
-
-        response = _comprehend.detect_key_phrases(Text=text, LanguageCode=dominant_language_code)
-        key_phrases = [phrase['Text'] for phrase in response['KeyPhrases']]
-        log.info(f"Comprehend Key Phrases: {key_phrases}")
-        return " ".join(key_phrases)
-    except Exception:
-        log.exception("Comprehend NLP processing failed")
-        return text
-
+# Chat history persistence
 def save_chat_history(session_id: str, user_input: str, bot_response: str):
-    """Saves the chat interaction to DynamoDB."""
     timestamp = int(time.time())
     created_at = datetime.now(timezone.utc).isoformat()
     try:
@@ -208,7 +199,6 @@ def save_chat_history(session_id: str, user_input: str, bot_response: str):
         log.exception(f"Failed to save chat history for session {session_id}")
 
 def get_chat_history(session_id: str, limit: int = 5) -> list:
-    """Retrieves the most recent chat history for a given session ID."""
     try:
         response = _dynamodb_table.query(
             KeyConditionExpression='SessionId = :sid',
@@ -226,6 +216,7 @@ def get_chat_history(session_id: str, limit: int = 5) -> list:
         log.exception(f"Failed to retrieve chat history for session {session_id}")
         return []
 
+# Main Lambda handler without Comprehend dependency
 def lambda_handler(event, _context):
     log.info("Received event: %s", json.dumps(event))
 
@@ -258,10 +249,9 @@ def lambda_handler(event, _context):
     if not plans:
         return wrap_response(400, {"error": "Missing 'plan' parameter(s)"})
 
-    processed_condition = process_with_comprehend(condition)
-    if not processed_condition:
-        processed_condition = condition
-    log.info(f"Comprehend processed condition: {processed_condition}")
+    # Use raw condition directly for lookup
+    processed_condition = condition
+    log.info(f"Processed condition for lookup: {processed_condition}")
 
     plan_desc_map = {
         str(opt.get("optionId")): opt.get("optionDescription")
