@@ -1,14 +1,4 @@
-[ERROR]	2025-07-18T15:15:19.388Z	6c992922-f869-4f42-940d-b966938817c3	Error processing record: An error occurred (AccessDenied) when calling the GetObject operation: User: arn:aws:sts::653858776174:assumed-role/Poc_bot_lambda2-role-ub7e23zm/Poc_bot_lambda2 is not authorized to perform: s3:ListBucket on resource: "arn:aws:s3:::redshiftpoctest" because no identity-based policy allows the s3:ListBucket action
-Traceback (most recent call last):
-  File "/var/task/lambda_function.py", line 95, in lambda_handler
-    text = pdf_to_text(bucket, key)
-  File "/var/task/lambda_function.py", line 55, in pdf_to_text
-    obj = s3_client.get_object(Bucket=bucket, Key=key)
-  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 598, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/var/lang/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
-    return func(*args, **kwargs)
-  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 1061, in _make_api_call
-    raise error_class(parsed_response, operation_name)
-botocore.exceptions.ClientError: An error occurred (AccessDenied) when calling the GetObject operation: User: arn:aws:sts::653858776174:assumed-role/Poc_bot_lambda2-role-ub7e23zm/Poc_bot_lambda2 is not authorized to perform: s3:ListBucket on resource: "arn:aws:s3:::redshiftpoctest" because no identity-based policy allows the s3:ListBucket action
+[ERROR]	2025-07-18T16:36:41.161Z	e881d6f3-9ff4-4e44-88c5-03205e24e9e3	Error processing record: Parameter validation failed:
+Missing required parameter in input: "dataSourceId"
+Unknown parameter in documents[0]: "id", must be one of: content, metadata
+Invalid type for parameter documents[0].content, value: NIN: 78-669 30 
