@@ -53,7 +53,6 @@ def expand_synonyms(text: str) -> str:
         text = re.sub(pat, rep, text, flags=re.IGNORECASE)
     return text
 
-# Load CSV from S3 into DataFrame
 def load_dataframe():
     try:
         obj = _s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
@@ -73,7 +72,6 @@ def load_dataframe():
 
 DF = load_dataframe()
 
-# Retrieve plan values from DataFrame
 def get_plan_value(raw_condition: str, plan_id: str):
     stripped = strip_filler(raw_condition)
     expanded = expand_synonyms(stripped)
@@ -108,7 +106,6 @@ def get_plan_value(raw_condition: str, plan_id: str):
         return 404, f"No value for '{raw_condition}' under plan '{plan_id}'"
     return 200, results
 
-# Generate summary using Bedrock model
 def summarize_with_claude35(composite_result: list, options: list, elected: dict) -> str:
     options_list = [
         {"optionId": opt["optionId"], "optionDescription": opt["optionDescription"]}
@@ -152,8 +149,6 @@ Your job:
         log.exception("LLM summarization failed")
         return None
 
-# Standard response wrapper for API Gateway
-
 def wrap_response(status, body):
     return {
         "statusCode": status,
@@ -164,8 +159,6 @@ def wrap_response(status, body):
         },
         "body": json.dumps(body)
     }
-
-# Invoke fallback Lambda on lookup failures
 
 def invoke_fallback(event_payload):
     log.info("Invoking fallback lambda")
@@ -180,7 +173,6 @@ def invoke_fallback(event_payload):
         log.exception("Fallback invocation failed")
         return wrap_response(500, {"error": f"Fallback error: {e}"})
 
-# Chat history persistence
 def save_chat_history(session_id: str, user_input: str, bot_response: str):
     timestamp = int(time.time())
     created_at = datetime.now(timezone.utc).isoformat()
@@ -202,9 +194,7 @@ def get_chat_history(session_id: str, limit: int = 5) -> list:
     try:
         response = _dynamodb_table.query(
             KeyConditionExpression='SessionId = :sid',
-            ExpressionAttributeValues={
-                ':sid': session_id
-            },
+            ExpressionAttributeValues={':sid': session_id},
             Limit=limit,
             ScanIndexForward=False
         )
@@ -216,30 +206,31 @@ def get_chat_history(session_id: str, limit: int = 5) -> list:
         log.exception(f"Failed to retrieve chat history for session {session_id}")
         return []
 
-# Main Lambda handler without Comprehend dependency
 def lambda_handler(event, _context):
     log.info("Received event: %s", json.dumps(event))
 
-    raw = event.get("body") or event.get("prompt") or "{}"
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode()
-    try:
-        payload = json.loads(raw) if isinstance(raw, str) else raw
-    except Exception:
-        log.exception("Failed to parse JSON body")
-        return wrap_response(400, {"error": "Invalid JSON in body"})
+    # ——— Unwrap body (handles both API‑Gateway JSON-string and direct dict) ———
+    raw_body = event.get("body", {})
+    if isinstance(raw_body, str):
+        try:
+            payload = json.loads(raw_body)
+        except json.JSONDecodeError:
+            return wrap_response(400, {"error": "Invalid JSON in body"})
+    else:
+        payload = raw_body
 
     session_id = payload.get("SessionId", "default-session")
-    user_input_text = payload.get("inputText", "")
 
-    chat_history = get_chat_history(session_id)
-    log.info(f"Current chat history for {session_id}: {chat_history}")
-
-    params = payload.get("parameters") or []
+    # ——— Extract and normalize parameters ———
+    params = payload.get("parameters", [])
     if isinstance(params, dict):
         params = [{"name": k, "value": v} for k, v in params.items()]
-    condition = next((p["value"] for p in params if p["name"] == "condition"), user_input_text)
+
+    condition = next((p["value"] for p in params if p["name"] == "condition"), None)
     plans = [str(p["value"]).strip() for p in params if p["name"] == "plan"]
+
+    # ——— NEW: user_input_text falls back to condition if inputText missing ———
+    user_input_text = payload.get("inputText") or condition or ""
 
     available_options = payload.get("availableOptions", [])
     elected_option = payload.get("electedOption")
@@ -249,9 +240,8 @@ def lambda_handler(event, _context):
     if not plans:
         return wrap_response(400, {"error": "Missing 'plan' parameter(s)"})
 
-    # Use raw condition directly for lookup
-    processed_condition = condition
-    log.info(f"Processed condition for lookup: {processed_condition}")
+    chat_history = get_chat_history(session_id)
+    log.info(f"Current chat history for {session_id}: {chat_history}")
 
     plan_desc_map = {
         str(opt.get("optionId")): opt.get("optionDescription")
@@ -265,39 +255,32 @@ def lambda_handler(event, _context):
 
     for plan in plans:
         desc = plan_desc_map.get(plan, "").strip()
-
         if desc.lower() == "no coverage":
-            log.info(f"Skipping plan {plan} ('{desc}') due to no coverage")
+            log.info(f"Skipping plan {plan} due to no coverage")
             continue
-        status, data = get_plan_value(processed_condition, plan)
+
+        status, data = get_plan_value(condition, plan)
         if status != 200:
-            log.warning(f"CSV lookup failed for plan {plan} with condition '{processed_condition}'. Status: {status}, Data: {data}")
+            log.warning(f"Lookup failed for plan {plan}. Falling back…")
             fallback_body = {
                 "parameters": [
-                    {"name": "condition",        "value": processed_condition},
-                    {"name": "optionDescription","value": desc or plan},
-                    {"name": "populationType",  "value": payload.get("populationType")},
-                    {"name": "userQuery",        "value": user_input_text}
+                    {"name": "condition", "value": condition},
+                    {"name": "optionDescription", "value": desc or plan},
+                    {"name": "populationType", "value": payload.get("populationType")},
+                    {"name": "userQuery", "value": user_input_text}
                 ],
                 "availableOptions": available_options,
                 "electedOption":    elected_option,
                 "chatHistory":      chat_history
             }
             fallback_response = invoke_fallback({ "body": json.dumps(fallback_body) })
-            if fallback_response['statusCode'] == 200:
-                response_body = json.loads(fallback_response['body'])
-                response_message = response_body.get('message', json.dumps(response_body))
-                save_chat_history(session_id, user_input_text, response_message)
-                return fallback_response
-            else:
-                log.error("Fallback lambda invocation failed or returned non-200 status.")
-                save_chat_history(session_id, user_input_text, "Error: Unable to retrieve information.")
-                return fallback_response
+            save_chat_history(session_id, user_input_text, fallback_response.get('body'))
+            return fallback_response
 
         composite.append({
-            "optionId":            plan,
+            "optionId": plan,
             "optionDescription": desc,
-            "data":                data
+            "data": data
         })
 
     if not composite:
@@ -306,7 +289,7 @@ def lambda_handler(event, _context):
         return wrap_response(200, {"message": response_message, "results": []})
 
     summary = summarize_with_claude35(composite, available_options, elected_option)
-    response_message = summary if summary else "I couldn't generate a summary at this time, but here are the raw details."
+    response_message = summary or "I couldn't generate a summary at this time, but here are the raw details."
 
     save_chat_history(session_id, user_input_text, response_message)
 
