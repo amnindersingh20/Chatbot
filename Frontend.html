@@ -1,112 +1,14 @@
-import os
-import re
-import json
-import uuid
-import logging
-
-import boto3
-import PyPDF2
-
-# Configure logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-# AWS clients
-s3_client = boto3.client("s3")
-bedrock_client = boto3.client("bedrock", region_name=os.environ.get("AWS_REGION", "us-east-1"))
-
-# Environment variables
-KB_ID = os.environ["BEDROCK_KB_ID"]           # The Bedrock Knowledge Base ARN or ID\ nCHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", 1000))
-CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 200))
-
-# Regex to extract the NIN (numeric identifier) from filename
-NIN_RE = re.compile(r"^[^-]+-[^-]+-(\d+)-?.*\.pdf$", re.IGNORECASE)
-
-def extract_nin(filename: str) -> int:
-    """
-    Extract the numeric NIN value from a filename of form: prefix1-prefix2-NIN-... .pdf
-    """
-    match = NIN_RE.match(filename)
-    if not match:
-        raise ValueError(f"Filename does not match expected pattern for NIN: '{filename}'")
-    return int(match.group(1))
-
-
-def pdf_to_text(bucket: str, key: str) -> str:
-    """
-    Download PDF from S3 and extract text from all pages.
-    """
-    obj = s3_client.get_object(Bucket=bucket, Key=key)
-    reader = PyPDF2.PdfReader(obj["Body"])
-    text_parts = []
-    for page in reader.pages:
-        text_parts.append(page.extract_text() or "")
-    return "\n".join(text_parts)
-
-
-def chunk_text(text: str):
-    """
-    Generator that yields overlapping text chunks.
-    """
-    start = 0
-    length = len(text)
-    while start < length:
-        end = min(length, start + CHUNK_SIZE)
-        yield text[start:end]
-        start += CHUNK_SIZE - CHUNK_OVERLAP
-
-
-def handler(event, context):
-    """
-    Lambda handler triggered by S3:ObjectCreated. Ingests PDF chunks into Bedrock KB with NIN metadata.
-    """
-    try:
-        record = event['Records'][0]
-        bucket = record['s3']['bucket']['name']
-        key = record['s3']['object']['key']
-        filename = key.split('/')[-1]
-
-        logger.info(f"Processing file: s3://{bucket}/{key}")
-
-        # 1) Extract NIN priority from filename
-        nin_priority = extract_nin(filename)
-        logger.info(f"Extracted NIN priority: {nin_priority}")
-
-        # 2) Extract text
-        text = pdf_to_text(bucket, key)
-
-        # 3) Chunk text and prepare document entries
-        documents = []
-        for chunk in chunk_text(text):
-            doc = {
-                'id': str(uuid.uuid4()),
-                'content': chunk,
-                'metadata': {
-                    'nin_priority': nin_priority,
-                    'source_key': key
-                }
-            }
-            documents.append(doc)
-
-        # 4) Ingest into Bedrock KB
-        response = bedrock_client.ingest_knowledge_base_documents(
-            knowledgeBaseId=KB_ID,
-            documents=documents
-        )
-
-        logger.info(f"Ingested {len(documents)} chunks, job ID: {response.get('jobId')}")
-
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': f"Ingested {len(documents)} chunks from {filename}",
-                'jobId': response.get('jobId')
-            })
-        }
-
-    except Exception as e:
-        logger.error(f"Error processing record: {e}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+[ERROR] KeyError: 'NHS1I2TLDX'
+Traceback (most recent call last):
+  File "/var/lang/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/var/task/lambda_function.py", line 21, in <module>
+    KB_ID = os.environ["NHS1I2TLDX"]           # The Bedrock Knowledge Base ARN or ID
+  File "<frozen os>", line 717, in __getitem__
+INIT_REPORT Init Duration: 979.73 ms	Phase: init	Status: error	Error Type: Runtime.Unknown
