@@ -1,4 +1,13 @@
-[ERROR]	2025-07-18T16:36:41.161Z	e881d6f3-9ff4-4e44-88c5-03205e24e9e3	Error processing record: Parameter validation failed:
-Missing required parameter in input: "dataSourceId"
-Unknown parameter in documents[0]: "id", must be one of: content, metadata
-Invalid type for parameter documents[0].content, value: NIN: 78-669 30 
+[ERROR]	2025-07-18T16:57:23.158Z	307d5a73-e8a0-4450-a921-8e62ef9bc964	Error processing record: string indices must be integers, not 'tuple'
+Traceback (most recent call last):
+  File "/var/task/lambda_function.py", line 100, in lambda_handler
+    'inlineAttributes'[
+    ~~~~~~~~~~~~~~~~~~^
+        'population_id': population_id,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+    
+    
+    ]
+    ^
+TypeError: string indices must be integers, not 'tuple'
