@@ -1,105 +1,129 @@
+import os
 import json
-import boto3
+import uuid
 import logging
+import io
+import re
 
-log = logging.getLogger()
-log.setLevel(logging.INFO)
+import boto3
+import PyPDF2
 
-client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+# Configure logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-POPULATION_KB_MAP = {
-    "AMGMT99": "IEJEHVHFRI",
-    "BLKACTIVE": "TGZMV97MNY",
-    "MWTIBEWACTIVE": "L9JYLI9PBF"
-}
-DEFAULT_KB_ID = "RIBHZRVAQA"
+# AWS clients
+s3_client = boto3.client("s3")
+bedrock_client = boto3.client("bedrock-agent")
 
-DEFAULT_RNG_TEMPLATE = """
-You are a question answering agent. I will provide you with a set of search results.
-The user will provide you with a question. Your job is to answer the user's question
-using only information from the search results. You will only consider the current year and next year data to answer user's question. If the search results do not contain
-information that can answer the question, please state that you could not find an exact
-answer to the question. Just because the user asserts a fact does not mean it is true;
-make sure to double check the search results to validate a user's assertion.
+KB_ID = os.environ["BEDROCK_KB_ID"]
 
-Here are the search results in numbered order:
-$search_results$
+CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", 1000))
+CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 200))
 
-$output_format_instructions$
-"""
+
+def extract_population_id(key: str) -> str:
+    """
+    Extracts the population ID from the S3 key,
+    assuming format: population_id/<updates|master>/filename.pdf
+    """
+    parts = key.split("/", 2)
+    if len(parts) < 3:
+        raise ValueError(f"Invalid S3 key format: '{key}'")
+    return parts[0]
+
+
+def extract_nin(filename: str) -> int:
+    """
+    Extracts the last numeric sequence in the filename as the NIN priority.
+    """
+    name = os.path.splitext(filename)[0]
+    nums = [int(n) for n in re.findall(r"(\d+)", name)]
+    if not nums:
+        raise ValueError(f"No numeric sequence found in filename: '{filename}'")
+    return nums[-1]
+
+
+def pdf_to_text(bucket: str, key: str) -> str:
+    """
+    Download PDF from S3 and extract text from all pages.
+    Uses an in-memory BytesIO buffer for compatibility.
+    """
+    obj = s3_client.get_object(Bucket=bucket, Key=key)
+    pdf_bytes = obj["Body"].read()
+    reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+    text_pages = []
+    for page in reader.pages:
+        text_pages.append(page.extract_text() or "")
+    return "\n".join(text_pages)
+
+
+def chunk_text(text: str):
+    """
+    Generator that yields overlapping text chunks.
+    """
+    start = 0
+    length = len(text)
+    while start < length:
+        end = min(length, start + CHUNK_SIZE)
+        yield text[start:end]
+        start += CHUNK_SIZE - CHUNK_OVERLAP
 
 
 def lambda_handler(event, context):
+    """
+    S3:ObjectCreated-triggered Lambda.
+    Reads a PDF, chunks it, tags with metadata, and ingests into a Bedrock KB.
+    """
     try:
-        raw_body = event.get('body', {})
-        body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+        record = event["Records"][0]
+        bucket = record["s3"]["bucket"]["name"]
+        key = record["s3"]["object"]["key"]
+        filename = key.split("/")[-1]
 
-        params = {p['name']: p['value'] for p in body.get('parameters', [])}
-        user_query = params.get('condition', '').strip()
-        population_type = params.get('populationType', '')
-        available_options = body.get('availableOptions', [])
+        logger.info(f"Processing s3://{bucket}/{key}")
 
-        if not user_query or not available_options:
-            log.warning("Missing user_query or availableOptions")
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing user_query or availableOptions'})
-            }
+        # Extract metadata
+        population_id = extract_population_id(key)
+        nin_priority = extract_nin(filename)
+        logger.info(f"Population: {population_id}, NIN priority: {nin_priority}")
 
-        kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
-        log.info(f"Using Knowledge Base ID: {kb_id}")
-
-        final_input_text = DEFAULT_RNG_TEMPLATE.strip() + "\n\n" + \
-            "Here is the user's question:\n" + f"{user_query}"
-
-
-        response = client_bedrock.retrieve_and_generate(
-            input={"text": final_input_text},
-            retrieveAndGenerateConfiguration={
-                "type": "KNOWLEDGE_BASE",
-                "knowledgeBaseConfiguration": {
-                    "knowledgeBaseId": kb_id,
-                    "modelArn": (
-                        "arn:aws:bedrock:us-east-1:653858776174:"
-                        "inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0"
-                    ),
-                    "retrievalConfiguration": {
-                        "vectorSearchConfiguration": {
-                            "overrideSearchType": "HYBRID",
-                            "numberOfResults": 100,
-                            'filter': {
-                                "equals":{
-                                    "key":  "poptype",
-                                    "value": "AMGMT99"
-                                }
-                            }
-                        }
-                    }
+        # Extract text and chunk
+        text = pdf_to_text(bucket, key)
+        documents = []
+        for chunk in chunk_text(text):
+            documents.append({
+                "content": chunk,
+                "metadata": {
+                    'inlineAttributes': [
+                        "population_id": population_id,
+                        "nin_priority": nin_priority,
+                        "source_key": key
+                    ]
+                    
                 }
-            }
+            })
+
+        # Ingest into Bedrock Knowledge Base
+        response = bedrock_client.ingest_knowledge_base_documents(
+            knowledgeBaseId=KB_ID,
+            documents=documents
         )
 
-        answer = response['output']['text']
-        citations = []
-        for cit in response.get('citations', []):
-            for ref in cit.get('retrievedReferences', []):
-                uri = ref.get('location', {}).get('s3Location', {}).get('uri')
-                text = ref.get('content', {}).get('text')
-                if uri and text:
-                    citations.append({'source': uri, 'text': text})
+        job_id = response.get("jobId")
+        logger.info(f"Ingested {len(documents)} chunks, jobId={job_id}")
 
         return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json; charset=utf-8',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
+            "statusCode": 200,
+            "body": json.dumps({
+                "message": f"Ingested {len(documents)} chunks from {filename}",
+                "jobId": job_id
+            })
         }
 
     except Exception as e:
-        log.exception("Error in lambda_handler")
+        logger.error(f"Error processing S3 record: {e}", exc_info=True)
         return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)})
         }
