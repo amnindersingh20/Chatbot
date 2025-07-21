@@ -1,15 +1,114 @@
-'metadata': {
-                'inlineAttributes': [
-                    {
-                        'key': 'string',
-                        'value': {
-                            'booleanValue': True|False,
-                            'numberValue': 123.0,
-                            'stringListValue': [
-                                'string',
-                            ],
-                            'stringValue': 'string',
-                            'type': 'BOOLEAN'|'NUMBER'|'STRING'|'STRING_LIST'
-                        }
-                    },
-                ],
+import os
+import json
+import uuid
+import logging
+import io
+import re
+
+import boto3
+import PyPDF2
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) # Set to INFO for general messages
+
+s3 = boto3.client("s3")
+bedrock = boto3.client("bedrock-agent", region_name=os.environ.get("AWS_REGION","us-east-1"))
+
+KB_ID = os.environ["BEDROCK_KB_ID"]
+DATA_SOURCE_ID = os.environ["DATA_SOURCE_ID"]
+
+CHUNK_SIZE    = int(os.environ.get("CHUNK_SIZE", 1000))
+CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 200))
+
+def extract_population_id(key: str) -> str:
+    parts = key.split("/",2)
+    if len(parts)<3:
+        raise ValueError(f"Invalid S3 key format: {key}")
+    return parts[0]
+
+def extract_nin(filename: str) -> int:
+    name = os.path.splitext(filename)[0]
+    nums = [int(n) for n n re.findall(r"(\d+)", name)]
+    if not nums:
+        raise ValueError(f"No digits in filename: {filename}")
+    return nums[-1]
+
+def pdf_to_text(bucket, key):
+    obj = s3.get_object(Bucket=bucket,Key=key)
+    data = obj["Body"].read()
+    reader = PyPDF2.PdfReader(io.BytesIO(data))
+    return "\n".join(p.extract_text() or "" for p in reader.pages)
+
+def chunk_text(text):
+    start=0
+    L=len(text)
+    while start<L:
+        end=min(L, start+CHUNK_SIZE)
+        yield text[start:end]
+        start += CHUNK_SIZE-CHUNK_OVERLAP
+
+def lambda_handler(event, context):
+    try:
+        rec = event["Records"][0]
+        bucket = rec["s3"]["bucket"]["name"]
+        key = rec["s3"]["object"]["key"]
+        filename = key.split("/")[-1]
+
+        logger.info(f"Processing {bucket}/{key}")
+        population_id = extract_population_id(key)
+        nin = extract_nin(filename)
+
+        full_text = pdf_to_text(bucket,key)
+        docs = []
+        for chunk in chunk_text(full_text):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            doc_id = str(uuid.uuid4())
+            docs.append({
+              "content": {
+                "custom": {
+                  "sourceType": "TEXT",
+                  "customDocumentIdentifier": { "id": doc_id },
+                  "inlineContent": {
+                    "type":"text/plain",
+                    "textContent": { "data": chunk }
+                  }
+                }
+              },
+              "metadata": {
+                "type": "INLINE",
+                "inlineAttributes": [
+                  {"key":"population_id", "value": {"type": "STRING", "stringValue": population_id}},
+                  {"key":"nin_priority",  "value": {"type": "NUMBER", "numberValue": float(nin)}},
+                  {"key":"source_key",    "value": {"type": "STRING", "stringValue": key}}
+                ]
+              },
+              "identifier": {
+                "dataSourceType": "CUSTOM",
+                "custom": {
+                    "id": doc_id
+                }
+              }
+            })
+
+        # --- ADD THESE LOGGING LINES ---
+        logger.info("Attempting to ingest documents. Document count: %d", len(docs))
+        # Log the first document for inspection. Use json.dumps for pretty printing.
+        if docs:
+            logger.info("First document payload:\n%s", json.dumps(docs[0], indent=2))
+        # Optional: Log the boto3 version being used in the runtime
+        logger.info("boto3 version: %s", boto3.__version__)
+        # -------------------------------
+
+        resp = bedrock.ingest_knowledge_base_documents(
+          knowledgeBaseId=KB_ID,
+          dataSourceId=DATA_SOURCE_ID,
+          documents=docs
+        )
+        logger.info("Ingestion job: %s", resp.get("jobId"))
+        return {"statusCode":200, "body":json.dumps(resp)}
+
+    except Exception as e:
+        logger.error("Error during ingestion", exc_info=True) # Use exc_info=True to print traceback
+        return {"statusCode":500, "body":str(e)}
