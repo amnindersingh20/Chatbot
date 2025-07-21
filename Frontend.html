@@ -10,11 +10,11 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# S3 client
+# Initialize S3 client
 s3 = boto3.client("s3")
 
-# Bucket name (set in Lambda env vars)
-BUCKET = os.environ["PDF_BUCKET"]
+# Environment variable: the bucket to process
+BUCKET = os.environ["PDF_BUCKET"]  # e.g. "my-pdf-bucket"
 
 # Regex to grab the last numeric sequence in a filename
 _NUM_RE = re.compile(r"(\d+)(?!.*\d)")
@@ -24,7 +24,9 @@ def extract_population_id(key: str) -> str:
     Return the top-level folder name (population ID) for any key:
       populationX/filename.pdf
     """
-    return key.split("/", 1)[0]
+    pop = key.split("/", 1)[0]
+    logger.info(f"Extracted population_id='{pop}' from key='{key}'")
+    return pop
 
 def extract_nin(filename: str) -> int:
     """
@@ -34,14 +36,18 @@ def extract_nin(filename: str) -> int:
     m = _NUM_RE.search(base)
     if not m:
         raise ValueError(f"No numeric sequence found in '{filename}'")
-    return int(m.group(1))
+    nin = int(m.group(1))
+    logger.info(f"Extracted nin_priority={nin} from filename='{filename}'")
+    return nin
 
 def metadata_key_for(pdf_key: str) -> str:
     """
     Side-car filename: keep the .pdf in the base name, then append .metadata.json
       e.g. populationA/foo.pdf -> populationA/foo.pdf.metadata.json
     """
-    return f"{pdf_key}.metadata.json"
+    meta = f"{pdf_key}.metadata.json"
+    logger.debug(f"Computed metadata key='{meta}' for pdf_key='{pdf_key}'")
+    return meta
 
 def lambda_handler(event, context):
     continuation_token = None
@@ -49,41 +55,39 @@ def lambda_handler(event, context):
     skipped   = 0
 
     while True:
-        # List up to 1000 objects at a time
+        logger.info(f"Listing objects in bucket='{BUCKET}'"
+                    + (f", continuation_token='{continuation_token}'" if continuation_token else ""))
         params = {"Bucket": BUCKET, "MaxKeys": 1000}
         if continuation_token:
             params["ContinuationToken"] = continuation_token
 
         resp = s3.list_objects_v2(**params)
+
         for obj in resp.get("Contents", []):
             key = obj["Key"]
+            # Log every key we encounter
+            logger.info(f"Found object key='{key}'")
+
             if not key.lower().endswith(".pdf"):
-                continue
-
-            meta_key = metadata_key_for(key)
-
-            # Optional: skip existing metadata.json
-            try:
-                s3.head_object(Bucket=BUCKET, Key=meta_key)
+                logger.debug(f"Skipping non-PDF key='{key}'")
                 skipped += 1
                 continue
-            except ClientError as e:
-                if e.response["Error"]["Code"] != "404":
-                    logger.error(f"Error checking {meta_key}: {e}")
-                    skipped += 1
-                    continue
-                # 404 means no metadata yet → proceed
 
-            # Derive population_id and nin_priority
+            # Extract population and nin for logging
             try:
                 population_id = extract_population_id(key)
                 nin = extract_nin(key.split("/")[-1])
             except ValueError as e:
-                logger.warning(f"Skipping {key}: {e}")
+                logger.warning(f"Skipping '{key}': {e}")
                 skipped += 1
                 continue
 
-            # Build metadata JSON under metadataAttributes
+            # Log which “folder” (population) we’re about to process
+            logger.info(f"Processing PDF in population='{population_id}': key='{key}'")
+
+            meta_key = metadata_key_for(key)
+
+            # Overwrite existing metadata each time
             metadata = {
                 "metadataAttributes": {
                     "population_id": population_id,
@@ -91,7 +95,7 @@ def lambda_handler(event, context):
                 }
             }
 
-            # Write (or overwrite) side-car JSON
+            # Write side-car JSON
             try:
                 s3.put_object(
                     Bucket=BUCKET,
@@ -99,17 +103,19 @@ def lambda_handler(event, context):
                     Body=json.dumps(metadata, indent=2).encode("utf-8"),
                     ContentType="application/json"
                 )
-                logger.info(f"Wrote metadata: {meta_key}")
+                logger.info(f"Wrote metadata for key='{key}' → meta_key='{meta_key}'")
                 processed += 1
             except ClientError as e:
-                logger.error(f"Failed to write {meta_key}: {e}")
+                logger.error(f"Failed to write metadata for key='{key}': {e}")
                 skipped += 1
 
-        if not resp.get("IsTruncated"):  
+        if not resp.get("IsTruncated"):
+            logger.info("No more pages to list; exiting loop.")
             break
+
         continuation_token = resp.get("NextContinuationToken")
 
-    logger.info(f"Done. processed={processed}, skipped={skipped}")
+    logger.info(f"Done: processed={processed}, skipped={skipped}")
     return {
         "statusCode": 200,
         "body": json.dumps({"processed": processed, "skipped": skipped})
