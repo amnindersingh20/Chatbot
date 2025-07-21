@@ -28,7 +28,6 @@ $search_results$
 $output_format_instructions$
 """
 
-
 def lambda_handler(event, context):
     try:
         raw_body = event.get('body', {})
@@ -52,7 +51,7 @@ def lambda_handler(event, context):
         final_input_text = DEFAULT_RNG_TEMPLATE.strip() + "\n\n" + \
             "Here is the user's question:\n" + f"{user_query}"
 
-
+        # Retrieve chunks (no NIN filter)
         response = client_bedrock.retrieve_and_generate(
             input={"text": final_input_text},
             retrieveAndGenerateConfiguration={
@@ -66,27 +65,27 @@ def lambda_handler(event, context):
                     "retrievalConfiguration": {
                         "vectorSearchConfiguration": {
                             "overrideSearchType": "HYBRID",
-                            "numberOfResults": 100,
-                            'filter': {
-                                "equals":{
-                                    "key":  "nin_priority",
-                                    "value": 72776
-                                }
-                            }
+                            "numberOfResults": 100
                         }
                     }
                 }
             }
         )
 
-        answer = response['output']['text']
-        citations = []
-        for cit in response.get('citations', []):
-            for ref in cit.get('retrievedReferences', []):
-                uri = ref.get('location', {}).get('s3Location', {}).get('uri')
-                text = ref.get('content', {}).get('text')
+        # Optional: Sort retrieved references by NIN priority (descending)
+        sorted_citations = []
+        for cit in response.get("citations", []):
+            refs = cit.get("retrievedReferences", [])
+            sorted_refs = sorted(
+                refs,
+                key=lambda x: x.get("metadata", {}).get("nin_priority", 0),
+                reverse=True
+            )
+            for ref in sorted_refs:
+                uri = ref.get("location", {}).get("s3Location", {}).get("uri")
+                text = ref.get("content", {}).get("text")
                 if uri and text:
-                    citations.append({'source': uri, 'text': text})
+                    sorted_citations.append({'source': uri, 'text': text})
 
         return {
             'statusCode': 200,
@@ -94,7 +93,10 @@ def lambda_handler(event, context):
                 'Content-Type': 'application/json; charset=utf-8',
                 'Access-Control-Allow-Origin': '*'
             },
-            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
+            'body': json.dumps({
+                'message': response['output']['text'],
+                'citations': sorted_citations
+            }, indent=2)
         }
 
     except Exception as e:
