@@ -1,2 +1,212 @@
-An error occurred (ValidationException) when calling the IngestKnowledgeBaseDocuments operation: 1 validation error detected: Value '[KnowledgeBaseDocument(metadata=DocumentMetadata(type=IN_LINE_ATTRIBUTE, inlineAttributes=[MetadataAttribute(key=*** REDACTED ***, value=MetadataAttributeValue(type=STRING, numberValue=*** REDACTED ***, booleanValue=null, stringValue=*** REDACTED ***, stringListValue=*** REDACTED ***)), MetadataAttribute(key=*** REDACTED ***, value=MetadataAttributeValue(type=NUMBER, numberValue=*** REDACTED ***, booleanValue=null, stringValue=*** REDACTED ***, stringListValue=*** REDACTED ***)), MetadataAttribute(key=*** REDACTED ***, value=MetadataAttributeValue(type=STRING, numberValue=*** REDACTED ***, booleanValue=null, stringValue=*** REDACTED ***, stringListValue=*** REDACTED ***))], s3Location=null), content=DocumentContent(dataSourceType=CUSTOM, custom=CustomContent(customDocumentIdentifier=CustomDocumentIdentifier(id=25cb3f78-0112-43f3-aee0-91a7c044eb7c), sourceType=IN_LINE, s3Location=null, inlineContent=InlineContent(type=TEXT, byteContent=null, textContent=TextContentDoc(data=*** REDACTED ***))), s3=null)),
-at 'documents' failed to satisfy constraint: Member must have length less than or equal to 25"
+import os
+import json
+import uuid
+import logging
+import io
+import re
+import time # Import for time.sleep()
+
+import boto3
+import PyPDF2
+
+# Configure logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# AWS clients
+s3 = boto3.client("s3")
+# Ensure region_name is correctly picked up from environment or defaulted
+bedrock = boto3.client("bedrock-agent", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+
+# Environment variables for Knowledge Base and Data Source IDs
+KB_ID = os.environ["BEDROCK_KB_ID"]
+DATA_SOURCE_ID = os.environ["DATA_SOURCE_ID"]
+
+# Chunking parameters for text
+CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", 1000))
+CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 200))
+
+# Define the batch size for Bedrock ingestion (max 25 documents per API call)
+BEDROCK_INGESTION_BATCH_SIZE = 25
+
+def extract_population_id(key: str) -> str:
+    """
+    Extracts the population ID from the S3 key.
+    Assumes format: population_id/<updates|master>/filename.pdf
+    """
+    parts = key.split("/", 2)
+    if len(parts) < 3:
+        raise ValueError(f"Invalid S3 key format: {key}. Expected at least two '/' separators.")
+    return parts[0]
+
+def extract_nin(filename: str) -> int:
+    """
+    Extracts the last numeric sequence in the filename as the NIN priority.
+    """
+    name = os.path.splitext(filename)[0]
+    nums = [int(n) for n in re.findall(r"(\d+)", name)]
+    if not nums:
+        raise ValueError(f"No numeric sequence found in filename: {filename}")
+    return nums[-1]
+
+def pdf_to_text(bucket: str, key: str) -> str:
+    """
+    Download PDF from S3 and extract text from all pages.
+    Uses an in-memory BytesIO buffer for compatibility.
+    """
+    logger.info(f"Downloading PDF: s3://{bucket}/{key}")
+    obj = s3.get_object(Bucket=bucket, Key=key)
+    data = obj["Body"].read()
+    reader = PyPDF2.PdfReader(io.BytesIO(data))
+    
+    full_text = []
+    for page_num, page in enumerate(reader.pages):
+        text = page.extract_text()
+        if text:
+            full_text.append(text)
+        else:
+            logger.warning(f"No text extracted from page {page_num + 1} of {key}")
+    return "\n".join(full_text)
+
+def chunk_text(text: str):
+    """
+    Generator that yields overlapping text chunks.
+    """
+    start = 0
+    length = len(text)
+    while start < length:
+        end = min(length, start + CHUNK_SIZE)
+        yield text[start:end]
+        start += CHUNK_SIZE - CHUNK_OVERLAP
+
+def lambda_handler(event, context):
+    """
+    S3:ObjectCreated-triggered Lambda.
+    Reads a PDF, chunks it, tags with metadata, and ingests into a Bedrock KB in batches.
+    """
+    try:
+        # Validate event structure for S3 trigger
+        if "Records" not in event or not isinstance(event["Records"], list) or not event["Records"]:
+            raise ValueError("Invalid S3 event structure: 'Records' key missing or empty.")
+
+        rec = event["Records"][0]
+        # Basic validation for S3 event structure within a record
+        if "s3" not in rec or "bucket" not in rec["s3"] or "object" not in rec["s3"]:
+             raise ValueError("Invalid S3 event record structure: Missing 's3', 'bucket', or 'object' details.")
+
+        bucket = rec["s3"]["bucket"]["name"]
+        key = rec["s3"]["object"]["key"]
+        filename = key.split("/")[-1]
+
+        logger.info(f"Processing S3 object: s3://{bucket}/{key}")
+
+        # Extract metadata
+        population_id = extract_population_id(key)
+        nin = extract_nin(filename)
+        logger.info(f"Extracted Metadata: Population ID='{population_id}', NIN='{nin}'")
+
+        # Extract text from PDF and chunk it
+        full_text = pdf_to_text(bucket, key)
+        if not full_text.strip():
+            logger.warning(f"No text found in PDF: s3://{bucket}/{key}. Skipping ingestion.")
+            return {"statusCode": 200, "body": json.dumps({"message": "No text found in PDF."})}
+
+        all_docs = [] # List to hold all generated document chunks
+        for chunk in chunk_text(full_text):
+            chunk = chunk.strip()
+            if not chunk:
+                continue # Skip empty chunks
+            
+            doc_id = str(uuid.uuid4()) # Unique ID for each chunk
+
+            # Construct the document payload for Bedrock ingestion
+            all_docs.append({
+                "content": {
+                    "custom": {
+                        "sourceType": "IN_LINE", # Corrected enum value
+                        "customDocumentIdentifier": { "id": doc_id },
+                        "inlineContent": {
+                            "type":"TEXT", # Corrected enum value
+                            "textContent": { "data": chunk }
+                        }
+                    }
+                },
+                "metadata": {
+                    "type": "IN_LINE_ATTRIBUTE", # Corrected enum value
+                    "inlineAttributes": [
+                        # Ensure only the relevant value type key is present
+                        {"key":"population_id", "value": {"type": "STRING", "stringValue": population_id}},
+                        {"key":"nin_priority",  "value": {"type": "NUMBER", "numberValue": float(nin)}},
+                        {"key":"source_key",    "value": {"type": "STRING", "stringValue": key}}
+                    ]
+                },
+                "identifier": {
+                    "dataSourceType": "CUSTOM",
+                    "custom": {
+                        "id": doc_id # Re-using the chunk's unique ID as its custom identifier
+                    }
+                }
+            })
+
+        logger.info("Total chunks generated for ingestion: %d", len(all_docs))
+        logger.info("boto3 version: %s", boto3.__version__) # Log the boto3 version
+
+        # Log the first document payload for detailed inspection
+        if all_docs:
+            logger.info("First document payload to be sent (formatted JSON):\n%s", 
+                        json.dumps(all_docs[0], indent=2))
+        else:
+            logger.warning("No documents generated for ingestion.")
+            return {"statusCode": 200, "body": json.dumps({"message": "No documents generated."})}
+
+
+        ingestion_job_ids = []
+        # Process and ingest documents in batches
+        for i in range(0, len(all_docs), BEDROCK_INGESTION_BATCH_SIZE):
+            batch_docs = all_docs[i : i + BEDROCK_INGESTION_BATCH_SIZE]
+            
+            logger.info("Initiating ingestion for batch %d (documents %d to %d of %d)", 
+                        (i // BEDROCK_INGESTION_BATCH_SIZE) + 1, 
+                        i + 1, 
+                        min(i + BEDROCK_INGESTION_BATCH_SIZE, len(all_docs)), 
+                        len(all_docs))
+            logger.info("Current batch size: %d", len(batch_docs))
+
+            try:
+                resp = bedrock.ingest_knowledge_base_documents(
+                    knowledgeBaseId=KB_ID,
+                    dataSourceId=DATA_SOURCE_ID,
+                    documents=batch_docs # Send the current batch
+                )
+                ingestion_job_ids.append(resp.get("jobId"))
+                logger.info("Ingestion job created for batch. Job ID: %s", resp.get("jobId"))
+            except Exception as e:
+                logger.error(f"Error ingesting batch starting at index {i}. This batch failed: {e}", exc_info=True)
+                # Re-raise the exception to fail the Lambda if a batch fails, or implement
+                # more sophisticated retry/DLQ logic here if partial success is acceptable.
+                raise e 
+
+            # Introduce a small delay between batches to respect API concurrency limits
+            # Do not sleep after the very last batch
+            if (i + BEDROCK_INGESTION_BATCH_SIZE) < len(all_docs):
+                sleep_duration = 1 # seconds
+                logger.info(f"Sleeping for {sleep_duration} second(s) before next batch...")
+                time.sleep(sleep_duration)
+
+        logger.info("Successfully initiated ingestion for all %d chunks. Total Job IDs: %s", 
+                    len(all_docs), ingestion_job_ids)
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "message": f"Successfully initiated ingestion for {len(all_docs)} chunks from {filename}",
+                "jobIds": ingestion_job_ids
+            })
+        }
+
+    except Exception as e:
+        logger.error(f"Fatal error during Lambda execution: {e}", exc_info=True)
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e), "message": "Failed to process documents."})
+        }
