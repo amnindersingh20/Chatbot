@@ -1,16 +1,15 @@
-[ERROR]	2025-07-21T10:00:09.913Z	ab4c8567-96d2-4e31-9251-dcead3106f73	Error
-Traceback (most recent call last):
-  File "/var/task/lambda_function.py", line 90, in lambda_handler
-    resp = bedrock.ingest_knowledge_base_documents(
-      knowledgeBaseId=KB_ID,
-      dataSourceId=DATA_SOURCE_ID,
-      documents=docs
-    )
-  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 598, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/var/lang/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
-    return func(*args, **kwargs)
-  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 1061, in _make_api_call
-    raise error_class(parsed_response, operation_name)
-botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the IngestKnowledgeBaseDocuments operation: 10 validation errors detected: Value '[KnowledgeBaseDocument(metadata=DocumentMetadata(type=INLINE, inlineAttributes=[MetadataAttribute(key=*** REDACTED ***, value=MetadataAttributeValue(type=STRING, numberValue=*** REDACTED ***, booleanValue=null, stringValue=*** REDACTED ***, stringListValue=*** REDACTED ***)),
+'metadata': {
+                'inlineAttributes': [
+                    {
+                        'key': 'string',
+                        'value': {
+                            'booleanValue': True|False,
+                            'numberValue': 123.0,
+                            'stringListValue': [
+                                'string',
+                            ],
+                            'stringValue': 'string',
+                            'type': 'BOOLEAN'|'NUMBER'|'STRING'|'STRING_LIST'
+                        }
+                    },
+                ],
