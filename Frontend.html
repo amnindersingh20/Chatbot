@@ -1,6 +1,2 @@
-[ERROR]	2025-07-21T10:55:53.344Z	a3d0fc61-cc77-43cb-b659-3a1e800f081d	Error
-Traceback (most recent call last):
-  File "/var/task/lambda_function.py", line 52, in lambda_handler
-    rec = event["Records"][0]
-          ~~~~~^^^^^^^^^^^
-KeyError: 'Records'
+at 'documents' failed to satisfy constraint: Member must have length less than or equal to 25; Value 'INLINE' at 'documents.1.member.metadata.type' failed to satisfy constraint: Member must satisfy enum value set: [IN_LINE_ATTRIBUTE, S3_LOCATION]; Value 'TEXT' at 'documents.1.member.content.custom.sourceType' failed to satisfy constraint: Member must satisfy enum value set: [IN_LINE, S3_LOCATION]; Value 'text/plain' at 'documents.1.member.content.custom.inlineContent.type' failed to satisfy constraint: Member must satisfy enum value set: [BYTE, TEXT]; Value 'INLINE' at 'documents.2.member.metadata.type' failed to satisfy constraint: Member must satisfy enum value set: [IN_LINE_ATTRIBUTE, S3_LOCATION]; Value 'TEXT' at 'documents.2.member.content.custom.sourceType' failed to satisfy constraint: Member must satisfy enum value set: [IN_LINE, S3_LOCATION]; Value 'text/plain' at 'documents.2.member.content.custom.inlineContent.type' failed to satisfy constraint: Member must satisfy enum value set: [BYTE, TEXT]; Value 'INLINE' at 'documents.3.member.metadata.type' failed to satisfy constraint: Member must satisfy enum value set: [IN_LINE_ATTRIBUTE, S3_LOCATION]; Value 'TEXT' at 'documents.3.member.content.custom.sourceType' failed to satisfy constraint: Member must satisfy enum value set: [IN_LINE, S3_LOCATION]; Value 'text/plain' at 'documents.3.member.content.custom.inlineContent.type' failed to satisfy constraint: Member must satisfy enum value set: [BYTE, TEXT]"
+}
