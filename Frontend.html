@@ -1,32 +1,5 @@
-[ERROR]	2025-07-21T08:45:03.940Z	956cd0a7-fc18-4325-bc8b-035762907c8c	Error
+[ERROR] Runtime.UserCodeSyntaxError: Syntax error in module 'lambda_function': invalid syntax. Perhaps you forgot a comma? (lambda_function.py, line 69)
 Traceback (most recent call last):
-  File "/var/task/lambda_function.py", line 89, in lambda_handler
-    resp = bedrock.ingest_knowledge_base_documents(
-      knowledgeBaseId=KB_ID,
-      dataSourceId=DATA_SOURCE_ID,
-      documents=docs
-    )
-  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 598, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/var/lang/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
-    return func(*args, **kwargs)
-  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 1018, in _make_api_call
-    request_dict = self._convert_to_request_dict(
-        api_params=api_params,
-    ...<3 lines>...
-        headers=additional_headers,
-    )
-  File "/var/lang/lib/python3.13/site-packages/botocore/client.py", line 1085, in _convert_to_request_dict
-    request_dict = self._serializer.serialize_to_request(
-        api_params, operation_model
-    )
-  File "/var/lang/lib/python3.13/site-packages/botocore/validate.py", line 381, in serialize_to_request
-    raise ParamValidationError(report=report.generate_report())
-botocore.exceptions.ParamValidationError: Parameter validation failed:
-Unknown parameter in documents[0]: "dataSourceType", must be one of: content, metadata
-Missing required parameter in documents[0].content: "dataSourceType"
-Missing required parameter in documents[0].content.custom: "sourceType"
-Missing required parameter in documents[0].metadata.inlineAttributes[0].value: "type"
-Missing required parameter in documents[0].metadata.inlineAttributes[1].value: "type"
-Missing required parameter in documents[0].metadata.inlineAttributes[2].value: "type"
+  File "/var/task/lambda_function.py" Line 69
+                  "content": {
+INIT_REPORT Init Duration: 110.27 ms	Phase: invoke	Status: error	Error Type: Runtime.UserCodeSyntaxError
