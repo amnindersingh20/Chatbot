@@ -2,6 +2,16 @@ import json
 import boto3
 import logging
 
+# ─── STATIC NIN PRIORITY LIST ─────────────────────────────────────────────────
+# Update this list whenever you want to change which priorities get retrieved
+NIN_PRIORITIES = [
+    72776,
+    12345,
+    99999,
+    # … add or remove values here …
+]
+
+# ─── AWS CLIENT & CONFIG ─────────────────────────────────────────────────────
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
@@ -31,6 +41,7 @@ $output_format_instructions$
 
 def lambda_handler(event, context):
     try:
+        # Parse incoming event body
         raw_body = event.get('body', {})
         body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
 
@@ -39,6 +50,7 @@ def lambda_handler(event, context):
         population_type = params.get('populationType', '')
         available_options = body.get('availableOptions', [])
 
+        # Validate required inputs
         if not user_query or not available_options:
             log.warning("Missing user_query or availableOptions")
             return {
@@ -46,13 +58,29 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'Missing user_query or availableOptions'})
             }
 
+        # Build metadata filter using static list
+        if NIN_PRIORITIES:
+            filter_config = {
+                "or": [
+                    {"equals": {"key": "nin_priority", "value": p}}
+                    for p in NIN_PRIORITIES
+                ]
+            }
+        else:
+            # fallback single-value filter
+            filter_config = {
+                "equals": {"key": "nin_priority", "value": 72776}
+            }
+
+        # Determine which knowledge base to use
         kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
         log.info(f"Using Knowledge Base ID: {kb_id}")
 
+        # Assemble prompt text
         final_input_text = DEFAULT_RNG_TEMPLATE.strip() + "\n\n" + \
             "Here is the user's question:\n" + f"{user_query}"
 
-
+        # Call Bedrock retrieve_and_generate
         response = client_bedrock.retrieve_and_generate(
             input={"text": final_input_text},
             retrieveAndGenerateConfiguration={
@@ -67,18 +95,14 @@ def lambda_handler(event, context):
                         "vectorSearchConfiguration": {
                             "overrideSearchType": "HYBRID",
                             "numberOfResults": 100,
-                            'filter': {
-                                "equals":{
-                                    "key":  "nin_priority",
-                                    "value": 72776
-                                }
-                            }
+                            "filter": filter_config
                         }
                     }
                 }
             }
         )
 
+        # Extract answer and citations
         answer = response['output']['text']
         citations = []
         for cit in response.get('citations', []):
@@ -88,6 +112,7 @@ def lambda_handler(event, context):
                 if uri and text:
                     citations.append({'source': uri, 'text': text})
 
+        # Return structured JSON response
         return {
             'statusCode': 200,
             'headers': {
