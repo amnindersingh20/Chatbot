@@ -2,20 +2,12 @@ import json
 import boto3
 import logging
 
-# ─── STATIC NIN PRIORITY LIST ─────────────────────────────────────────────────
-# Update this list whenever you want to change which priorities get retrieved
-NIN_PRIORITIES = [
-    72776,
-    12345,
-    99999,
-    # … add or remove values here …
-]
-
-# ─── AWS CLIENT & CONFIG ─────────────────────────────────────────────────────
+# ─── AWS CLIENTS & CONFIG ──────────────────────────────────────────────────
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
 client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+client_s3 = boto3.client('s3', region_name='us-east-1')  # for dynamic NIN retrieval from S3
 
 POPULATION_KB_MAP = {
     "AMGMT99": "UOODO24QZG",
@@ -23,6 +15,8 @@ POPULATION_KB_MAP = {
     "MWTIBEWACTIVE": "L9JYLI9PBF"
 }
 DEFAULT_KB_ID = "RIBHZRVAQA"
+S3_BUCKET = "your-nin-bucket-name"      # replace with your bucket name
+S3_NIN_ROOT = "nin/"                    # root folder containing subfolders per population type
 
 DEFAULT_RNG_TEMPLATE = """
 You are a question answering agent. I will provide you with a set of search results.
@@ -39,6 +33,44 @@ $output_format_instructions$
 """
 
 
+def fetch_nin_priorities_from_s3(population_type: str):
+    """
+    Retrieves the NIN_PRIORITIES list by reading all files under the S3 prefix for the given population type.
+    Expects each file to be either a JSON array or a comma-separated list of integers.
+    """
+    nin_set = set()
+    prefix = f"{S3_NIN_ROOT}{population_type}/"
+    try:
+        # List all objects under the population-type-specific prefix
+        paginator = client_s3.get_paginator('list_objects_v2')
+        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                if key.endswith('/'):
+                    continue
+                log.info(f"Reading NIN file for {population_type} from S3: {key}")
+                resp = client_s3.get_object(Bucket=S3_BUCKET, Key=key)
+                raw = resp['Body'].read().decode('utf-8')
+                # Try JSON list first
+                try:
+                    values = json.loads(raw)
+                except json.JSONDecodeError:
+                    values = [x.strip() for x in raw.split(',')]
+                for v in values:
+                    try:
+                        nin_set.add(int(v))
+                    except ValueError:
+                        log.warning(f"Skipping non-integer NIN value: {v} in {key}")
+        nin_list = sorted(nin_set)
+        if not nin_list:
+            log.warning(f"No NIN values found in S3 for {population_type}; using default [72776]")
+            return [72776]
+        return nin_list
+    except Exception as e:
+        log.exception(f"Error fetching NIN priorities from S3 for {population_type}")
+        return [72776]
+
+
 def lambda_handler(event, context):
     try:
         # Parse incoming event body
@@ -48,37 +80,31 @@ def lambda_handler(event, context):
         params = {p['name']: p['value'] for p in body.get('parameters', [])}
         user_query = params.get('condition', '').strip()
         population_type = params.get('populationType', '')
-        available_options = body.get('availableOptions', [])
 
         # Validate required inputs
-        if not user_query or not available_options:
-            log.warning("Missing user_query or availableOptions")
+        if not user_query:
+            log.warning("Missing user_query")
             return {
                 'statusCode': 400,
-                'body': json.dumps({'error': 'Missing user_query or availableOptions'})
+                'body': json.dumps({'error': 'Missing user_query'})
             }
 
-        # Build metadata filter using static list
-        if NIN_PRIORITIES:
-            filter_config = {
-                "orAll": [
-                    {"equals": {"key": "nin_priority", "value": p}}
-                    for p in NIN_PRIORITIES
-                ]
-            }
-        else:
-            # fallback single-value filter
-            filter_config = {
-                "equals": {"key": "nin_priority", "value": 72776}
-            }
+        # Fetch dynamic NIN priorities from S3 based on population type
+        nin_priorities = fetch_nin_priorities_from_s3(population_type)
+        log.info(f"S3-derived NIN priorities for {population_type}: {nin_priorities}")
 
-        # Log filter details
-        log.info(f"Attempting NIN_PRIORITIES: {NIN_PRIORITIES}")
+        # Build metadata filter using dynamic list
+        filter_config = {
+            "in": {
+                "key": "nin_priority",
+                "values": nin_priorities
+            }
+        }
         log.debug(f"Constructed filter_config: {filter_config}")
 
         # Determine which knowledge base to use
         kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
-        log.info(f"Using Knowledge Base ID: {kb_id}")
+        log.info(f"Using Knowledge Base ID for {population_type}: {kb_id}")
 
         # Assemble prompt text
         final_input_text = DEFAULT_RNG_TEMPLATE.strip() + "\n\n" + \
@@ -116,14 +142,13 @@ def lambda_handler(event, context):
                 if uri and text:
                     citations.append({'source': uri, 'text': text})
 
-        # Log citation details and which NINs matched/failed
+        # Log result metrics
         log.info(f"Retrieved {len(citations)} citations")
         sources = [c['source'] for c in citations]
-        log.debug(f"Citation sources: {sources}")
-        matched = {p for p in NIN_PRIORITIES if any(str(p) in src for src in sources)}
-        failed = set(NIN_PRIORITIES) - matched
-        log.info(f"NIN priorities matched: {sorted(matched)}")
-        log.info(f"NIN priorities with no hits: {sorted(failed)}")
+        matched = {p for p in nin_priorities if any(str(p) in src for src in sources)}
+        failed = set(nin_priorities) - matched
+        log.info(f"NIN priorities matched for {population_type}: {sorted(matched)}")
+        log.info(f"NIN priorities with no hits for {population_type}: {sorted(failed)}")
 
         # Return structured JSON response
         return {
