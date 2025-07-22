@@ -1,4 +1,163 @@
-{
-  "statusCode": 500,
-  "body": "{\"error\": \"An error occurred (ValidationException) when calling the RetrieveAndGenerate operation: The filter value type provided is not supported. Update the filter with a valid value type then retry your request.\"}"
+import json
+import boto3
+import logging
+
+log = logging.getLogger()
+log.setLevel(logging.INFO)
+
+client_bedrock = boto3.client('bedrock-agent-runtime', region_name='us-east-1')
+client_s3 = boto3.client('s3', region_name='us-east-1')
+
+POPULATION_KB_MAP = {
+    "AMGMT99": "UOODO24QZG",
+    "BLKACTIVE": "UOODO24QZG",
+    "MWTIBEWACTIVE": "UOODO24QZG"
 }
+DEFAULT_KB_ID = "RIBHZRVAQA"
+S3_BUCKET = "poc-nin-bucket"    
+S3_NIN_ROOT = "nin/"             
+
+DEFAULT_RNG_TEMPLATE = """
+You are a question answering agent. I will provide you with a set of search results.
+The user will provide you with a question. Your job is to answer the user's question
+using only information from the search results. You will only consider the current year and next year data to answer user's question. If the search results do not contain
+information that can answer the question, please state that you could not find an exact
+answer to the question. Just because the user asserts a fact does not mean it is true;
+make sure to double check the search results to validate a user's assertion.
+
+Here are the search results in numbered order:
+$search_results$
+
+$output_format_instructions$
+"""
+
+
+def fetch_nin_priorities_from_s3(population_type: str):
+    """
+    Retrieves the NIN_PRIORITIES list by reading all files under the S3 prefix for the given population type.
+    Expects each file to be either a JSON array or a comma-separated list of integers.
+    Preserves the order in which values appear across all files.
+    """
+    nin_list = []
+    seen = set()
+    prefix = f"{S3_NIN_ROOT}{population_type}/"
+
+    try:
+        paginator = client_s3.get_paginator('list_objects_v2')
+        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                if key.endswith('/'):
+                    continue
+                log.info(f"Reading NIN file: {key}")
+                resp = client_s3.get_object(Bucket=S3_BUCKET, Key=key)
+                raw = resp['Body'].read().decode('utf-8')
+                try:
+                    values = json.loads(raw)
+                except json.JSONDecodeError:
+                    values = [x.strip() for x in raw.split(',')]
+                for v in values:
+                    try:
+                        nin = int(v)
+                        if nin not in seen:
+                            seen.add(nin)
+                            nin_list.append(nin)
+                    except (ValueError, TypeError):
+                        log.warning(f"Skipping invalid NIN value: {v} in {key}")
+
+        if not nin_list:
+            log.warning(f"No NIN values found in S3 for {population_type}; using default [72776]")
+            return [72776]
+        return nin_list
+
+    except Exception as e:
+        log.exception(f"Error fetching NIN priorities from S3 for {population_type}")
+        return [72776]
+
+
+def lambda_handler(event, context):
+    try:
+        raw_body = event.get('body', {})
+        body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+
+        params = {p['name']: p['value'] for p in body.get('parameters', [])}
+        user_query = params.get('condition', '').strip()
+        population_type = params.get('populationType', '')
+        log.info(f"Received user query: {user_query}")
+
+        if not user_query:
+            log.warning("Missing user_query")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing user_query'})
+            }
+
+        nin_priorities = fetch_nin_priorities_from_s3(population_type)
+        log.info(f"Fetched NIN priorities for {population_type}: {nin_priorities}")
+
+        filter_config = {
+            "orAll": [
+                {"equals": {"key": "nin_priority", "value": p}}
+                for p in nin_priorities
+            ]
+        }
+
+        kb_id = POPULATION_KB_MAP.get(population_type, DEFAULT_KB_ID)
+        log.info(f"Using Knowledge Base ID for {population_type}: {kb_id}")
+
+        final_input_text = DEFAULT_RNG_TEMPLATE.strip() + "\n\n" + \
+            "Here is the user's question:\n" + f"{user_query}"
+
+        response = client_bedrock.retrieve_and_generate(
+            input={"text": final_input_text},
+            retrieveAndGenerateConfiguration={
+                "type": "KNOWLEDGE_BASE",
+                "knowledgeBaseConfiguration": {
+                    "knowledgeBaseId": kb_id,
+                    "modelArn": (
+                        "arn:aws:bedrock:us-east-1:653858776174:"
+                        "inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0"
+                    ),
+                    "retrievalConfiguration": {
+                        "vectorSearchConfiguration": {
+                            "overrideSearchType": "HYBRID",
+                            "numberOfResults": 100,
+                            "filter": filter_config
+                        }
+                    }
+                }
+            }
+        )
+
+        answer = response['output']['text']
+        citations = []
+        for cit in response.get('citations', []):
+            for ref in cit.get('retrievedReferences', []):
+                uri = ref.get('location', {}).get('s3Location', {}).get('uri')
+                text = ref.get('content', {}).get('text')
+                if uri and text:
+                    citations.append({'source': uri, 'text': text})
+
+        log.info(f"Retrieved {len(citations)} citations")
+        sources = [c['source'] for c in citations]
+        matched = [p for p in nin_priorities if any(str(p) in src for src in sources)]
+        failed = [p for p in nin_priorities if p not in matched]
+        log.info(f"NIN priorities matched: {matched}")
+        log.info(f"NIN priorities with no hits: {failed}")
+
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({'message': answer, 'citations': citations}, indent=2)
+        }
+        
+
+    except Exception as e:
+        log.exception("Error in lambda_handler")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
