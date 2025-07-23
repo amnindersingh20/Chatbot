@@ -1,69 +1,60 @@
 #!/usr/bin/env python3
 """
-This script compares a pipe-delimited CSV file against a space-delimited TXT file.
-It treats the TXT as composed of blocks: each block starts with a line whose beginning
-is the concatenation of the numeric ID and a string (e.g., "00112233EMPLOYEE").
-If a block's header matches any CSV record's ID + type (first two CSV fields),
-then the entire block—from that header line up to (but not including) the next header—is removed
-from the output and logged verbatim.
-Includes summary counts and normalization of CSV fields.
+This script compares a pipe-delimited CSV file against a space-delimited TXT file,
+but identifies blocks solely by the 8-digit numeric employee ID at the start of each block.
+Any TXT block whose header ID matches one in the CSV will be removed and logged.
+Blocks are delimited by lines beginning with an 8-digit numeric ID.
+Includes summary counts to confirm removals.
 """
 import csv
 import argparse
 import sys
+import re
 
 
-def load_csv_prefixes(csv_path, delimiter="|"):
+def load_csv_ids(csv_path, delimiter="|"):
     """
-    Load the CSV and build a set of header prefixes: concatenation of first two fields (ID + Type)
-    after stripping whitespace.
+    Load the CSV and build a set of 8-digit employee IDs (first CSV field).
     """
-    prefixes = set()
+    ids = set()
     with open(csv_path, newline='', encoding='utf-8') as f:
         reader = csv.reader(f, delimiter=delimiter)
         for row in reader:
-            if len(row) < 2:
+            if not row:
                 continue
-            id_part = row[0].strip()
-            type_part = row[1].strip()
-            prefixes.add(f"{id_part}{type_part}")
-    print(f"Loaded {len(prefixes)} header prefixes from CSV: {csv_path}")
-    return prefixes
+            emp_id = row[0].strip()
+            if re.fullmatch(r"\d{8}", emp_id):
+                ids.add(emp_id)
+    print(f"Loaded {len(ids)} employee IDs from CSV: {csv_path}")
+    return ids
 
 
-def filter_txt_blocks(txt_in, txt_out, removed_log, prefixes):
+def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
     """
-    Read the TXT, detect blocks by header prefixes, and remove blocks matching prefixes.
-    Writes removed blocks to log and writes other lines to output.
+    Read the TXT, detect blocks by 8-digit ID at line start, and remove matching blocks.
+    Writes removed blocks to log and keeps other lines in output.
     """
     in_remove = False
     total_lines = 0
     removed_lines = 0
-    blocks_checked = 0
+    blocks_removed = 0
+
+    id_header_re = re.compile(r"^(?P<id>\d{8})")
 
     with open(txt_in, 'r', encoding='utf-8') as fin, \
          open(txt_out, 'w', encoding='utf-8') as fout, \
          open(removed_log, 'w', encoding='utf-8') as logf:
         for line in fin:
             total_lines += 1
-            stripped = line.lstrip()
-            # detect potential header: starts with digit sequence + letters
-            # take first  combined token of digits+letters
-            # we compare the beginning of stripped line against known prefixes
-            matched_prefix = None
-            for prefix in prefixes:
-                if stripped.startswith(prefix):
-                    matched_prefix = prefix
-                    break
-
-            if matched_prefix is not None:
-                blocks_checked += 1
-                # start or switch block removal state
-                in_remove = True
-            # if this line is a new block header but not in prefixes, turn off removal
-            elif any(stripped.startswith(other) for other in prefixes) == False and stripped[:1].isdigit():
-                # assume new block start that's not in removal list
-                in_remove = False
+            m = id_header_re.match(line.strip())
+            if m:
+                current_id = m.group('id')
+                # Decide block removal state for this new block
+                if current_id in id_set:
+                    in_remove = True
+                    blocks_removed += 1
+                else:
+                    in_remove = False
 
             if in_remove:
                 removed_lines += 1
@@ -72,14 +63,14 @@ def filter_txt_blocks(txt_in, txt_out, removed_log, prefixes):
                 fout.write(line)
 
     print(f"Processed {total_lines} lines from TXT: {txt_in}")
-    print(f"Removed {removed_lines} lines across {blocks_checked} matching blocks (logged to {removed_log})")
+    print(f"Removed {removed_lines} lines across {blocks_removed} blocks (logged to {removed_log})")
     if removed_lines == 0:
-        print("Warning: no lines removed. Check CSV prefixes versus TXT headers.", file=sys.stderr)
+        print("Warning: no lines removed. Check that the TXT headers use 8-digit IDs matching the CSV.", file=sys.stderr)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Filter TXT blocks by CSV prefixes, logging removed blocks."
+        description="Filter TXT blocks by employee ID (first 8 digits), logging removed blocks."
     )
     parser.add_argument('csv_file', help='Path to the pipe-delimited CSV')
     parser.add_argument('txt_file', help='Path to the space-delimited TXT')
@@ -87,8 +78,8 @@ def main():
     parser.add_argument('log_file', help='Path where removed blocks will be logged')
     args = parser.parse_args()
 
-    prefixes = load_csv_prefixes(args.csv_file)
-    filter_txt_blocks(args.txt_file, args.output_txt, args.log_file, prefixes)
+    id_set = load_csv_ids(args.csv_file)
+    filter_txt_by_id(args.txt_file, args.output_txt, args.log_file, id_set)
 
 if __name__ == '__main__':
     main()
