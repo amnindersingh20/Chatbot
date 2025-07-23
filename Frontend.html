@@ -1,49 +1,61 @@
 #!/usr/bin/env python3
 """
-This script compares a pipe-delimited CSV file against a space-delimited TXT file.  
+This script compares a pipe-delimited CSV file against a space-delimited TXT file.
 Lines in the TXT file whose fields match any record in the CSV are removed from the output TXT
-and also written (verbatim) to a log file for audit/comparison purposes.  
+and also written (verbatim) to a log file for audit/comparison purposes.
+Includes normalization (stripping) and summary counts to aid debugging.
 """
 import csv
 import argparse
-
+import sys
 
 def load_csv_keys(csv_path, delimiter="|"):
     """
-    Load a CSV (or any delimited text) into a set of tuple-keys for fast membership testing.
+    Load a CSV (or any delimited text) into a set of normalized tuple-keys.
+    Each field is stripped of surrounding whitespace.
     """
     keys = set()
     with open(csv_path, newline='', encoding='utf-8') as f:
         reader = csv.reader(f, delimiter=delimiter)
         for row in reader:
-            # store tuple of fields for fast lookup
-            keys.add(tuple(row))
+            # Normalize each cell by stripping
+            norm = tuple(cell.strip() for cell in row)
+            keys.add(norm)
+    print(f"Loaded {len(keys)} unique keys from CSV: {csv_path}")
     return keys
 
 
 def filter_txt(txt_in, txt_out, removed_log, csv_keys):
     """
     Read the space-delimited TXT file line-by-line.
-    If its fields-tuple is found in csv_keys, write that line to removed_log;
-    otherwise, write it unchanged to txt_out.
+    If its normalized fields-tuple is found in csv_keys, write that line to removed_log;
+    otherwise, write it unchanged to txt_out. Prints summary counts.
     """
+    total = 0
+    removed = 0
     with open(txt_in, 'r', encoding='utf-8') as fin, \
          open(txt_out, 'w', encoding='utf-8') as fout, \
          open(removed_log, 'w', encoding='utf-8') as logf:
         for line in fin:
+            total += 1
             # Preserve blank lines exactly
             if line.strip() == "":
                 fout.write(line)
                 continue
 
-            # Split on whitespace to match CSV fields
-            fields = line.strip().split()
-            if tuple(fields) in csv_keys:
-                # Write removed line verbatim to log
-                logf.write(line)
+            # Normalize fields for comparison
+            fields = [f.strip() for f in line.strip().split()]
+            key = tuple(fields)
+            if key in csv_keys:
+                removed += 1
+                logf.write(line)  # verbatim
             else:
-                # Write original line to output
                 fout.write(line)
+
+    print(f"Processed {total} lines from TXT: {txt_in}")
+    print(f"Removed {removed} matching lines (logged to {removed_log})")
+    if removed == 0:
+        print("Warning: no lines matched. Verify that CSV and TXT fields align exactly.", file=sys.stderr)
 
 
 def main():
@@ -61,10 +73,6 @@ def main():
 
     # Filter the TXT and log removals
     filter_txt(args.txt_file, args.output_txt, args.log_file, csv_keys)
-
-    print(f"Filtered output written to: {args.output_txt}")
-    print(f"Removed lines logged in:    {args.log_file}")
-
 
 if __name__ == '__main__':
     main()
