@@ -1,4 +1,4 @@
-{
-  "statusCode": 500,
-  "body": "{\"error\": \"Parameter validation failed:\\nInvalid length for parameter retrieveAndGenerateConfiguration.knowledgeBaseConfiguration.retrievalConfiguration.vectorSearchConfiguration.filter.orAll, value: 1, valid min length: 2\"}"
-}
+00112233|EMPLOYEE|John|Doe|9036 Dummy text|dummy|dum|L6L 1W5|00000000|11111111|E|N|Active|Full Time|0101|Administration|Administration - Corporate|||||0000|0.00000|000000.00000|Y|0000.000|000000.000|Y|Backstage|||PRO 1||00.00|ON|4|false|N/A|00000000||false||00000.00000|00000.00000||Coordinator Content Services|Marketing|YNP
+
+
+00112233John                                  doe                                  000dumm text                                                                                        Valley                                  NS B6L 3N5   0000000000000000EN1FH3100SINSRWHS        00000000.000000000000000.00Y0000000.000000000000.00YAOFTEEACTVSUP 3   DEBERT03080.00NS  00005NPEN120250710YN
