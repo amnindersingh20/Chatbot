@@ -1,78 +1,94 @@
 #!/usr/bin/env python3
 """
 This script compares a pipe-delimited CSV file against a space-delimited TXT file.
-Lines in the TXT file whose fields match any record in the CSV are removed from the output TXT
-and also written (verbatim) to a log file for audit/comparison purposes.
-Includes normalization (stripping) and summary counts to aid debugging.
+It treats the TXT as composed of blocks: each block starts with a line whose beginning
+is the concatenation of the numeric ID and a string (e.g., "00112233EMPLOYEE").
+If a block's header matches any CSV record's ID + type (first two CSV fields),
+then the entire block—from that header line up to (but not including) the next header—is removed
+from the output and logged verbatim.
+Includes summary counts and normalization of CSV fields.
 """
 import csv
 import argparse
 import sys
 
-def load_csv_keys(csv_path, delimiter="|"):
+
+def load_csv_prefixes(csv_path, delimiter="|"):
     """
-    Load a CSV (or any delimited text) into a set of normalized tuple-keys.
-    Each field is stripped of surrounding whitespace.
+    Load the CSV and build a set of header prefixes: concatenation of first two fields (ID + Type)
+    after stripping whitespace.
     """
-    keys = set()
+    prefixes = set()
     with open(csv_path, newline='', encoding='utf-8') as f:
         reader = csv.reader(f, delimiter=delimiter)
         for row in reader:
-            # Normalize each cell by stripping
-            norm = tuple(cell.strip() for cell in row)
-            keys.add(norm)
-    print(f"Loaded {len(keys)} unique keys from CSV: {csv_path}")
-    return keys
+            if len(row) < 2:
+                continue
+            id_part = row[0].strip()
+            type_part = row[1].strip()
+            prefixes.add(f"{id_part}{type_part}")
+    print(f"Loaded {len(prefixes)} header prefixes from CSV: {csv_path}")
+    return prefixes
 
 
-def filter_txt(txt_in, txt_out, removed_log, csv_keys):
+def filter_txt_blocks(txt_in, txt_out, removed_log, prefixes):
     """
-    Read the space-delimited TXT file line-by-line.
-    If its normalized fields-tuple is found in csv_keys, write that line to removed_log;
-    otherwise, write it unchanged to txt_out. Prints summary counts.
+    Read the TXT, detect blocks by header prefixes, and remove blocks matching prefixes.
+    Writes removed blocks to log and writes other lines to output.
     """
-    total = 0
-    removed = 0
+    in_remove = False
+    total_lines = 0
+    removed_lines = 0
+    blocks_checked = 0
+
     with open(txt_in, 'r', encoding='utf-8') as fin, \
          open(txt_out, 'w', encoding='utf-8') as fout, \
          open(removed_log, 'w', encoding='utf-8') as logf:
         for line in fin:
-            total += 1
-            # Preserve blank lines exactly
-            if line.strip() == "":
-                fout.write(line)
-                continue
+            total_lines += 1
+            stripped = line.lstrip()
+            # detect potential header: starts with digit sequence + letters
+            # take first  combined token of digits+letters
+            # we compare the beginning of stripped line against known prefixes
+            matched_prefix = None
+            for prefix in prefixes:
+                if stripped.startswith(prefix):
+                    matched_prefix = prefix
+                    break
 
-            # Normalize fields for comparison
-            fields = [f.strip() for f in line.strip().split()]
-            key = tuple(fields)
-            if key in csv_keys:
-                removed += 1
-                logf.write(line)  # verbatim
+            if matched_prefix is not None:
+                blocks_checked += 1
+                # start or switch block removal state
+                in_remove = True
+            # if this line is a new block header but not in prefixes, turn off removal
+            elif any(stripped.startswith(other) for other in prefixes) == False and stripped[:1].isdigit():
+                # assume new block start that's not in removal list
+                in_remove = False
+
+            if in_remove:
+                removed_lines += 1
+                logf.write(line)
             else:
                 fout.write(line)
 
-    print(f"Processed {total} lines from TXT: {txt_in}")
-    print(f"Removed {removed} matching lines (logged to {removed_log})")
-    if removed == 0:
-        print("Warning: no lines matched. Verify that CSV and TXT fields align exactly.", file=sys.stderr)
+    print(f"Processed {total_lines} lines from TXT: {txt_in}")
+    print(f"Removed {removed_lines} lines across {blocks_checked} matching blocks (logged to {removed_log})")
+    if removed_lines == 0:
+        print("Warning: no lines removed. Check CSV prefixes versus TXT headers.", file=sys.stderr)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Filter a TXT by removing lines present in a CSV, logging removed lines."
+        description="Filter TXT blocks by CSV prefixes, logging removed blocks."
     )
-    parser.add_argument('csv_file', help='Path to the pipe-delimited CSV file')
-    parser.add_argument('txt_file', help='Path to the space-delimited TXT file')
+    parser.add_argument('csv_file', help='Path to the pipe-delimited CSV')
+    parser.add_argument('txt_file', help='Path to the space-delimited TXT')
     parser.add_argument('output_txt', help='Path for filtered TXT output')
-    parser.add_argument('log_file', help='Path where removed lines will be logged')
+    parser.add_argument('log_file', help='Path where removed blocks will be logged')
     args = parser.parse_args()
 
-    # Load CSV keys
-    csv_keys = load_csv_keys(args.csv_file)
-
-    # Filter the TXT and log removals
-    filter_txt(args.txt_file, args.output_txt, args.log_file, csv_keys)
+    prefixes = load_csv_prefixes(args.csv_file)
+    filter_txt_blocks(args.txt_file, args.output_txt, args.log_file, prefixes)
 
 if __name__ == '__main__':
     main()
