@@ -74,6 +74,7 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
     Read the CSV, remove rows whose first field matches an ID in id_set.
     Writes removed rows to log and keeps other rows in output.
     Skips a header row if the first field is not an 8-digit ID.
+    Also prints whether the first row is numeric (data) or non-numeric (header).
     """
     total_rows = 0
     removed_rows = 0
@@ -90,7 +91,9 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
         if first_row:
             total_rows += 1
             first_field = first_row[0].strip()
-            if not re.fullmatch(r"\d{8}", first_field):
+            is_numeric = bool(re.fullmatch(r"\d{8}", first_field))
+            print(f"First row first field ('{first_field}') is {'numeric' if is_numeric else 'non-numeric'}.")
+            if not is_numeric:
                 # Treat as header: preserve it
                 writer.writerow(first_row)
             else:
@@ -113,7 +116,7 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
             writer.writerow(row)
 
     print(f"Processed {total_rows} rows from CSV: {csv_in}")
-    print(f"Removed {removed_rows} rows (logged to {removed_log})")
+    print(f"Removed {removeded_rows} rows (logged to {removed_log})")
     if removed_rows == 0:
         print("Warning: no rows removed. Check that the CSV headers or data use 8-digit IDs matching the reference CSV.", file=sys.stderr)
 
