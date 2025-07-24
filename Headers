@@ -1,4 +1,94 @@
-00112233|EMPLOYEE|John|Doe|9036 Dummy text|dummy|dum|L6L 1W5|00000000|11111111|E|N|Active|Full Time|0101|Administration|Administration - Corporate|||||0000|0.00000|000000.00000|Y|0000.000|000000.000|Y|Backstage|||PRO 1||00.00|ON|4|false|N/A|00000000||false||00000.00000|00000.00000||Coordinator Content Services|Marketing|YNP
+import os
 
+def extract_8_digit_numbers(filepath):
+    """
+    Reads a file and extracts all unique 8-digit numeral values.
 
-00112233John                                  doe                                  000dumm text                                                                                        Valley                                  NS B6L 3N5   0000000000000000EN1FH3100SINSRWHS        00000000.000000000000000.00Y0000000.000000000000.00YAOFTEEACTVSUP 3   DEBERT03080.00NS  00005NPEN120250710YN
+    Args:
+        filepath (str): The path to the text file.
+
+    Returns:
+        set: A set of unique 8-digit numeral strings found in the file.
+             Returns an empty set if the file is not found or an error occurs.
+    """
+    numbers = set()
+    try:
+        with open(filepath, 'r') as f:
+            for line in f:
+                # Iterate through words or segments in the line
+                for segment in line.split():
+                    # Check if the segment is exactly 8 digits long and consists only of digits
+                    if len(segment) == 8 and segment.isdigit():
+                        numbers.add(segment)
+    except FileNotFoundError:
+        print(f"Error: File not found at '{filepath}'")
+    except Exception as e:
+        print(f"An error occurred while reading '{filepath}': {e}")
+    return numbers
+
+def compare_files_for_duplicates(file1_path, file2_path):
+    """
+    Compares two text files to find duplicate 8-digit numeral entries.
+
+    Args:
+        file1_path (str): The path to the first text file.
+        file2_path (str): The path to the second text file.
+
+    Returns:
+        set: A set of 8-digit numeral strings that are present in both files.
+    """
+    print(f"Processing '{file1_path}'...")
+    numbers_file1 = extract_8_digit_numbers(file1_path)
+    print(f"Found {len(numbers_file1)} unique 8-digit numbers in '{file1_path}'.")
+
+    print(f"Processing '{file2_path}'...")
+    numbers_file2 = extract_8_digit_numbers(file2_path)
+    print(f"Found {len(numbers_file2)} unique 8-digit numbers in '{file2_path}'.")
+
+    # Find the intersection of the two sets to get common numbers
+    duplicate_entries = numbers_file1.intersection(numbers_file2)
+
+    return duplicate_entries
+
+if __name__ == "__main__":
+    # --- Example Usage ---
+    # Create dummy files for demonstration
+    file1_name = "file1.txt"
+    file2_name = "file2.txt"
+
+    # Clean up any existing dummy files first
+    if os.path.exists(file1_name):
+        os.remove(file1_name)
+    if os.path.exists(file2_name):
+        os.remove(file2_name)
+
+    with open(file1_name, 'w') as f1:
+        f1.write("12345678\n")
+        f1.write("98765432 This is some text.\n")
+        f1.write("00000001\n")
+        f1.write("11112222\n")
+        f1.write("Duplicate: 12345678\n") # Duplicate within file, but sets handle uniqueness
+        f1.write("Not 8 digits: 12345\n")
+        f1.write("Also not 8 digits: abcdefgh\n")
+
+    with open(file2_name, 'w') as f2:
+        f2.write("00000001\n") # This is a duplicate with file1
+        f2.write("55556666\n")
+        f2.write("11112222\n") # This is a duplicate with file1
+        f2.write("Some other number: 99998888\n")
+        f2.write("12345678\n") # This is a duplicate with file1
+
+    print("--- Running file comparison example ---")
+    duplicates = compare_files_for_duplicates(file1_name, file2_name)
+
+    if duplicates:
+        print("\n--- Duplicate 8-digit entries found: ---")
+        for dup in sorted(list(duplicates)):
+            print(dup)
+    else:
+        print("\nNo duplicate 8-digit entries found between the files.")
+
+    # Clean up dummy files after demonstration
+    # os.remove(file1_name)
+    # os.remove(file2_name)
+    # print(f"\nCleaned up dummy files: {file1_name}, {file2_name}")
