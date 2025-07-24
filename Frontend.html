@@ -5,13 +5,17 @@ Removes blocks/rows in the target file whose header/first field matches an ID in
 For TXT: blocks are delimited by lines starting with an 8-digit ID.
 For CSV: rows are removed if the first field matches an ID.
 Removed data is logged to a timestamped file automatically (no CLI param needed).
-Automatically prints reference IDs loaded, checks numeric header, and logs target IDs as processed.
+Automatically prints reference IDs loaded, checks numeric header, logs target IDs as processed,
+and writes both reference and target IDs to separate txt files.
 """
 import csv
 import argparse
 import sys
 import re
 from datetime import datetime
+
+# generate a single timestamp for all output files
+TIMESTAMP = datetime.now().strftime('%Y%m%d_%H%M%S')
 
 
 def load_csv_ids(csv_path, delimiter="|"):
@@ -29,9 +33,9 @@ def load_csv_ids(csv_path, delimiter="|"):
             emp_id = row[0].strip()
             if re.fullmatch(r"\d{8}", emp_id):
                 if emp_id not in ids:
-                    print(f"  -> found ID: {emp_id}")
+                    print(f"  -> found reference ID: {emp_id}")
                 ids.add(emp_id)
-    print(f"Loaded {len(ids)} unique employee IDs from reference CSV.")
+    print(f"Loaded {len(ids)} unique reference IDs.")
     return ids
 
 
@@ -81,9 +85,11 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
     Writes removed rows to log and keeps other rows in output.
     Skips a header row if the first field is not an 8-digit ID.
     Prints each first-field value as it’s encountered.
+    Collects all target IDs (header and data) and writes them to a txt file.
     """
     total_rows = 0
     removed_rows = 0
+    target_ids = []
 
     print(f"Processing target CSV: {csv_in}")
     with open(csv_in, newline='', encoding='utf-8') as fin, \
@@ -100,12 +106,11 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
             first_field = first_row[0].strip()
             is_numeric = bool(re.fullmatch(r"\d{8}", first_field))
             print(f"First row first field ('{first_field}') is {'numeric' if is_numeric else 'non-numeric'}.")
+            target_ids.append(first_field)
             if not is_numeric:
-                # header
                 writer.writerow(first_row)
             else:
-                # data row
-                print(f"  -> target ID: {first_field}")
+                print(f"  -> target ID removed: {first_field}" if first_field in id_set else f"  -> target ID kept: {first_field}")
                 if first_field in id_set:
                     removed_rows += 1
                     log_writer.writerow(first_row)
@@ -118,11 +123,19 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
             if row:
                 field0 = row[0].strip()
                 print(f"  -> target ID: {field0}")
+                target_ids.append(field0)
                 if re.fullmatch(r"\d{8}", field0) and field0 in id_set:
                     removed_rows += 1
                     log_writer.writerow(row)
                     continue
             writer.writerow(row)
+
+    # write target IDs to file
+    target_ids_file = f"target_ids_{TIMESTAMP}.txt"
+    with open(target_ids_file, 'w', encoding='utf-8') as tf:
+        for tid in target_ids:
+            tf.write(tid + '\n')
+    print(f"Wrote all target IDs to: {target_ids_file}")
 
     print(f"Processed {total_rows} rows from CSV: {csv_in}")
     print(f"Removed {removed_rows} rows (logged to {removed_log})")
@@ -142,17 +155,8 @@ def main():
     parser.add_argument('--target_delimiter', default=',', help='Delimiter for the target CSV (default: ",")')
     args = parser.parse_args()
 
-    # generate a timestamped log filename automatically
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    removed_log = f"removed_data_{timestamp}.txt"
+    # generate filenames
+    removed_log = f"removed_data_{TIMESTAMP}.txt"
+    reference_ids_file = f"reference_ids_{TIMESTAMP}.txt"
+
     print(f"Logging removed data to: {removed_log}")
-
-    id_set = load_csv_ids(args.reference_csv, delimiter=args.ref_delimiter)
-    if args.target_type == 'txt':
-        filter_txt_by_id(args.target_file, args.output_file, removed_log, id_set)
-    else:
-        filter_csv_by_id(args.target_file, args.output_file, removed_log,
-                         id_set, delimiter=args.target_delimiter)
-
-if __name__ == '__main__':
-    main()
