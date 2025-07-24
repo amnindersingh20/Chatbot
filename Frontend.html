@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-This script compares a pipe-delimited CSV file against a space-delimited TXT file,
-but identifies blocks solely by the 8-digit numeric employee ID at the start of each block.
-Any TXT block whose header ID matches one in the CSV will be removed and logged.
-Blocks are delimited by lines beginning with an 8-digit numeric ID.
-Includes summary counts to confirm removals.
+Compare a pipe-delimited CSV file of employee IDs against a target file (CSV or TXT).
+Removes blocks/rows in the target file whose header/first field matches an ID in the CSV.
+For TXT: blocks are delimited by lines starting with an 8-digit ID.
+For CSV: rows are removed if the first field matches an ID.
+Removed data is logged to a separate file.
+User specifies which file to filter (csv or txt).
 """
 import csv
 import argparse
 import sys
 import re
-
+import os
 
 def load_csv_ids(csv_path, delimiter="|"):
     """
@@ -27,7 +28,6 @@ def load_csv_ids(csv_path, delimiter="|"):
                 ids.add(emp_id)
     print(f"Loaded {len(ids)} employee IDs from CSV: {csv_path}")
     return ids
-
 
 def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
     """
@@ -67,19 +67,54 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
     if removed_lines == 0:
         print("Warning: no lines removed. Check that the TXT headers use 8-digit IDs matching the CSV.", file=sys.stderr)
 
+def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter="|"):
+    """
+    Read the CSV, remove rows whose first field matches an ID in id_set.
+    Writes removed rows to log and keeps other rows in output.
+    """
+    total_rows = 0
+    removed_rows = 0
+
+    with open(csv_in, newline='', encoding='utf-8') as fin, \
+         open(csv_out, 'w', newline='', encoding='utf-8') as fout, \
+         open(removed_log, 'w', newline='', encoding='utf-8') as logf:
+        reader = csv.reader(fin, delimiter=delimiter)
+        writer = csv.writer(fout, delimiter=delimiter)
+        log_writer = csv.writer(logf, delimiter=delimiter)
+        for row in reader:
+            total_rows += 1
+            if row and re.fullmatch(r"\d{8}", row[0].strip()) and row[0].strip() in id_set:
+                removed_rows += 1
+                log_writer.writerow(row)
+            else:
+                writer.writerow(row)
+
+    print(f"Processed {total_rows} rows from CSV: {csv_in}")
+    print(f"Removed {removed_rows} rows (logged to {removed_log})")
+    if removed_rows == 0:
+        print("Warning: no rows removed. Check that the CSV headers use 8-digit IDs matching the reference CSV.", file=sys.stderr)
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Filter TXT blocks by employee ID (first 8 digits), logging removed blocks."
+        description="Filter blocks/rows by employee ID (first 8 digits), logging removed data."
     )
-    parser.add_argument('csv_file', help='Path to the pipe-delimited CSV')
-    parser.add_argument('txt_file', help='Path to the space-delimited TXT')
-    parser.add_argument('output_txt', help='Path for filtered TXT output')
-    parser.add_argument('log_file', help='Path where removed blocks will be logged')
+    parser.add_argument('reference_csv', help='Path to the pipe-delimited CSV of IDs')
+    parser.add_argument('target_file', help='Path to the target file (CSV or TXT)')
+    parser.add_argument('output_file', help='Path for filtered output')
+    parser.add_argument('log_file', help='Path where removed data will be logged')
+    parser.add_argument('--target_type', choices=['csv', 'txt'], required=True,
+                        help='Type of target file to filter: "csv" or "txt"')
+    parser.add_argument('--delimiter', default='|', help='Delimiter for CSV files (default: "|")')
     args = parser.parse_args()
 
-    id_set = load_csv_ids(args.csv_file)
-    filter_txt_by_id(args.txt_file, args.output_txt, args.log_file, id_set)
+    id_set = load_csv_ids(args.reference_csv, delimiter=args.delimiter)
+    if args.target_type == 'txt':
+        filter_txt_by_id(args.target_file, args.output_file, args.log_file, id_set)
+    elif args.target_type == 'csv':
+        filter_csv_by_id(args.target_file, args.output_file, args.log_file, id_set, delimiter=args.delimiter)
+    else:
+        print("Unknown target type. Use --target_type csv or txt.", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
