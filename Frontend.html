@@ -22,6 +22,7 @@ def load_csv_ids(csv_path, delimiter="|"):
     """
     Load the CSV and build a set of 8-digit employee IDs (first CSV field).
     Also prints each unique ID as it’s read.
+    Returns the set of IDs.
     """
     ids = set()
     print(f"Loading reference IDs from: {csv_path}")
@@ -48,7 +49,6 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
     total_lines = 0
     removed_lines = 0
     blocks_removed = 0
-
     id_header_re = re.compile(r"^(?P<id>\d{8})")
 
     print(f"Processing target TXT: {txt_in}")
@@ -66,13 +66,11 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
                     blocks_removed += 1
                 else:
                     in_remove = False
-
             if in_remove:
                 removed_lines += 1
                 logf.write(line)
             else:
                 fout.write(line)
-
     print(f"Processed {total_lines} lines from TXT: {txt_in}")
     print(f"Removed {removed_lines} lines across {blocks_removed} blocks (logged to {removed_log})")
     if removed_lines == 0:
@@ -101,20 +99,23 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
 
         # Handle optional header row
         first_row = next(reader, None)
-        if first_row:
+        if first_row is not None:
             total_rows += 1
             first_field = first_row[0].strip()
             is_numeric = bool(re.fullmatch(r"\d{8}", first_field))
             print(f"First row first field ('{first_field}') is {'numeric' if is_numeric else 'non-numeric'}.")
             target_ids.append(first_field)
             if not is_numeric:
+                # header row: keep
                 writer.writerow(first_row)
             else:
-                print(f"  -> target ID removed: {first_field}" if first_field in id_set else f"  -> target ID kept: {first_field}")
+                # data row
                 if first_field in id_set:
+                    print(f"  -> target ID removed: {first_field}")
                     removed_rows += 1
                     log_writer.writerow(first_row)
                 else:
+                    print(f"  -> target ID kept: {first_field}")
                     writer.writerow(first_row)
 
         # Process remaining rows
@@ -125,6 +126,7 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
                 print(f"  -> target ID: {field0}")
                 target_ids.append(field0)
                 if re.fullmatch(r"\d{8}", field0) and field0 in id_set:
+                    print(f"     removed")
                     removed_rows += 1
                     log_writer.writerow(row)
                     continue
@@ -159,4 +161,23 @@ def main():
     removed_log = f"removed_data_{TIMESTAMP}.txt"
     reference_ids_file = f"reference_ids_{TIMESTAMP}.txt"
 
-    print(f"Logging removed data to: {removed_log}")
+    # load reference IDs
+    id_set = load_csv_ids(args.reference_csv, delimiter=args.ref_delimiter)
+
+    # write reference IDs to file
+    with open(reference_ids_file, 'w', encoding='utf-8') as rf:
+        for rid in sorted(id_set):
+            rf.write(rid + '\n')
+    print(f"Wrote all reference IDs to: {reference_ids_file}")
+
+    # dispatch based on type
+    if args.target_type == 'txt':
+        print(f"Logging removed data to: {removed_log}")
+        filter_txt_by_id(args.target_file, args.output_file, removed_log, id_set)
+    else:
+        print(f"Logging removed data to: {removed_log}")
+        filter_csv_by_id(args.target_file, args.output_file, removed_log,
+                         id_set, delimiter=args.target_delimiter)
+
+if __name__ == '__main__':
+    main()
