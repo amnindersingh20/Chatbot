@@ -21,16 +21,17 @@ def load_csv_ids(csv_path, delimiter="|"):
     with open(csv_path, newline='', encoding='utf-8') as f:
         reader = csv.reader(f, delimiter=delimiter)
         for row in reader:
-            if row:
-                emp_id = row[0].strip()
-                if re.fullmatch(r"\d{8}", emp_id):
-                    ids.add(emp_id)
+            if not row:
+                continue
+            emp_id = row[0].strip()
+            if re.fullmatch(r"\d{8}", emp_id):
+                ids.add(emp_id)
     return ids
 
 
 def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
     id_header_re = re.compile(r"^(?P<id>\d{8})")
-    header_ids = []
+    all_ids = []
     in_remove = False
 
     with open(txt_in, 'r', encoding='utf-8') as fin, \
@@ -40,23 +41,24 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
             m = id_header_re.match(line)
             if m:
                 cid = m.group('id')
-                header_ids.append(cid)
+                all_ids.append(cid)
                 in_remove = cid in id_set
             if in_remove:
                 logf.write(line)
             else:
                 fout.write(line)
 
+    # write target IDS
     tgt_ids_file = os.path.join(os.path.dirname(txt_out), f"TARGET_IDS_{timestamp}.txt")
     with open(tgt_ids_file, 'w', encoding='utf-8') as tf:
         tf.write(f"# Source: {txt_in}\n")
-        for hid in header_ids:
-            tf.write(hid + '\n')
+        for tid in all_ids:
+            tf.write(tid + '\n')
     return tgt_ids_file
 
 
 def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
-    data_ids = []
+    all_ids = []
 
     with open(csv_in, newline='', encoding='utf-8') as fin, \
          open(csv_out, 'w', newline='', encoding='utf-8') as fout, \
@@ -70,17 +72,18 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
                 continue
             fid = row[0].strip()
             if re.fullmatch(r"\d{8}", fid):
-                data_ids.append(fid)
+                all_ids.append(fid)
                 if fid in id_set:
                     log_writer.writerow(row)
                     continue
             writer.writerow(row)
 
+    # write target IDS
     tgt_ids_file = os.path.join(os.path.dirname(csv_out), f"TARGET_IDS_{timestamp}.txt")
     with open(tgt_ids_file, 'w', encoding='utf-8') as tf:
         tf.write(f"# Source: {csv_in}\n")
-        for did in data_ids:
-            tf.write(did + '\n')
+        for tid in all_ids:
+            tf.write(tid + '\n')
     return tgt_ids_file
 
 
