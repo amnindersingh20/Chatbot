@@ -6,7 +6,7 @@ For TXT: blocks are delimited by lines starting with an 8-digit ID.
 For CSV: rows are removed if the first field matches an ID.
 Removed data is logged to a timestamped file automatically (no CLI param needed).
 Automatically prints reference IDs loaded, checks numeric header, logs target IDs as processed,
-and writes both reference and target IDs to separate txt files for both CSV and TXT modes.
+and writes both reference and target IDs to separate txt files (including source filenames).
 """
 import csv
 import argparse
@@ -66,6 +66,7 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
     # write target IDs for TXT
     target_ids_file = f"target_ids_{timestamp}.txt"
     with open(target_ids_file, 'w', encoding='utf-8') as tf:
+        tf.write(f"# Source file: {txt_in}\n")
         for tid in all_ids:
             tf.write(tid + '\n')
     print(f"Wrote all target IDs to: {target_ids_file}")
@@ -119,6 +120,7 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
     # write target IDs for CSV
     target_ids_file = f"target_ids_{timestamp}.txt"
     with open(target_ids_file, 'w', encoding='utf-8') as tf:
+        tf.write(f"# Source file: {csv_in}\n")
         for tid in target_ids:
             tf.write(tid + '\n')
     print(f"Wrote all target IDs to: {target_ids_file}")
@@ -144,10 +146,12 @@ def main():
     removed_log = f"removed_data_{timestamp}.txt"
     reference_ids_file = f"reference_ids_{timestamp}.txt"
 
+    # load reference IDs
     id_set = load_csv_ids(args.reference_csv, delimiter=args.ref_delimiter)
 
     # write reference IDs to file
     with open(reference_ids_file, 'w', encoding='utf-8') as rf:
+        rf.write(f"# Source file: {args.reference_csv}\n")
         for rid in sorted(id_set):
             rf.write(rid + '\n')
     print(f"Wrote all reference IDs to: {reference_ids_file}")
