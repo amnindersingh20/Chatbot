@@ -40,7 +40,6 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
             m = id_header_re.match(line)
             if m:
                 cid = m.group('id')
-                # record every valid header ID
                 header_ids.append(cid)
                 in_remove = cid in id_set
             if in_remove:
@@ -48,7 +47,6 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
             else:
                 fout.write(line)
 
-    # write only numeric header IDs
     tgt_ids_file = os.path.join(os.path.dirname(txt_out), f"target_ids_{timestamp}.txt")
     with open(tgt_ids_file, 'w', encoding='utf-8') as tf:
         tf.write(f"# Source: {txt_in}\n")
@@ -71,17 +69,13 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
             if not row:
                 continue
             fid = row[0].strip()
-            # collect numeric IDs only
             if re.fullmatch(r"\d{8}", fid):
                 data_ids.append(fid)
-                # if in reference, log removal
                 if fid in id_set:
                     log_writer.writerow(row)
                     continue
-            # write all others (header or non-matching data)
             writer.writerow(row)
 
-    # write only numeric data IDs
     tgt_ids_file = os.path.join(os.path.dirname(csv_out), f"target_ids_{timestamp}.txt")
     with open(tgt_ids_file, 'w', encoding='utf-8') as tf:
         tf.write(f"# Source: {csv_in}\n")
@@ -101,18 +95,15 @@ def write_reference_ids(ref_path, out_dir, id_set):
 
 def run_processing(ref_csv, target_file, out_dir, target_type, ref_delim, tgt_delim):
     try:
-        # load and write reference IDs
         ids = load_csv_ids(ref_csv, ref_delim)
         ref_ids_file = write_reference_ids(ref_csv, out_dir, ids)
 
-        # prepare filenames
         removed_log = os.path.join(out_dir, f"removed_data_{timestamp}.txt")
         base = os.path.basename(target_file)
         name, _ = os.path.splitext(base)
         ext = 'txt' if target_type == 'txt' else 'csv'
         out_fname = os.path.join(out_dir, f"{name}_{timestamp}.{ext}")
 
-        # filter and write target IDs
         if target_type == 'txt':
             tgt_ids_file = filter_txt_by_id(target_file, out_fname, removed_log, ids)
         else:
@@ -142,28 +133,24 @@ def build_gui():
     ttk.Label(frm, text="Reference CSV:").grid(row=0, column=0, sticky='E', **padding)
     ref_entry = ttk.Entry(frm, width=40)
     ref_entry.grid(row=0, column=1, **padding)
-    ttk.Button(frm, text="Browse…", command=lambda: ref_entry.delete(0, tk.END) or ref_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV','*.csv')])))
-    .grid(row=0, column=2, **padding)
+    ttk.Button(frm, text="Browse…", command=lambda: ref_entry.delete(0, tk.END) or ref_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV','*.csv')]))).grid(row=0, column=2, **padding)
 
     # Target file picker
     ttk.Label(frm, text="Target File:").grid(row=1, column=0, sticky='E', **padding)
     tgt_entry = ttk.Entry(frm, width=40)
     tgt_entry.grid(row=1, column=1, **padding)
-    ttk.Button(frm, text="Browse…", command=lambda: tgt_entry.delete(0, tk.END) or tgt_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV/TXT','*.csv;*.txt')])))
-    .grid(row=1, column=2, **padding)
+    ttk.Button(frm, text="Browse…", command=lambda: tgt_entry.delete(0, tk.END) or tgt_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV/TXT','*.csv;*.txt')]))).grid(row=1, column=2, **padding)
 
     # Output folder picker
     ttk.Label(frm, text="Output Folder:").grid(row=2, column=0, sticky='E', **padding)
     out_entry = ttk.Entry(frm, width=40)
     out_entry.grid(row=2, column=1, **padding)
-    ttk.Button(frm, text="Browse…", command=lambda: out_entry.delete(0, tk.END) or out_entry.insert(0, filedialog.askdirectory())))
-    .grid(row=2, column=2, **padding)
+    ttk.Button(frm, text="Browse…", command=lambda: out_entry.delete(0, tk.END) or out_entry.insert(0, filedialog.askdirectory()))).grid(row=2, column=2, **padding)
 
     # Target type combobox
     ttk.Label(frm, text="Target Type:").grid(row=3, column=0, sticky='E', **padding)
     tgt_type = tk.StringVar(value='csv')
-    ttk.Combobox(frm, textvariable=tgt_type, values=['csv','txt'], width=5, state='readonly')
-    .grid(row=3, column=1, **padding)
+    ttk.Combobox(frm, textvariable=tgt_type, values=['csv','txt'], width=5, state='readonly').grid(row=3, column=1, **padding)
 
     # Delimiter entries
     ttk.Label(frm, text="Ref Delimiter:").grid(row=4, column=0, sticky='E', **padding)
@@ -179,8 +166,7 @@ def build_gui():
     # Run button
     ttk.Button(frm, text="Run", command=lambda: run_processing(
         ref_entry.get(), tgt_entry.get(), out_entry.get(), tgt_type.get(), ref_delim.get(), tgt_delim.get()
-    ))
-    .grid(row=6, column=0, columnspan=3, pady=10)
+    )).grid(row=6, column=0, columnspan=3, pady=10)
 
     root.mainloop()
 
