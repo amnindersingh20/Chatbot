@@ -1,175 +1,141 @@
 #!/usr/bin/env python3
 """
-Compare a pipe-delimited CSV file of employee IDs against a target file (CSV or TXT).
-Removes blocks/rows in the target file whose header/first field matches an ID in the CSV.
-For TXT: blocks are delimited by lines starting with an 8-digit ID.
-For CSV: rows are removed if the first field matches an ID.
-Removed data is logged to a timestamped file automatically (no CLI param needed).
-Automatically prints reference IDs loaded, checks numeric header, logs target IDs as processed,
-and writes both reference and target IDs to separate txt files (including source filenames).
+Simple GUI to filter a target file (CSV or TXT) by employee IDs from a reference CSV.
+Presents file pickers for reference CSV and target file, a folder chooser for output,
+options for target type and delimiters, and a Run button.
 """
 import csv
-import argparse
 import sys
 import re
+import os
+import tkinter as tk
+from tkinter import filedialog, messagebox
 from datetime import datetime
 
-# generate a single timestamp for all output files
-timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+# generate a single timestamp
+TIMESTAMP = datetime.now().strftime('%Y%m%d_%H%M%S')
 
 
 def load_csv_ids(csv_path, delimiter="|"):
     ids = set()
-    print(f"Loading reference IDs from: {csv_path}")
     with open(csv_path, newline='', encoding='utf-8') as f:
         reader = csv.reader(f, delimiter=delimiter)
         for row in reader:
-            if not row:
-                continue
+            if not row: continue
             emp_id = row[0].strip()
             if re.fullmatch(r"\d{8}", emp_id):
                 ids.add(emp_id)
-    print(f"Loaded {len(ids)} unique reference IDs.")
     return ids
 
 
 def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
-    print(f"Processing target TXT: {txt_in}")
     id_header_re = re.compile(r"^(?P<id>\d{8})")
     all_ids = []
     in_remove = False
-    total_lines = 0
-    removed_lines = 0
-    blocks_removed = 0
-
     with open(txt_in, 'r', encoding='utf-8') as fin, \
          open(txt_out, 'w', encoding='utf-8') as fout, \
          open(removed_log, 'w', encoding='utf-8') as logf:
         for line in fin:
-            total_lines += 1
             m = id_header_re.match(line.strip())
             if m:
-                current_id = m.group('id')
-                all_ids.append(current_id)
-                print(f"  -> TXT block ID: {current_id}")
-                if current_id in id_set:
-                    in_remove = True
-                    blocks_removed += 1
-                else:
-                    in_remove = False
+                cid = m.group('id'); all_ids.append(cid)
+                in_remove = (cid in id_set)
             if in_remove:
-                removed_lines += 1
                 logf.write(line)
             else:
                 fout.write(line)
-
-    # write target IDs for TXT
-    target_ids_file = f"target_ids_{timestamp}.txt"
-    with open(target_ids_file, 'w', encoding='utf-8') as tf:
-        tf.write(f"# Source file: {txt_in}\n")
-        for tid in all_ids:
-            tf.write(tid + '\n')
-    print(f"Wrote all target IDs to: {target_ids_file}")
-
-    print(f"Processed {total_lines} lines from TXT: {txt_in}")
-    print(f"Removed {removed_lines} lines across {blocks_removed} blocks (logged to {removed_log})")
-    if removed_lines == 0:
-        print("Warning: no lines removed. Check that the TXT headers use 8-digit IDs matching the reference CSV.", file=sys.stderr)
+    # write IDs
+    tgt_ids = os.path.join(os.path.dirname(txt_out), f"target_ids_{TIMESTAMP}.txt")
+    with open(tgt_ids, 'w', encoding='utf-8') as tf:
+        tf.write(f"# Source: {txt_in}\n")
+        tf.writelines(id + '\n' for id in all_ids)
 
 
 def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
-    print(f"Processing target CSV: {csv_in}")
-    total_rows = 0
-    removed_rows = 0
     target_ids = []
-
     with open(csv_in, newline='', encoding='utf-8') as fin, \
          open(csv_out, 'w', newline='', encoding='utf-8') as fout, \
          open(removed_log, 'w', newline='', encoding='utf-8') as logf:
         reader = csv.reader(fin, delimiter=delimiter)
         writer = csv.writer(fout, delimiter=delimiter)
         log_writer = csv.writer(logf, delimiter=delimiter)
-
-        first_row = next(reader, None)
-        if first_row is not None:
-            total_rows += 1
-            first_field = first_row[0].strip()
-            target_ids.append(first_field)
-            is_numeric = bool(re.fullmatch(r"\d{8}", first_field))
-            print(f"First row first field ('{first_field}') is {'numeric' if is_numeric else 'non-numeric'}.")
-            if not is_numeric:
-                writer.writerow(first_row)
-            else:
-                if first_field in id_set:
-                    removed_rows += 1
-                    log_writer.writerow(first_row)
-                else:
-                    writer.writerow(first_row)
-
+        first = next(reader, None)
+        if first:
+            fid = first[0].strip(); target_ids.append(fid)
+            if not re.fullmatch(r"\d{8}", fid): writer.writerow(first)
+            elif fid not in id_set: writer.writerow(first)
+            else: log_writer.writerow(first)
         for row in reader:
-            total_rows += 1
-            if row:
-                field0 = row[0].strip()
-                target_ids.append(field0)
-                if re.fullmatch(r"\d{8}", field0) and field0 in id_set:
-                    removed_rows += 1
-                    log_writer.writerow(row)
-                    continue
-            writer.writerow(row)
-
-    # write target IDs for CSV
-    target_ids_file = f"target_ids_{timestamp}.txt"
-    with open(target_ids_file, 'w', encoding='utf-8') as tf:
-        tf.write(f"# Source file: {csv_in}\n")
-        for tid in target_ids:
-            tf.write(tid + '\n')
-    print(f"Wrote all target IDs to: {target_ids_file}")
-
-    print(f"Processed {total_rows} rows from CSV: {csv_in}")
-    print(f"Removed {removed_rows} rows (logged to {removed_log})")
-    if removed_rows == 0:
-        print("Warning: no rows removed. Check that the CSV headers or data use 8-digit IDs matching the reference CSV.", file=sys.stderr)
+            if not row: continue
+            fid = row[0].strip(); target_ids.append(fid)
+            if re.fullmatch(r"\d{8}", fid) and fid in id_set:
+                log_writer.writerow(row)
+            else:
+                writer.writerow(row)
+    tgt_ids = os.path.join(os.path.dirname(csv_out), f"target_ids_{TIMESTAMP}.txt")
+    with open(tgt_ids, 'w', encoding='utf-8') as tf:
+        tf.write(f"# Source: {csv_in}\n")
+        tf.writelines(id + '\n' for id in target_ids)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Filter blocks/rows by employee ID (first 8 digits), logging removed data.")
-    parser.add_argument('reference_csv', help='Path to the pipe-delimited CSV of IDs')
-    parser.add_argument('target_file', help='Path to the target file (CSV or TXT)')
-    parser.add_argument('output_file', help='Path for filtered output')
-    parser.add_argument('--target_type', choices=['csv', 'txt'], required=True,
-                        help='Type of target file to filter: "csv" or "txt"')
-    parser.add_argument('--ref_delimiter', default='|', help='Delimiter for the reference CSV (default: "|")')
-    parser.add_argument('--target_delimiter', default=',', help='Delimiter for the target CSV (default: ",")')
-    args = parser.parse_args()
+def write_reference_ids(ref_path, out_dir, id_set):
+    ref_ids = os.path.join(out_dir, f"reference_ids_{TIMESTAMP}.txt")
+    with open(ref_ids, 'w', encoding='utf-8') as rf:
+        rf.write(f"# Source: {ref_path}\n")
+        rf.writelines(id + '\n' for id in sorted(id_set))
+    return ref_ids
 
-    removed_log = f"removed_data_{timestamp}.txt"
-    reference_ids_file = f"reference_ids_{timestamp}.txt"
 
-    # load reference IDs
-    id_set = load_csv_ids(args.reference_csv, delimiter=args.ref_delimiter)
+def run_processing(ref_csv, target_file, out_dir, target_type, ref_delim, tgt_delim):
+    try:
+        ids = load_csv_ids(ref_csv, delimiter=ref_delim)
+        ref_ids_file = write_reference_ids(ref_csv, out_dir, ids)
+        removed_log = os.path.join(out_dir, f"removed_data_{TIMESTAMP}.txt")
+        out_fname = os.path.join(out_dir, os.path.basename(target_file))
+        if target_type == 'txt':
+            out_fname = os.path.splitext(out_fname)[0] + '.txt'
+            filter_txt_by_id(target_file, out_fname, removed_log, ids)
+        else:
+            out_fname = os.path.splitext(out_fname)[0] + '.csv'
+            filter_csv_by_id(target_file, out_fname, removed_log, ids, delimiter=tgt_delim)
+        messagebox.showinfo("Success", f"Processed and saved:\n{out_fname}\n{removed_log}\n{ref_ids_file}")
+    except Exception as e:
+        messagebox.showerror("Error", str(e))
 
-    # write reference IDs to file
-    with open(reference_ids_file, 'w', encoding='utf-8') as rf:
-        rf.write(f"# Source file: {args.reference_csv}\n")
-        for rid in sorted(id_set):
-            rf.write(rid + '\n')
-    print(f"Wrote all reference IDs to: {reference_ids_file}")
 
-    # enforce .txt extension for TXT output
-    output_path = args.output_file
-    if args.target_type == 'txt':
-        if not output_path.lower().endswith('.txt'):
-            new_out = output_path.rsplit('.', 1)[0] + '.txt'
-            print(f"Warning: changing output file extension to .txt -> {new_out}")
-            output_path = new_out
+def build_gui():
+    root = tk.Tk()
+    root.title("Employee ID Filter")
+    frm = tk.Frame(root, padx=10, pady=10)
+    frm.pack()
+    # Reference CSV picker
+    tk.Label(frm, text="Reference CSV:").grid(row=0, column=0, sticky='e')
+    ref_entry = tk.Entry(frm, width=40)
+    ref_entry.grid(row=0, column=1)
+    tk.Button(frm, text="Browse...", command=lambda: ref_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV','*.csv')])))
+    # Target file picker
+    tk.Label(frm, text="Target File:").grid(row=1, column=0, sticky='e')
+    tgt_entry = tk.Entry(frm, width=40)
+    tgt_entry.grid(row=1, column=1)
+    tk.Button(frm, text="Browse...", command=lambda: tgt_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV/TXT','*.csv;*.txt')])))
+    # Output folder picker
+    tk.Label(frm, text="Output Folder:").grid(row=2, column=0, sticky='e')
+    out_entry = tk.Entry(frm, width=40)
+    out_entry.grid(row=2, column=1)
+    tk.Button(frm, text="Browse...", command=lambda: out_entry.insert(0, filedialog.askdirectory()))
+    # Options: target type and delimiters
+    tk.Label(frm, text="Target Type:").grid(row=3, column=0, sticky='e')
+    tgt_type = tk.StringVar(value='csv')
+    tk.OptionMenu(frm, tgt_type, 'csv','txt').grid(row=3, column=1, sticky='w')
+    tk.Label(frm, text="Ref Delimiter:").grid(row=4, column=0, sticky='e')
+    ref_delim = tk.Entry(frm, width=5); ref_delim.insert(0, '|'); ref_delim.grid(row=4, column=1, sticky='w')
+    tk.Label(frm, text="Target Delimiter:").grid(row=5, column=0, sticky='e')
+    tgt_delim = tk.Entry(frm, width=5); tgt_delim.insert(0, ','); tgt_delim.grid(row=5, column=1, sticky='w')
+    # Run button
+    tk.Button(frm, text="Run", command=lambda: run_processing(
+        ref_entry.get(), tgt_entry.get(), out_entry.get(), tgt_type.get(), ref_delim.get(), tgt_delim.get() ), bg='lightgreen').grid(row=6, column=0, columnspan=2, pady=10)
+    root.mainloop()
 
-    print(f"Logging removed data to: {removed_log}")
-    if args.target_type == 'txt':
-        filter_txt_by_id(args.target_file, output_path, removed_log, id_set)
-    else:
-        filter_csv_by_id(args.target_file, output_path, removed_log,
-                         id_set, delimiter=args.target_delimiter)
 
 if __name__ == '__main__':
-    main()
+    build_gui()
