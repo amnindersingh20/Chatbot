@@ -47,12 +47,13 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
             else:
                 fout.write(line)
 
-    # write target IDs
+    # write target IDs (only valid 8-digit IDs)
     tgt_ids_file = os.path.join(os.path.dirname(txt_out), f"target_ids_{timestamp}.txt")
     with open(tgt_ids_file, 'w', encoding='utf-8') as tf:
         tf.write(f"# Source: {txt_in}\n")
         for tid in all_ids:
-            tf.write(tid + '\n')
+            if re.fullmatch(r"\d{8}", tid):
+                tf.write(tid + '\n')
     return tgt_ids_file
 
 
@@ -64,24 +65,29 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
         reader = csv.reader(fin, delimiter=delimiter)
         writer = csv.writer(fout, delimiter=delimiter)
         log_writer = csv.writer(logf, delimiter=delimiter)
+
         first = next(reader, None)
         if first:
             fid = first[0].strip()
-            target_ids.append(fid)
-            if not re.fullmatch(r"\d{8}", fid) or fid not in id_set:
+            if re.fullmatch(r"\d{8}", fid):
+                target_ids.append(fid)
+            if not (re.fullmatch(r"\d{8}", fid) and fid in id_set):
                 writer.writerow(first)
             else:
                 log_writer.writerow(first)
+
         for row in reader:
             if not row:
                 continue
             fid = row[0].strip()
-            target_ids.append(fid)
+            if re.fullmatch(r"\d{8}", fid):
+                target_ids.append(fid)
             if re.fullmatch(r"\d{8}", fid) and fid in id_set:
                 log_writer.writerow(row)
             else:
                 writer.writerow(row)
 
+    # write target IDs
     tgt_ids_file = os.path.join(os.path.dirname(csv_out), f"target_ids_{timestamp}.txt")
     with open(tgt_ids_file, 'w', encoding='utf-8') as tf:
         tf.write(f"# Source: {csv_in}\n")
@@ -107,12 +113,13 @@ def run_processing(ref_csv, target_file, out_dir, target_type, ref_delim, tgt_de
         base = os.path.basename(target_file)
         name, _ = os.path.splitext(base)
         ext = 'txt' if target_type == 'txt' else 'csv'
-        # append timestamp to avoid overwrite
         out_fname = os.path.join(out_dir, f"{name}_{timestamp}.{ext}")
+
         if target_type == 'txt':
             tgt_ids_file = filter_txt_by_id(target_file, out_fname, removed_log, ids)
         else:
             tgt_ids_file = filter_csv_by_id(target_file, out_fname, removed_log, ids, tgt_delim)
+
         messagebox.showinfo(
             "Success",
             f"Files created in {out_dir}:\n"
