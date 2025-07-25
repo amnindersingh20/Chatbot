@@ -32,19 +32,25 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
     id_header_re = re.compile(r"^(?P<id>\d{8})")
     all_ids = []
     in_remove = False
+    total_lines = 0
+    removed_lines = 0
+
     with open(txt_in, 'r', encoding='utf-8') as fin, \
          open(txt_out, 'w', encoding='utf-8') as fout, \
          open(removed_log, 'w', encoding='utf-8') as logf:
         for line in fin:
+            total_lines += 1
             m = id_header_re.match(line)
             if m:
                 cid = m.group('id')
                 all_ids.append(cid)
                 in_remove = (cid in id_set)
             if in_remove:
+                removed_lines += 1
                 logf.write(line)
             else:
                 fout.write(line)
+
     # write target IDs
     tgt_ids = os.path.join(os.path.dirname(txt_out), f"target_ids_{timestamp}.txt")
     with open(tgt_ids, 'w', encoding='utf-8') as tf:
@@ -58,22 +64,25 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
     target_ids = []
     total_rows = 0
     removed_rows = 0
+    
     with open(csv_in, newline='', encoding='utf-8') as fin, \
          open(csv_out, 'w', newline='', encoding='utf-8') as fout, \
          open(removed_log, 'w', newline='', encoding='utf-8') as logf:
         reader = csv.reader(fin, delimiter=delimiter)
         writer = csv.writer(fout, delimiter=delimiter)
         log_writer = csv.writer(logf, delimiter=delimiter)
-        # handle header or first row
+        
         first = next(reader, None)
-        if first:
+        if first is not None:
             total_rows += 1
             fid = first[0].strip()
             target_ids.append(fid)
             if not re.fullmatch(r"\d{8}", fid) or fid not in id_set:
                 writer.writerow(first)
             else:
-                log_writer.writerow(first); removed_rows += 1
+                log_writer.writerow(first)
+                removed_rows += 1
+        
         for row in reader:
             total_rows += 1
             if not row:
@@ -85,6 +94,8 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
                 removed_rows += 1
             else:
                 writer.writerow(row)
+
+    # write target IDs
     tgt_ids = os.path.join(os.path.dirname(csv_out), f"target_ids_{timestamp}.txt")
     with open(tgt_ids, 'w', encoding='utf-8') as tf:
         tf.write(f"# Source: {csv_in}\n")
@@ -94,12 +105,12 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
 
 
 def write_reference_ids(ref_path, out_dir, id_set):
-    ref_ids = os.path.join(out_dir, f"reference_ids_{timestamp}.txt")
-    with open(ref_ids, 'w', encoding='utf-8') as rf:
+    ref_ids_file = os.path.join(out_dir, f"reference_ids_{timestamp}.txt")
+    with open(ref_ids_file, 'w', encoding='utf-8') as rf:
         rf.write(f"# Source: {ref_path}\n")
         for eid in sorted(id_set):
             rf.write(eid + '\n')
-    return ref_ids
+    return ref_ids_file
 
 
 def run_processing(ref_csv, target_file, out_dir, target_type, ref_delim, tgt_delim):
@@ -108,67 +119,72 @@ def run_processing(ref_csv, target_file, out_dir, target_type, ref_delim, tgt_de
         ref_ids_file = write_reference_ids(ref_csv, out_dir, ids)
         removed_log = os.path.join(out_dir, f"removed_data_{timestamp}.txt")
         base = os.path.basename(target_file)
-        name, ext = os.path.splitext(base)
-        out_fname = os.path.join(out_dir, f"{name}.{ 'txt' if target_type=='txt' else 'csv' }")
+        name, _ = os.path.splitext(base)
+        ext = 'txt' if target_type == 'txt' else 'csv'
+        out_fname = os.path.join(out_dir, f"{name}.{ext}")
+
         if target_type == 'txt':
             tgt_ids_file = filter_txt_by_id(target_file, out_fname, removed_log, ids)
         else:
             tgt_ids_file = filter_csv_by_id(target_file, out_fname, removed_log, ids, tgt_delim)
+
         messagebox.showinfo(
             "Success",
             f"Files created in {out_dir}:\n"
-            f"• Filtered: {out_fname}\n"
-            f"• Removed log: {removed_log}\n"
+            f"• Filtered Output: {out_fname}\n"
+            f"• Removed Log: {removed_log}\n"
             f"• Reference IDs: {ref_ids_file}\n"
-            f"• Target IDs: {tgt_ids_file}" )
+            f"• Target IDs: {tgt_ids_file}"
+        )
     except Exception as e:
-        messagebox.showerror("Error", f"{e}")
+        messagebox.showerror("Error", str(e))
 
 
 def build_gui():
     root = tk.Tk()
     root.title("Employee ID Filter Tool")
     root.resizable(False, False)
-    padd = {'padx': 5, 'pady': 5}
+    padding = {'padx': 5, 'pady': 5}
 
-    frm = ttk.Frame(root, padding=10)
-    frm.grid()
+    frm = ttk.Frame(root)
+    frm.grid(padx=10, pady=10)
 
-    # Reference CSV picker
-    ttk.Label(frm, text="Reference CSV:").grid(row=0, column=0, sticky='E', **padd)
+    # Reference CSV
+    ttk.Label(frm, text="Reference CSV:").grid(row=0, column=0, sticky='E', **padding)
     ref_entry = ttk.Entry(frm, width=40)
-    ref_entry.grid(row=0, column=1, **padd)
-    ttk.Button(frm, text="Browse…", command=lambda: ref_entry.delete(0, 'end') or ref_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV','*.csv')])) )
-    .grid(row=0, column=2, **padd)
+    ref_entry.grid(row=0, column=1, **padding)
+    ttk.Button(frm, text="Browse…", command=lambda: ref_entry.delete(0, tk.END) or ref_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV','*.csv')])))
+    ttk.Button(frm, text="Browse…").grid(row=0, column=2, **padding)
 
-    # Target file picker
-    ttk.Label(frm, text="Target File:").grid(row=1, column=0, sticky='E', **padd)
+    # Target File
+    ttk.Label(frm, text="Target File:").grid(row=1, column=0, sticky='E', **padding)
     tgt_entry = ttk.Entry(frm, width=40)
-    tgt_entry.grid(row=1, column=1, **padd)
-    ttk.Button(frm, text="Browse…", command=lambda: tgt_entry.delete(0, 'end') or tgt_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV/TXT','*.csv;*.txt')])) )
-    .grid(row=1, column=2, **padd)
+    tgt_entry.grid(row=1, column=1, **padding)
+    ttk.Button(frm, text="Browse…", command=lambda: tgt_entry.delete(0, tk.END) or tgt_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV/TXT','*.csv;*.txt')])))
+    ttk.Button(frm, text="Browse…").grid(row=1, column=2, **padding)
 
-    # Output folder picker
-    ttk.Label(frm, text="Output Folder:").grid(row=2, column=0, sticky='E', **padd)
+    # Output Folder
+    ttk.Label(frm, text="Output Folder:").grid(row=2, column=0, sticky='E', **padding)
     out_entry = ttk.Entry(frm, width=40)
-    out_entry.grid(row=2, column=1, **padd)
-    ttk.Button(frm, text="Browse…", command=lambda: out_entry.delete(0, 'end') or out_entry.insert(0, filedialog.askdirectory()))
-    .grid(row=2, column=2, **padd)
+    out_entry.grid(row=2, column=1, **padding)
+    ttk.Button(frm, text="Browse…", command=lambda: out_entry.delete(0, tk.END) or out_entry.insert(0, filedialog.askdirectory()))
+    ttk.Button(frm, text="Browse…").grid(row=2, column=2, **padding)
 
-    # Options
-    ttk.Label(frm, text="Target Type:").grid(row=3, column=0, sticky='E', **padd)
+    # Target Type
+    ttk.Label(frm, text="Target Type:").grid(row=3, column=0, sticky='E', **padding)
     tgt_type = tk.StringVar(value='csv')
-    ttk.Combobox(frm, textvariable=tgt_type, values=['csv','txt'], width=5, state='readonly').grid(row=3, column=1, sticky='W', **padd)
+    ttk.Combobox(frm, textvariable=tgt_type, values=['csv','txt'], width=5, state='readonly').grid(row=3, column=1, sticky='W', **padding)
 
-    ttk.Label(frm, text="Ref Delimiter:").grid(row=4, column=0, sticky='E', **padd)
+    # Delimiters
+    ttk.Label(frm, text="Ref Delimiter:").grid(row=4, column=0, sticky='E', **padding)
     ref_delim = ttk.Entry(frm, width=5); ref_delim.insert(0, '|')
-    ref_delim.grid(row=4, column=1, sticky='W', **padd)
+    ref_delim.grid(row=4, column=1, sticky='W', **padding)
 
-    ttk.Label(frm, text="Target Delimiter:").grid(row=5, column=0, sticky='E', **padd)
+    ttk.Label(frm, text="Target Delimiter:").grid(row=5, column=0, sticky='E', **padding)
     tgt_delim = ttk.Entry(frm, width=5); tgt_delim.insert(0, ',')
-    tgt_delim.grid(row=5, column=1, sticky='W', **padd)
+    tgt_delim.grid(row=5, column=1, sticky='W', **padding)
 
-    # Run button
+    # Run Button
     run_btn = ttk.Button(frm, text="Run", command=lambda: run_processing(
         ref_entry.get(), tgt_entry.get(), out_entry.get(), tgt_type.get(), ref_delim.get(), tgt_delim.get()
     ))
