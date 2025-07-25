@@ -152,11 +152,19 @@ def main():
             rf.write(rid + '\n')
     print(f"Wrote all reference IDs to: {reference_ids_file}")
 
+    # enforce .txt extension for TXT output
+    output_path = args.output_file
+    if args.target_type == 'txt':
+        if not output_path.lower().endswith('.txt'):
+            new_out = output_path.rsplit('.', 1)[0] + '.txt'
+            print(f"Warning: changing output file extension to .txt -> {new_out}")
+            output_path = new_out
+
     print(f"Logging removed data to: {removed_log}")
     if args.target_type == 'txt':
-        filter_txt_by_id(args.target_file, args.output_file, removed_log, id_set)
+        filter_txt_by_id(args.target_file, output_path, removed_log, id_set)
     else:
-        filter_csv_by_id(args.target_file, args.output_file, removed_log,
+        filter_csv_by_id(args.target_file, output_path, removed_log,
                          id_set, delimiter=args.target_delimiter)
 
 if __name__ == '__main__':
