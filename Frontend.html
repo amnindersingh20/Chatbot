@@ -44,7 +44,7 @@ def filter_txt_by_id(txt_in, txt_out, removed_log, id_set):
             if m:
                 cid = m.group('id')
                 all_ids.append(cid)
-                in_remove = (cid in id_set)
+                in_remove = cid in id_set
             if in_remove:
                 removed_lines += 1
                 logf.write(line)
@@ -64,14 +64,14 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
     target_ids = []
     total_rows = 0
     removed_rows = 0
-    
+
     with open(csv_in, newline='', encoding='utf-8') as fin, \
          open(csv_out, 'w', newline='', encoding='utf-8') as fout, \
          open(removed_log, 'w', newline='', encoding='utf-8') as logf:
         reader = csv.reader(fin, delimiter=delimiter)
         writer = csv.writer(fout, delimiter=delimiter)
         log_writer = csv.writer(logf, delimiter=delimiter)
-        
+
         first = next(reader, None)
         if first is not None:
             total_rows += 1
@@ -82,7 +82,7 @@ def filter_csv_by_id(csv_in, csv_out, removed_log, id_set, delimiter=","):
             else:
                 log_writer.writerow(first)
                 removed_rows += 1
-        
+
         for row in reader:
             total_rows += 1
             if not row:
@@ -153,22 +153,19 @@ def build_gui():
     ttk.Label(frm, text="Reference CSV:").grid(row=0, column=0, sticky='E', **padding)
     ref_entry = ttk.Entry(frm, width=40)
     ref_entry.grid(row=0, column=1, **padding)
-    ttk.Button(frm, text="Browse…", command=lambda: ref_entry.delete(0, tk.END) or ref_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV','*.csv')])))
-    ttk.Button(frm, text="Browse…").grid(row=0, column=2, **padding)
+    ttk.Button(frm, text="Browse…", command=lambda: ref_entry.delete(0, tk.END) or ref_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV','*.csv')]))).grid(row=0, column=2, **padding)
 
     # Target File
     ttk.Label(frm, text="Target File:").grid(row=1, column=0, sticky='E', **padding)
     tgt_entry = ttk.Entry(frm, width=40)
     tgt_entry.grid(row=1, column=1, **padding)
-    ttk.Button(frm, text="Browse…", command=lambda: tgt_entry.delete(0, tk.END) or tgt_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV/TXT','*.csv;*.txt')])))
-    ttk.Button(frm, text="Browse…").grid(row=1, column=2, **padding)
+    ttk.Button(frm, text="Browse…", command=lambda: tgt_entry.delete(0, tk.END) or tgt_entry.insert(0, filedialog.askopenfilename(filetypes=[('CSV/TXT','*.csv;*.txt')]))).grid(row=1, column=2, **padding)
 
     # Output Folder
     ttk.Label(frm, text="Output Folder:").grid(row=2, column=0, sticky='E', **padding)
     out_entry = ttk.Entry(frm, width=40)
     out_entry.grid(row=2, column=1, **padding)
-    ttk.Button(frm, text="Browse…", command=lambda: out_entry.delete(0, tk.END) or out_entry.insert(0, filedialog.askdirectory()))
-    ttk.Button(frm, text="Browse…").grid(row=2, column=2, **padding)
+    ttk.Button(frm, text="Browse…", command=lambda: out_entry.delete(0, tk.END) or out_entry.insert(0, filedialog.askdirectory()))).grid(row=2, column=2, **padding)
 
     # Target Type
     ttk.Label(frm, text="Target Type:").grid(row=3, column=0, sticky='E', **padding)
@@ -177,18 +174,19 @@ def build_gui():
 
     # Delimiters
     ttk.Label(frm, text="Ref Delimiter:").grid(row=4, column=0, sticky='E', **padding)
-    ref_delim = ttk.Entry(frm, width=5); ref_delim.insert(0, '|')
+    ref_delim = ttk.Entry(frm, width=5)
+    ref_delim.insert(0, '|')
     ref_delim.grid(row=4, column=1, sticky='W', **padding)
 
     ttk.Label(frm, text="Target Delimiter:").grid(row=5, column=0, sticky='E', **padding)
-    tgt_delim = ttk.Entry(frm, width=5); tgt_delim.insert(0, ',')
+    tgt_delim = ttk.Entry(frm, width=5)
+    tgt_delim.insert(0, ',')
     tgt_delim.grid(row=5, column=1, sticky='W', **padding)
 
     # Run Button
-    run_btn = ttk.Button(frm, text="Run", command=lambda: run_processing(
+    ttk.Button(frm, text="Run", command=lambda: run_processing(
         ref_entry.get(), tgt_entry.get(), out_entry.get(), tgt_type.get(), ref_delim.get(), tgt_delim.get()
-    ))
-    run_btn.grid(row=6, column=0, columnspan=3, pady=10)
+    )).grid(row=6, column=0, columnspan=3, pady=10)
 
     root.mainloop()
 
