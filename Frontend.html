@@ -1,58 +1,180 @@
 #!/usr/bin/env python3
 """
-Compare two text files each containing one 8-digit employee ID per line,
-and write out the duplicate IDs found in both files.
-Usage:
-    python compare_ids.py reference_ids_YYYYMMDD_HHMMSS.txt target_ids_YYYYMMDD_HHMMSS.txt
+Employee ID Filter & Duplicate Finder
 
-Outputs:
-  - duplicates_YYYYMMDD_HHMMSS.txt : each line is an ID present in both inputs
-  - also prints summary to stdout
+Provides a Tkinter GUI with two tabs:
+ 1. **Filter**: filter a target CSV/TXT by reference IDs and generate logs & ID dumps.
+ 2. **Compare**: compare two ID text files and output duplicates.
+
+All outputs include timestamps to avoid overwrites.
 """
+import csv
+import re
+import os
 import sys
-import argparse
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
 from datetime import datetime
 
 
-def load_ids(path):
+def timestamp():
+    return datetime.now().strftime('%Y%m%d_%H%M%S')
+
+# --- Filtering Logic ---
+def load_csv_ids(path, delim):
     ids = set()
-    with open(path, 'r', encoding='utf-8') as f:
-        for line in f:
-            id_str = line.strip()
-            if id_str:
-                ids.add(id_str)
+    with open(path, newline='', encoding='utf-8') as f:
+        for row in csv.reader(f, delimiter=delim):
+            if row and re.fullmatch(r"\d{8}", row[0].strip()):
+                ids.add(row[0].strip())
     return ids
 
+def filter_csv(path_in, path_out, log_out, id_set, delim, ts):
+    total, removed = 0, 0
+    tgt_ids = []
+    with open(path_in, newline='', encoding='utf-8') as fin, \
+         open(path_out, 'w', newline='', encoding='utf-8') as fout, \
+         open(log_out, 'w', newline='', encoding='utf-8') as logf:
+        rdr = csv.reader(fin, delimiter=delim)
+        wtr = csv.writer(fout, delimiter=delim)
+        logw = csv.writer(logf, delimiter=delim)
+        first = next(rdr, None)
+        if first:
+            total += 1; fid = first[0].strip(); tgt_ids.append(fid)
+            if not re.fullmatch(r"\d{8}", fid) or fid not in id_set:
+                wtr.writerow(first)
+            else:
+                removed += 1; logw.writerow(first)
+        for row in rdr:
+            total += 1
+            if not row: continue
+            fid = row[0].strip(); tgt_ids.append(fid)
+            if re.fullmatch(r"\d{8}", fid) and fid in id_set:
+                removed += 1; logw.writerow(row)
+            else:
+                wtr.writerow(row)
+    tgt_file = os.path.join(os.path.dirname(path_out), f"TARGET_IDS_{ts}.txt")
+    with open(tgt_file, 'w', encoding='utf-8') as tf:
+        tf.write(f"# Source: {path_in}\n")
+        for i in tgt_ids: tf.write(i+'\n')
+    return tgt_file, total, removed
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Find duplicate IDs between two files"
-    )
-    parser.add_argument('ref_file', help='Path to reference IDs text file')
-    parser.add_argument('target_file', help='Path to target IDs text file')
-    args = parser.parse_args()
+def filter_txt(path_in, path_out, log_out, id_set, ts):
+    total, removed = 0, 0
+    tgt_ids = []
+    pat = re.compile(r"^(?P<id>\d{8})")
+    with open(path_in, 'r', encoding='utf-8') as fin, \
+         open(path_out, 'w', encoding='utf-8') as fout, \
+         open(log_out, 'w', encoding='utf-8') as logf:
+        for line in fin:
+            total += 1; m = pat.match(line)
+            if m:
+                fid = m.group('id'); tgt_ids.append(fid)
+                if fid in id_set:
+                    removed += 1; logf.write(line); continue
+            fout.write(line)
+    tgt_file = os.path.join(os.path.dirname(path_out), f"TARGET_IDS_{ts}.txt")
+    with open(tgt_file, 'w', encoding='utf-8') as tf:
+        tf.write(f"# Source: {path_in}\n")
+        for i in tgt_ids: tf.write(i+'\n')
+    return tgt_file, total, removed
 
-    # Load
-    print(f"Loading reference IDs from: {args.ref_file}")
-    ref_ids = load_ids(args.ref_file)
-    print(f"Loaded {len(ref_ids)} unique reference IDs.")
+# --- Duplicate Finder Logic ---
+def load_ids(path):
+    s = set()
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            l = line.strip()
+            if l and not l.startswith('#'):
+                s.add(l)
+    return s
 
-    print(f"Loading target IDs from:    {args.target_file}")
-    target_ids = load_ids(args.target_file)
-    print(f"Loaded {len(target_ids)} unique target IDs.")
+def find_duplicates(ref_path, tgt_path, out_dir):
+    ref_ids = load_ids(ref_path)
+    tgt_ids = load_ids(tgt_path)
+    dup = sorted(ref_ids & tgt_ids)
+    ts = timestamp()
+    dup_file = os.path.join(out_dir, f"duplicates_{ts}.txt")
+    with open(dup_file, 'w', encoding='utf-8') as f:
+        for d in dup: f.write(d+'\n')
+    return dup_file, len(ref_ids), len(tgt_ids), len(dup)
 
-    # Intersection
-    duplicates = sorted(ref_ids & target_ids)
-    print(f"Found {len(duplicates)} duplicate IDs.")
+# --- GUI Construction ---
+def build_gui():
+    root = tk.Tk(); root.title('Employee ID Toolkit')
+    root.resizable(False, False)
+    notebook = ttk.Notebook(root); notebook.pack(padx=10, pady=10)
 
-    # Output
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    dup_file = f"duplicates_{timestamp}.txt"
-    with open(dup_file, 'w', encoding='utf-8') as out:
-        for eid in duplicates:
-            out.write(eid + '\n')
+    # Tab 1: Filter
+    frm1 = ttk.Frame(notebook); notebook.add(frm1, text='Filter')
+    pad = {'padx':5,'pady':5}
+    # Reference CSV
+    ttk.Label(frm1, text='Reference CSV:').grid(row=0,column=0,**pad)
+    ref_e=ttk.Entry(frm1, width=40); ref_e.grid(row=0,column=1,**pad)
+    ttk.Button(frm1, text='Browse', command=lambda: ref_e.insert(0, filedialog.askopenfilename(filetypes=[('CSV','*.csv')] )) ).grid(row=0,column=2,**pad)
+    # Target File
+    ttk.Label(frm1, text='Target File:').grid(row=1,column=0,**pad)
+    tgt_e=ttk.Entry(frm1, width=40); tgt_e.grid(row=1,column=1,**pad)
+    ttk.Button(frm1, text='Browse', command=lambda: tgt_e.insert(0, filedialog.askopenfilename(filetypes=[('CSV/TXT','*.csv;*.txt')])) ).grid(row=1,column=2,**pad)
+    # Output Folder
+    ttk.Label(frm1, text='Output Folder:').grid(row=2,column=0,**pad)
+    out_e=ttk.Entry(frm1, width=40); out_e.grid(row=2,column=1,**pad)
+    ttk.Button(frm1, text='Browse', command=lambda: out_e.insert(0, filedialog.askdirectory()) ).grid(row=2,column=2,**pad)
+    # Options
+    ttk.Label(frm1, text='Type:').grid(row=3,column=0,**pad)
+    tv1=tk.StringVar(value='csv')
+    ttk.Combobox(frm1,textvariable=tv1,values=['csv','txt'],width=5,state='readonly').grid(row=3,column=1,**pad)
+    ttk.Label(frm1, text='Ref Delim:').grid(row=4,column=0,**pad)
+    rd=ttk.Entry(frm1,width=5); rd.insert(0,'|'); rd.grid(row=4,column=1,sticky='W',**pad)
+    ttk.Label(frm1, text='Tgt Delim:').grid(row=5,column=0,**pad)
+    td=ttk.Entry(frm1,width=5); td.insert(0,','); td.grid(row=5,column=1,sticky='W',**pad)
+    ttk.Button(frm1, text='Run', command=lambda:
+        run_filter(ref_e.get(), tgt_e.get(), out_e.get(), tv1.get(), rd.get(), td.get())
+    ).grid(row=6,column=0,columnspan=3,pady=10)
 
-    print(f"Wrote duplicates to: {dup_file}")
+    # Tab 2: Compare
+    frm2 = ttk.Frame(notebook); notebook.add(frm2, text='Compare')
+    # Ref IDs
+    ttk.Label(frm2, text='Ref IDs File:').grid(row=0,column=0,**pad)
+    r2_e=ttk.Entry(frm2, width=40); r2_e.grid(row=0,column=1,**pad)
+    ttk.Button(frm2, text='Browse', command=lambda: r2_e.insert(0, filedialog.askopenfilename(filetypes=[('TXT','*.txt')])) ).grid(row=0,column=2,**pad)
+    # Target IDs
+    ttk.Label(frm2, text='Tgt IDs File:').grid(row=1,column=0,**pad)
+    t2_e=ttk.Entry(frm2, width=40); t2_e.grid(row=1,column=1,**pad)
+    ttk.Button(frm2, text='Browse', command=lambda: t2_e.insert(0, filedialog.askopenfilename(filetypes=[('TXT','*.txt')])) ).grid(row=1,column=2,**pad)
+    # Output Folder
+    ttk.Label(frm2, text='Output Folder:').grid(row=2,column=0,**pad)
+    o2_e=ttk.Entry(frm2, width=40); o2_e.grid(row=2,column=1,**pad)
+    ttk.Button(frm2, text='Browse', command=lambda: o2_e.insert(0, filedialog.askdirectory()) ).grid(row=2,column=2,**pad)
+    # Run compare
+    ttk.Button(frm2, text='Find Duplicates', command=lambda:
+        run_compare(r2_e.get(), t2_e.get(), o2_e.get())
+    ).grid(row=3,column=0,columnspan=3,pady=10)
 
-if __name__ == '__main__':
-    main()
+    root.mainloop()
+
+# --- Action Handlers ---
+def run_filter(ref, tgt, outdir, typ, rdel, tdel):
+    ts = timestamp()
+    ids = load_csv_ids(ref, rdel)
+    ref_file = os.path.join(outdir, f"REFERENCE_IDS_{ts}.txt")
+    with open(ref_file,'w',encoding='utf-8') as rf:
+        rf.write(f"# Source: {ref}\n")
+        for i in sorted(ids): rf.write(i+'\n')
+    logf = os.path.join(outdir, f"removed_data_{ts}.txt")
+    name, _ = os.path.splitext(os.path.basename(tgt))
+    fout = os.path.join(outdir, f"{name}_{ts}.{ 'txt' if typ=='txt' else 'csv'}")
+    if typ=='csv':
+        tgt_file, tot, rem = filter_csv(tgt,fout,logf,ids,tdel,ts)
+    else:
+        tgt_file, tot, rem = filter_txt(tgt,fout,logf,ids,ts)
+    messagebox.showinfo('Filter Done', \
+        f"Filtered: {fout}\nLog: {logf}\nRef IDs: {ref_file}\nTgt IDs: {tgt_file}\nProcessed {tot}, removed {rem}.")
+
+def run_compare(rf, tf, outdir):
+    dup_file, rc, tc, dc = find_duplicates(rf, tf, outdir)
+    messagebox.showinfo('Compare Done', \
+        f"Ref IDs: {rc}\nTgt IDs: {tc}\nDuplicates: {dc}\nOutput: {dup_file}")
+
+if __name__=='__main__':
+    build_gui()
