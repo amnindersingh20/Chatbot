@@ -1,123 +1,440 @@
-import json
-import logging
 import os
+import json
+import re
+import logging
 
 import boto3
 from botocore.exceptions import ClientError
 
-OTHER_LAMBDA_NAME = os.environ.get("OTHER_LAMBDA_NAME", "Poc_bot_lambda2")
-REGION_NAME      = os.environ.get("AWS_REGION", "us-east-1")
-MODEL_ID         = os.environ.get(
-    "BEDROCK_MODEL_ID",
-    "anthropic.claude-3-5-sonnet-20240620-v1:0"
-)
-
+# Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-bedrock       = boto3.client("bedrock-runtime", region_name=REGION_NAME)
-lambda_client = boto3.client("lambda",          region_name=REGION_NAME)
+# Initialize S3 client
+s3 = boto3.client("s3")
 
+# Environment variable: the bucket to process
+BUCKET = os.environ["PDF_BUCKET"]  # e.g. "my-pdf-bucket"
+
+# Regex to grab the last numeric sequence in a filename
+_NUM_RE = re.compile(r"(\d+)(?!.*\d)")
+
+def extract_population_id(key: str) -> str:
+    """
+    Return the top-level folder name (population ID) for any key:
+      populationX/filename.pdf
+    """
+    pop = key.split("/", 1)[0]
+    logger.info(f"Extracted population_id='{pop}' from key='{key}'")
+    return pop
+
+def extract_nin(filename: str) -> int:
+    """
+    Return the last numeric sequence in a filename as NIN.
+    """
+    base = os.path.splitext(filename)[0]
+    m = _NUM_RE.search(base)
+    if not m:
+        raise ValueError(f"No numeric sequence found in '{filename}'")
+    nin = int(m.group(1))
+    logger.info(f"Extracted nin_priority={nin} from filename='{filename}'")
+    return nin
+
+def metadata_key_for(pdf_key: str) -> str:
+    """
+    Side-car filename: keep the .pdf in the base name, then append .metadata.json
+      e.g. populationA/foo.pdf -> populationA/foo.pdf.metadata.json
+    """
+    meta = f"{pdf_key}.metadata.json"
+    logger.debug(f"Computed metadata key='{meta}' for pdf_key='{pdf_key}'")
+    return meta
 
 def lambda_handler(event, context):
-    # 1) Log raw event
-    logger.info("Raw event: %s", json.dumps(event))
+    continuation_token = None
+    processed = 0
+    skipped   = 0
 
-    # 2) Unwrap body if present (API Gateway style). If it's a JSON string, parse it.
-    body = event.get("body", event)
-    if isinstance(body, str):
-        try:
-            body = json.loads(body)
-        except json.JSONDecodeError:
-            logger.warning("Event.body was a string but not valid JSON; using empty dict")
-            body = {}
+    while True:
+        logger.info(f"Listing objects in bucket='{BUCKET}'"
+                    + (f", continuation_token='{continuation_token}'" if continuation_token else ""))
+        params = {"Bucket": BUCKET, "MaxKeys": 1000}
+        if continuation_token:
+            params["ContinuationToken"] = continuation_token
 
-    # 3) Pull out parameters list (or empty list if missing)
-    parameters = body.get("parameters", [])
-    logger.info("Parameters payload: %s", json.dumps(parameters))
+        resp = s3.list_objects_v2(**params)
 
-    # 4) Find the 'condition' parameter
-    condition_param = next(
-        (p for p in parameters if p.get("name") == "condition"),
-        None
-    )
+        for obj in resp.get("Contents", []):
+            key = obj["Key"]
+            # Log every key we encounter
+            logger.info(f"Found object key='{key}'")
 
-    # Default to empty key_phrase
-    key_phrase = ""
-    if condition_param and condition_param.get("value"):
-        text = condition_param["value"]
-        logger.info("Condition text: %s", text)
+            if not key.lower().endswith(".pdf"):
+                logger.debug(f"Skipping non-PDF key='{key}'")
+                skipped += 1
+                continue
 
-        prompt = (
-            "Extract the most important key phrase from the following text. "
-            "Respond with a single string only. Do not include any other text.\n\n"
-            f"Text:\n\"\"\"\n{text}\n\"\"\""
-        )
+            # Extract population and nin for logging
+            try:
+                population_id = extract_population_id(key)
+                nin = extract_nin(key.split("/")[-1])
+            except ValueError as e:
+                logger.warning(f"Skipping '{key}': {e}")
+                skipped += 1
+                continue
 
-        try:
-            response = bedrock.invoke_model(
-                modelId=MODEL_ID,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps({
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 1024,
-                    "temperature": 0
-                })
-            )
-            logger.info("Bedrock raw response: %s", response)
+            # Log which “folder” (population) we’re about to process
+            logger.info(f"Processing PDF in population='{population_id}': key='{key}'")
 
-            body_str = response["body"].read().decode("utf-8")
-            output = json.loads(body_str)
+            meta_key = metadata_key_for(key)
 
-            content = output.get("content")
-            if isinstance(content, list) and content:
-                key_phrase = content[0].get("text", "").strip().strip('"')
-            else:
-                logger.warning("Unexpected format from Bedrock: %s", output)
-        except (ClientError, ValueError, json.JSONDecodeError) as e:
-            logger.error("Error extracting key phrase: %s", e)
+            # Overwrite existing metadata each time
+            metadata = {
+                "metadataAttributes": {
+                    "population_id": population_id,
+                    "nin_priority":  nin
+                }
+            }
 
-    logger.info("Extracted key phrase: %s", key_phrase)
+            # Write side-car JSON
+            try:
+                s3.put_object(
+                    Bucket=BUCKET,
+                    Key=meta_key,
+                    Body=json.dumps(metadata, indent=2).encode("utf-8"),
+                    ContentType="application/json"
+                )
+                logger.info(f"Wrote metadata for key='{key}' → meta_key='{meta_key}'")
+                processed += 1
+            except ClientError as e:
+                logger.error(f"Failed to write metadata for key='{key}': {e}")
+                skipped += 1
 
-    # 5) Build enriched payload
-    enriched = body.copy()
-    enriched_parameters = []
-    for p in parameters:
-        item = p.copy()
-        if item.get("name") == "condition":
-            item["value"] = key_phrase
-        enriched_parameters.append(item)
-    enriched["parameters"] = enriched_parameters
+        if not resp.get("IsTruncated"):
+            logger.info("No more pages to list; exiting loop.")
+            break
 
-    logger.info("Enriched payload (to wrap): %s", json.dumps(enriched))
+        continuation_token = resp.get("NextContinuationToken")
 
-    # 6) Wrap for downstream and invoke
-    downstream_event = {
-        "body": json.dumps(enriched)
+    logger.info(f"Done: processed={processed}, skipped={skipped}")
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"processed": processed, "skipped": skipped})
     }
-    logger.info("Downstream event shape: %s", json.dumps(downstream_event))
 
-    try:
-        invoke_resp = lambda_client.invoke(
-            FunctionName   = OTHER_LAMBDA_NAME,
-            InvocationType = "RequestResponse",
-            Payload        = json.dumps(downstream_event),
-        )
-        payload_bytes = invoke_resp["Payload"].read()
-        payload_str   = payload_bytes.decode("utf-8")
-        downstream_output = json.loads(payload_str)
 
-        logger.info("Downstream Lambda response: %s", payload_str)
-        return {
-            "statusCode": downstream_output.get("statusCode", 200),
-            "body": downstream_output.get("body", "{}")
-        }
 
-    except ClientError as e:
-        logger.error("Failed to invoke '%s': %s", OTHER_LAMBDA_NAME, e)
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": str(e)})
-        }
+
+# import os
+# import json
+# import re
+# import logging
+
+# import boto3
+# from botocore.exceptions import ClientError
+
+# logger = logging.getLogger()
+# logger.setLevel(logging.INFO)
+
+# s3 = boto3.client("s3")
+
+# BUCKET = os.environ["PDF_BUCKET"]
+
+# _NUM_RE = re.compile(r"(\d+)(?!.*\d)")
+
+# def extract_population_and_type(key: str):
+#     """
+#     Given an S3 key like "populationA/updates/foo.pdf" or
+#     "populationB/master/bar.pdf", return (population_id, doc_type).
+#     """
+#     parts = key.split("/", 2)
+#     if len(parts) < 3:
+#         raise ValueError(f"Invalid PDF key format (expected population/type/...): '{key}'")
+#     population_id = parts[0]
+#     doc_type      = parts[1]
+#     return population_id, doc_type
+
+# def extract_nin(filename: str) -> int:
+#     """
+#     Extract the last numeric sequence in the filename as NIN priority.
+#     """
+#     base = os.path.splitext(filename)[0]
+#     m = _NUM_RE.search(base)
+#     if not m:
+#         raise ValueError(f"No numeric sequence found for NIN in '{filename}'")
+#     return int(m.group(1))
+
+# def metadata_key_for(pdf_key: str) -> str:
+#     """
+#     Return the S3 key for the side‑car metadata JSON.
+#     """
+#     return pdf_key + ".metadata.json"
+
+# def lambda_handler(event, context):
+#     """
+#     Lambda entry point. Scans the bucket and writes side‑car metadata JSON
+#     for each PDF that doesn’t already have one.
+#     """
+#     continuation_token = None
+#     processed = 0
+#     skipped   = 0
+
+#     while True:
+#         kwargs = {"Bucket": BUCKET, "MaxKeys": 1000}
+#         if continuation_token:
+#             kwargs["ContinuationToken"] = continuation_token
+
+#         resp = s3.list_objects_v2(**kwargs)
+#         for obj in resp.get("Contents", []):
+#             key = obj["Key"]
+#             if not key.lower().endswith(".pdf"):
+#                 continue
+
+#             meta_key = metadata_key_for(key)
+
+#             try:
+#                 s3.head_object(Bucket=BUCKET, Key=meta_key)
+#                 logger.debug(f"Skipping {key}: metadata already exists")
+#                 skipped += 1
+#                 continue
+#             except ClientError as e:
+#                 if e.response["Error"]["Code"] != "404":
+#                     logger.error(f"Error checking metadata for {key}: {e}")
+#                     continue
+
+#             try:
+#                 population_id, doc_type = extract_population_and_type(key)
+#                 nin = extract_nin(key.split("/")[-1])
+#             except ValueError as e:
+#                 logger.warning(f"Skipping {key}: {e}")
+#                 skipped += 1
+#                 continue
+
+#             metadata = {
+#                 "population_id": population_id,
+#                 "doc_type":      doc_type,
+#                 "nin_priority":  nin
+#             }
+
+#             try:
+#                 s3.put_object(
+#                     Bucket=BUCKET,
+#                     Key=meta_key,
+#                     Body=json.dumps(metadata, indent=2).encode("utf-8"),
+#                     ContentType="application/json"
+#                 )
+#                 logger.info(f"Wrote metadata for {key} → {meta_key}")
+#                 processed += 1
+#             except ClientError as e:
+#                 logger.error(f"Failed to write metadata for {key}: {e}")
+#                 skipped += 1
+
+#         if not resp.get("IsTruncated"):  
+#             break
+#         continuation_token = resp.get("NextContinuationToken")
+
+#     logger.info(f"Done: processed={processed}, skipped={skipped}")
+#     return {
+#         "statusCode": 200,
+#         "body": json.dumps({
+#             "processed": processed,
+#             "skipped":   skipped
+#         })
+#     }
+
+
+#Custom code for chunking adding metadata to each chunk inline##
+
+# import os
+# import json
+# import uuid
+# import logging
+# import io
+# import re
+# import time
+
+# import boto3
+# import PyPDF2
+
+# logger = logging.getLogger()
+# logger.setLevel(logging.INFO)
+
+
+# s3 = boto3.client("s3")
+# bedrock = boto3.client("bedrock-agent", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+
+
+# KB_ID = os.environ["BEDROCK_KB_ID"]
+# DATA_SOURCE_ID = os.environ["DATA_SOURCE_ID"]
+
+
+# CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", 1000))
+# CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 200))
+
+# BEDROCK_INGESTION_BATCH_SIZE = 25
+
+# def extract_population_id(key: str) -> str:
+#     """
+#     Extracts the population ID from the S3 key.
+#     Assumes format: population_id/<updates|master>/filename.pdf
+#     """
+#     parts = key.split("/", 2)
+#     if len(parts) < 3:
+#         raise ValueError(f"Invalid S3 key format: {key}. Expected at least two '/' separators.")
+#     return parts[0]
+
+# def extract_nin(filename: str) -> int:
+#     """
+#     Extracts the last numeric sequence in the filename as the NIN priority.
+#     """
+#     name = os.path.splitext(filename)[0]
+#     nums = [int(n) for n in re.findall(r"(\d+)", name)]
+#     if not nums:
+#         raise ValueError(f"No numeric sequence found in filename: {filename}")
+#     return nums[-1]
+
+# def pdf_to_text(bucket: str, key: str) -> str:
+#     """
+#     Download PDF from S3 and extract text from all pages.
+#     Uses an in-memory BytesIO buffer for compatibility.
+#     """
+#     logger.info(f"Downloading PDF: s3://{bucket}/{key}")
+#     obj = s3.get_object(Bucket=bucket, Key=key)
+#     data = obj["Body"].read()
+#     reader = PyPDF2.PdfReader(io.BytesIO(data))
+    
+#     full_text = []
+#     for page_num, page in enumerate(reader.pages):
+#         text = page.extract_text()
+#         if text:
+#             full_text.append(text)
+#         else:
+#             logger.warning(f"No text extracted from page {page_num + 1} of {key}")
+#     return "\n".join(full_text)
+
+# def chunk_text(text: str):
+#     """
+#     Generator that yields overlapping text chunks.
+#     """
+#     start = 0
+#     length = len(text)
+#     while start < length:
+#         end = min(length, start + CHUNK_SIZE)
+#         yield text[start:end]
+#         start += CHUNK_SIZE - CHUNK_OVERLAP
+
+# def lambda_handler(event, context):
+#     """
+#     S3:ObjectCreated-triggered Lambda.
+#     Reads a PDF, chunks it, tags with metadata, and ingests into a Bedrock KB in batches.
+#     """
+#     try:
+
+#         if "Records" not in event or not isinstance(event["Records"], list) or not event["Records"]:
+#             raise ValueError("Invalid S3 event structure: 'Records' key missing or empty.")
+
+#         rec = event["Records"][0]
+
+#         if "s3" not in rec or "bucket" not in rec["s3"] or "object" not in rec["s3"]:
+#              raise ValueError("Invalid S3 event record structure: Missing 's3', 'bucket', or 'object' details.")
+
+#         bucket = rec["s3"]["bucket"]["name"]
+#         key = rec["s3"]["object"]["key"]
+#         filename = key.split("/")[-1]
+
+#         logger.info(f"Processing S3 object: s3://{bucket}/{key}")
+
+#         population_id = extract_population_id(key)
+#         nin = extract_nin(filename)
+#         logger.info(f"Extracted Metadata: Population ID='{population_id}', NIN='{nin}'")
+
+#         full_text = pdf_to_text(bucket, key)
+#         if not full_text.strip():
+#             logger.warning(f"No text found in PDF: s3://{bucket}/{key}. Skipping ingestion.")
+#             return {"statusCode": 200, "body": json.dumps({"message": "No text found in PDF."})}
+
+#         all_docs = []
+#         for chunk in chunk_text(full_text):
+#             chunk = chunk.strip()
+#             if not chunk:
+#                 continue
+            
+#             doc_id = str(uuid.uuid4()) 
+#             all_docs.append({
+#                 "content": {
+#                     "custom": {
+#                         "sourceType": "IN_LINE",
+#                         "customDocumentIdentifier": { "id": doc_id },
+#                         "inlineContent": {
+#                             "type":"TEXT",
+#                             "textContent": { "data": chunk }
+#                         }
+#                     },
+#                     # "dataSourceType": "CUSTOM"
+#                 },
+#                 "metadata": {
+#                     "type": "IN_LINE_ATTRIBUTE",
+#                     "inlineAttributes": [
+#                         {"key":"population_id", "value": {"type": "STRING", "stringValue": population_id}},
+#                         {"key":"nin_priority",  "value": {"type": "NUMBER", "numberValue": float(nin)}},
+#                         {"key":"source_key",    "value": {"type": "STRING", "stringValue": key}}
+#                     ]
+#                 }
+#             })
+
+#         logger.info("Total chunks generated for ingestion: %d", len(all_docs))
+#         logger.info("boto3 version: %s", boto3.__version__) 
+
+#         if all_docs:
+#             logger.info("First document payload to be sent (formatted JSON):\n%s", 
+#                         json.dumps(all_docs[0], indent=2))
+#         else:
+#             logger.warning("No documents generated for ingestion.")
+#             return {"statusCode": 200, "body": json.dumps({"message": "No documents generated."})}
+
+
+#         ingestion_job_ids = []
+#         # Process and ingest documents in batches
+#         for i in range(0, len(all_docs), BEDROCK_INGESTION_BATCH_SIZE):
+#             batch_docs = all_docs[i : i + BEDROCK_INGESTION_BATCH_SIZE]
+            
+#             logger.info("Initiating ingestion for batch %d (documents %d to %d of %d)", 
+#                         (i // BEDROCK_INGESTION_BATCH_SIZE) + 1, 
+#                         i + 1, 
+#                         min(i + BEDROCK_INGESTION_BATCH_SIZE, len(all_docs)), 
+#                         len(all_docs))
+#             logger.info("Current batch size: %d", len(batch_docs))
+
+#             try:
+#                 resp = bedrock.ingest_knowledge_base_documents(
+#                     knowledgeBaseId=KB_ID,
+#                     dataSourceId=DATA_SOURCE_ID,
+#                     documents=batch_docs
+#                 )
+#                 ingestion_job_ids.append(resp.get("jobId"))
+#                 logger.info("Ingestion job created for batch. Job ID: %s", resp.get("jobId"))
+#             except Exception as e:
+#                 logger.error(f"Error ingesting batch starting at index {i}. This batch failed: {e}", exc_info=True)
+#                 raise e 
+
+#             if (i + BEDROCK_INGESTION_BATCH_SIZE) < len(all_docs):
+#                 sleep_duration = 1 # seconds
+#                 logger.info(f"Sleeping for {sleep_duration} second(s) before next batch...")
+#                 time.sleep(sleep_duration)
+
+#         logger.info("Successfully initiated ingestion for all %d chunks. Total Job IDs: %s", 
+#                     len(all_docs), ingestion_job_ids)
+
+#         return {
+#             "statusCode": 200,
+#             "body": json.dumps({
+#                 "message": f"Successfully initiated ingestion for {len(all_docs)} chunks from {filename}",
+#                 "jobIds": ingestion_job_ids
+#             })
+#         }
+
+#     except Exception as e:
+#         logger.error(f"Fatal error during Lambda execution: {e}", exc_info=True)
+#         return {
+#             "statusCode": 500,
+#             "body": json.dumps({"error": str(e), "message": "Failed to process documents."})
+#         }
