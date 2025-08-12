@@ -1,262 +1,184 @@
-import json
-# from numpy import double, dtype
-import pandas as pd
+#!/usr/bin/env python3
+"""
+Employee ID Filter GUI
+
+Simple Tkinter-based interface that:
+ - Loads reference IDs from a pipe-delimited CSV
+ - Filters a target file (CSV or TXT) by those IDs
+ - Comparison ignores leading zeros and uses last 8 digits
+ - Writes filtered output, a removed-log, reference IDS, and target IDS to a chosen folder
+ - Ensures the first row (even if non-numeric) is captured in target IDS
+ - Appends timestamps to all output filenames to avoid overwrites (fresh each run)
+
+Usage: run this script, browse for files/folder, and click Run.
+"""
+import csv
 import re
+import os
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from datetime import datetime
 
 
-def format_results_list(lst, max, string=False):
-    if string: 
-        lst = ['Blank' if s=='' else '"' + s + '"' for s in lst]
+def normalize_id(id_str):
+    """Normalize ID for comparison: strip non-digits, keep last 8 digits."""
+    digits = re.sub(r'\D', '', id_str)
+    if len(digits) > 8:
+        return digits[-8:]
+    return digits
 
-    if len(lst) > max:
-        return ', '.join(lst[:max]) + '...'
+
+def load_csv_ids(path, delim):
+    ids = set()
+    with open(path, newline='', encoding='utf-8') as f:
+        for row in csv.reader(f, delimiter=delim):
+            if row:
+                norm = normalize_id(row[0].strip())
+                if re.fullmatch(r"\d{8}", norm):
+                    ids.add(norm)
+    return ids
+
+
+def filter_csv(path_in, path_out, log_out, id_set, delim, ts):
+    total, removed = 0, 0
+    tgt_ids = []
+
+    with open(path_in, newline='', encoding='utf-8') as fin, \
+         open(path_out, 'w', newline='', encoding='utf-8') as fout, \
+         open(log_out, 'w', newline='', encoding='utf-8') as logf:
+        rdr = csv.reader(fin, delimiter=delim)
+        wtr = csv.writer(fout, delimiter=delim)
+        logw = csv.writer(logf, delimiter=delim)
+
+        first = next(rdr, None)
+        if first is not None:
+            total += 1
+            fid = first[0].strip()
+            tgt_ids.append(fid)
+            norm_fid = normalize_id(fid)
+            if not re.fullmatch(r"\d{8}", norm_fid) or norm_fid not in id_set:
+                wtr.writerow(first)
+            else:
+                removed += 1
+                logw.writerow(first)
+
+        for row in rdr:
+            total += 1
+            if not row:
+                continue
+            fid = row[0].strip()
+            tgt_ids.append(fid)
+            norm_fid = normalize_id(fid)
+            if re.fullmatch(r"\d{8}", norm_fid) and norm_fid in id_set:
+                removed += 1
+                logw.writerow(row)
+            else:
+                wtr.writerow(row)
+
+    tgt_file = os.path.join(os.path.dirname(path_out), f"TARGET_IDS_{ts}.txt")
+    with open(tgt_file, 'w', encoding='utf-8') as tf:
+        tf.write(f"# Source: {path_in}\n")
+        for i in tgt_ids:
+            tf.write(i + '\n')
+    return tgt_file, total, removed
+
+
+def filter_txt(path_in, path_out, log_out, id_set, ts):
+    total, removed = 0, 0
+    tgt_ids = []
+    pat = re.compile(r"^(?P<id>\d+)")
+
+    with open(path_in, 'r', encoding='utf-8') as fin, \
+         open(path_out, 'w', encoding='utf-8') as fout, \
+         open(log_out, 'w', encoding='utf-8') as logf:
+        for line in fin:
+            total += 1
+            m = pat.match(line)
+            if m:
+                fid = m.group('id')
+                tgt_ids.append(fid)
+                norm_fid = normalize_id(fid)
+                if norm_fid in id_set:
+                    removed += 1
+                    logf.write(line)
+                    continue
+            fout.write(line)
+
+    tgt_file = os.path.join(os.path.dirname(path_out), f"TARGET_IDS_{ts}.txt")
+    with open(tgt_file, 'w', encoding='utf-8') as tf:
+        tf.write(f"# Source: {path_in}\n")
+        for i in tgt_ids:
+            tf.write(i + '\n')
+    return tgt_file, total, removed
+
+
+def run(ref, tgt, outdir, typ, rdel, tdel):
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    ids = load_csv_ids(ref, rdel)
+
+    ref_file = os.path.join(outdir, f"REFERENCE_IDS_{ts}.txt")
+    with open(ref_file, 'w', encoding='utf-8') as rf:
+        rf.write(f"# Source: {ref}\n")
+        for i in sorted(ids):
+            rf.write(i + '\n')
+
+    logf = os.path.join(outdir, f"removed_data_{ts}.txt")
+    name, _ = os.path.splitext(os.path.basename(tgt))
+    fout = os.path.join(outdir, f"{name}_{ts}.{ 'txt' if typ=='txt' else 'csv'}")
+
+    if typ == 'csv':
+        tgt_file, tot, rem = filter_csv(tgt, fout, logf, ids, tdel, ts)
     else:
-        return ', '.join(lst)
+        tgt_file, tot, rem = filter_txt(tgt, fout, logf, ids, ts)
+
+    messagebox.showinfo(
+        'Done',
+        f"Filtered: {fout}\nLog: {logf}\nRef IDs: {ref_file}\nTgt IDs: {tgt_file}\nProcessed {tot}, removed {rem}."
+    )
 
 
-class PIT:
-    def __init__(self, payload):
-        self.path = payload['path']
-        self.fileName = self.path.replace('/', '\\').split('\\')[-1].split('.')[0]
-        self.fileType = payload['fileType']
-        self.skiprows = payload['header']
-        self.skipfooter = payload['footer']
-        self.layouts = payload['layouts']
-        self.key = [layout['key'] for layout in payload['layouts']]
-        self.ri = [layout['ri'] for layout in payload['layouts']]
-        self.repeating  = [layout['repeating'] for layout in payload['layouts']]
-        self.fieldNames = [[field['name'] for field in layout['fields']] for layout in payload['layouts']]
-        self.fieldWidths = [[field['width'] for field in layout['fields']] for layout in payload['layouts']]
-        self.fieldInfo = [{field['name']:field for field in layout['fields']} for layout in payload['layouts']]
-        self.printItmes = 5
-        self.verified = False
-        self.checks, self.dfs = self.review_and_build()
+def gui():
+    root = tk.Tk()
+    root.title('ID Filter')
+    frm = ttk.Frame(root, padding=10)
+    frm.grid()
+    pad = {'padx': 5, 'pady': 5}
 
-        
-    def read_data(self, layoutNum):
-        self.check_ri(layoutNum)
-        if self.fileType == 'Excel':
-            df = pd.read_excel(
-                self.path,
-                dtype = str,
-                header = None,
-                keep_default_na = False,
-                usecols = range(0, len(self.fieldNames[layoutNum])),
-                names = self.fieldNames[layoutNum],
-                skiprows = self.skiprows,
-                skipfooter = self.skipfooter,
-                index_col=None
-            )
-        elif self.fileType == 'FW':
-            df = pd.read_fwf(
-                self.path,
-                dtype = str,
-                header = None,
-                keep_default_na = False,
-                names = self.fieldNames[layoutNum],
-                skiprows = self.skiprows,
-                skipfooter = self.skipfooter,
-                widths = self.fieldWidths[layoutNum]
-            )
-        else:
-            df = pd.read_csv(
-                self.path,
-                dtype = str,
-                header = None,
-                keep_default_na = False,
-                names = self.fieldNames[layoutNum],
-                skiprows = self.skiprows,
-                skipfooter = self.skipfooter,
-                sep = self.fileType,
-                index_col = False,
-                engine = 'python'
-            )
-        return df
+    ttk.Label(frm, text='Reference CSV:').grid(row=0, column=0, **pad)
+    re_ent = ttk.Entry(frm, width=40)
+    re_ent.grid(row=0, column=1, **pad)
+    ttk.Button(frm, text='Browse...', command=lambda: re_ent.delete(0, 'end') or re_ent.insert(0, filedialog.askopenfilename(filetypes=[('CSV', '*.csv')]))).grid(row=0, column=2, **pad)
 
-    
-    def check_ri(self, layoutNum):
-        ri = self.ri[layoutNum]
+    ttk.Label(frm, text='Target File:').grid(row=1, column=0, **pad)
+    te_ent = ttk.Entry(frm, width=40)
+    te_ent.grid(row=1, column=1, **pad)
+    ttk.Button(frm, text='Browse...', command=lambda: te_ent.delete(0, 'end') or te_ent.insert(0, filedialog.askopenfilename(filetypes=[('CSV/TXT', '*.csv;*.txt')]))).grid(row=1, column=2, **pad)
 
-        if ri != {}:
-            riType = str
-            reVal = str(ri['val'])
-            if self.fileType == 'Excel':
-                riDf = pd.read_excel(
-                    self.path,
-                    dtype = riType,
-                    header = None,
-                    keep_default_na = False,
-                    skipfooter = self.skipfooter,
-                    usecols = [ri['pos']],
-                    index_col = False
-                )
-            elif self.fileType == 'FW':
-                riDf = pd.read_fwf(
-                    self.path,
-                    dtype = riType,
-                    header = None,
-                    keep_default_na = False,
-                    skipfooter = self.skipfooter,
-                    colspecs = [(sum(self.fieldWidths[layoutNum][:ri['pos']]),sum(self.fieldWidths[layoutNum][:ri['pos']+1]))],
-                    index_col = False
-                )
-            else:
-                riDf = pd.read_csv(
-                    self.path,
-                    dtype = riType,
-                    header = None,
-                    keep_default_na = False,
-                    skipfooter = self.skipfooter,
-                    sep = self.fileType,
-                    usecols = [ri['pos']],
-                    index_col = False,
-                    engine = 'python'
-                )
+    ttk.Label(frm, text='Output Folder:').grid(row=2, column=0, **pad)
+    out_ent = ttk.Entry(frm, width=40)
+    out_ent.grid(row=2, column=1, **pad)
+    ttk.Button(frm, text='Browse...', command=lambda: out_ent.delete(0, 'end') or out_ent.insert(0, filedialog.askdirectory())).grid(row=2, column=2, **pad)
 
-            self.skiprows = list(riDf[riDf[ri['pos']] != reVal].index)
+    ttk.Label(frm, text='Type:').grid(row=3, column=0, **pad)
+    tv = tk.StringVar(value='csv')
+    ttk.Combobox(frm, textvariable=tv, values=['csv', 'txt'], width=5, state='readonly').grid(row=3, column=1, **pad)
+
+    ttk.Label(frm, text='Ref Delim:').grid(row=4, column=0, **pad)
+    rd_ent = ttk.Entry(frm, width=5)
+    rd_ent.insert(0, '|')
+    rd_ent.grid(row=4, column=1, **pad)
+
+    ttk.Label(frm, text='Tgt Delim:').grid(row=5, column=0, **pad)
+    td_ent = ttk.Entry(frm, width=5)
+    td_ent.insert(0, ',')
+    td_ent.grid(row=5, column=1, **pad)
+
+    ttk.Button(frm, text='Run', command=lambda: run(
+        re_ent.get(), te_ent.get(), out_ent.get(), tv.get(), rd_ent.get(), td_ent.get()
+    )).grid(row=6, column=0, columnspan=3, pady=10)
+
+    root.mainloop()
 
 
-    def review_and_build(self):
-        self.verified = True
-        checks = []
-        dfs = []
-        for layoutNum in range(len(self.layouts)):
-            
-            layoutChecks = {fieldName:{} for fieldName in self.fieldNames[layoutNum]}
-            df = self.read_data(layoutNum)
-
-            #Check key identifier for duplicates
-            if self.key[layoutNum] != '':
-                layoutChecks[self.key[layoutNum]]['Duplicates'] = format_results_list(df.loc[df.duplicated([self.key[layoutNum]]), self.key[layoutNum]].head(self.printItmes + 1).tolist(), self.printItmes)
-
-            for fieldName in self.fieldNames[layoutNum]:
-                try:
-                    #Date
-                    dateFormat = self.fieldInfo[layoutNum][fieldName]['dateFormat']
-                    if dateFormat != '':
-                        lowDate = dateFormat.replace('%Y','1800').replace('%m','01').replace('%d','01')#NOTE Check 
-                        df[fieldName] = df[fieldName].replace({'':lowDate})
-                        df[fieldName] = df[fieldName].replace({None:lowDate})
-                        df[fieldName] = df[fieldName].replace({'0':lowDate})
-                        #NOTE Check format
-                        df[fieldName] = df[fieldName].apply(lambda t: pd.to_datetime(t, format=dateFormat))
-                        layoutChecks[fieldName]['Min'] = df[fieldName].min().strftime('%Y-%m-%d')
-                        layoutChecks[fieldName]['Max'] = df[fieldName].max().strftime('%Y-%m-%d')
-                        df[fieldName] = df[fieldName].dt.strftime('%m/%d/%Y')
-
-                    #String
-                    elif 'X' in self.fieldInfo[layoutNum][fieldName]['description']:
-                        df[fieldName] = df[fieldName].replace({None:''})
-                        layoutChecks[fieldName]['Values'] = format_results_list(df[fieldName].unique()[:self.printItmes + 1].tolist(), self.printItmes, string=True)
-                        layoutChecks[fieldName]['Max Length'] = int(df[fieldName].apply(len).max())
-                        layoutChecks[fieldName]['Special Char'] = format_results_list(set(sum(df[fieldName].str.findall(r'[^a-zA-Z !@#$%&*_+-|\:;<>./()[\]{}]|[,]').tolist(),[])), self.printItmes, string=True)
-
-                    #Explicit decimal 
-                    elif '.' in self.fieldInfo[layoutNum][fieldName]['description']:
-                        df[fieldName] = df[fieldName].replace({'':'0'})
-                        df[fieldName] = df[fieldName].replace({None:'0'})
-                        #NOTE Check format
-                        layoutChecks[fieldName]['Max Decimals'] = int(df[fieldName].apply(lambda x: len(x.split('.')[1] if '.' in x else '')).max())
-                        df[fieldName] = df[fieldName].astype(float)
-                        layoutChecks[fieldName]['Min'] = float(df[fieldName].min())
-                        layoutChecks[fieldName]['Max'] = float(df[fieldName].max())
-
-                    #Implicit decimal
-                    elif 'v' in self.fieldInfo[layoutNum][fieldName]['description']:
-                        df[fieldName] = df[fieldName].replace({'':'0'})
-                        df[fieldName] = df[fieldName].replace({None:'0'})
-                        #NOTE Check format
-                        df[fieldName] = df[fieldName].astype(float)
-                        implicitFraction = 10 ** int(re.findall(r'\d+', self.fieldInfo[layoutNum][fieldName]['description'])[3])
-                        df[fieldName] = df[fieldName].apply(lambda x: x / implicitFraction)
-                        layoutChecks[fieldName]['Min'] = float(df[fieldName].min())
-                        layoutChecks[fieldName]['Max'] = float(df[fieldName].max())
-                        
-                    #Int
-                    else:
-                        df[fieldName] = df[fieldName].replace({'':'0'})
-                        df[fieldName] = df[fieldName].replace({None:'0'})
-                        #NOTE Check format
-                        df[fieldName] = df[fieldName].astype(int)
-                        layoutChecks[fieldName]['Min'] = int(df[fieldName].min())
-                        layoutChecks[fieldName]['Max'] = int(df[fieldName].max())
-
-                except Exception as e:
-                    df[fieldName] = df[fieldName].replace({None:''})
-                    layoutChecks[fieldName]['Values'] = format_results_list(df[fieldName].unique()[:self.printItmes + 1].tolist(), self.printItmes, string=True)
-                    layoutChecks[fieldName]['Critical Error'] = str(e)
-            
-            checks.append(layoutChecks)
-            dfs.append(df)
-
-        return(checks, dfs)
-
-
-    def to_excel(self, path):
-        writer = pd.ExcelWriter(path + '/' + self.fileName + '.xlsx')
-        for layoutNum, df in enumerate(self.dfs):
-            for fieldName in self.fieldNames[layoutNum]:
-                if not self.fieldInfo[layoutNum][fieldName]['used']:
-                    del df[fieldName]
-    
-
-            df.to_excel(writer, self.fileName + str(layoutNum), index=False)
-
-        writer.close()
-
-
-    def to_json(self):
-        pptDict = {}
-        for layoutNum, df in enumerate(self.dfs):
-            if self.key[layoutNum] != '':
-                for fieldName in self.fieldNames[layoutNum]:
-                    if not self.fieldInfo[layoutNum][fieldName]['used']:
-                        del df[fieldName]
-
-                df['toJsonIndex'] = df[self.key[layoutNum]]
-
-                if not self.repeating[layoutNum]:
-                    if any(df.duplicated(subset=['toJsonIndex'])):
-                        raise Exception('Duplicate key identifiers found')
-
-                    layoutDict = json.loads(df.set_index('toJsonIndex').to_json(orient='index'))
-                    pptDict = self.update_ppt_dict(pptDict, layoutDict)
-                else:
-                    num = 0
-                    while True:
-                        dfr = df.drop_duplicates(subset=['toJsonIndex'])
-                        dfr.columns = ['[' + str(num) + '].' + fieldName for fieldName in self.fieldNames[layoutNum] if self.fieldInfo[layoutNum][fieldName]['used']] + ['toJsonIndex']
-                        layoutDict = json.loads(dfr.set_index('toJsonIndex').to_json(orient='index'))
-                        pptDict = self.update_ppt_dict(pptDict, layoutDict)
-                        if not any(df.duplicated(subset=['toJsonIndex'])):
-                            break
-                        
-                        df = df.loc[df.duplicated(subset=['toJsonIndex'])]
-                        num += 1
-
-            else:
-                lutData = {}
-                djJson = json.loads(df.to_json())
-                for fieldName in djJson:
-                    for index, value in djJson[fieldName].items():
-                        lutData['[' + str(index) + '].' + fieldName] = value
-
-                pptDict['LUT'] = lutData
-            
-        data = [{'userID':k, 'dataFields':v, 'ssn':''} for k, v in pptDict.items()]
-        return self.fileName, data
-    
-
-    def update_ppt_dict(self, pptDict, layoutDict):
-        if pptDict == {}:
-            pptDict = layoutDict
-        else:
-            for ppt in layoutDict:
-                if ppt in pptDict.keys():
-                    pptDict[ppt].update(layoutDict[ppt])
-                else:
-                    pptDict[ppt] = layoutDict[ppt]
-
-        
-        return pptDict
-
+if __name__ == '__main__':
+    gui()
