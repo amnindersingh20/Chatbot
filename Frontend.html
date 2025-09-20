@@ -1,12 +1,17 @@
 <div class="survey-progress my-4">
-  <div class="d-flex justify-content-between">
+  <div class="progress" style="height: 40px; background-color: #e9ecef; border: 2px solid #000; border-radius: 4px; overflow: hidden;">
+    <div class="progress-bar bg-primary" role="progressbar" 
+         style="width: 0%; border-radius: 4px; transition: width 1s ease;">
+      <span class="progress-text" style="position: absolute; width: 100%; text-align: center; color: white; font-weight: bold;">0%</span>
+    </div>
+  </div>
+
+  <!-- Labels below the progress bar -->
+  <div class="d-flex justify-content-between mt-1">
     <span>0%</span>
     <span>100%</span>
   </div>
-  <div class="progress" style="height: 6px; background-color: #e9ecef;">
-    <div class="progress-bar bg-primary" role="progressbar" style="width: 25%;" 
-         aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
-  </div>
+
   <div class="text-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
     Survey Completion Percentage
   </div>
