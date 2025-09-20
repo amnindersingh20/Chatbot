@@ -2,120 +2,82 @@
 <html lang="en">
 
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta name="robots" content="noindex, nofollow">
-	<meta http-equiv="X-UA-Compatible" content="ie=edge">
-	<title>Exelon Survey</title>
-	<link rel="stylesheet" href="../css/bootstrap.min.css">
-	<link rel="stylesheet" href="../css/aos.css">
-	<link rel="stylesheet" href="../css/styles.css">
-	<link rel="stylesheet" href="../css/sweetalert2.css">
-	<link rel="shortcut icon" type="image/x-icon" href="../img/favicon.ico"/>
-	<script src="../js/gtm-head.js"></script>
-	<script src="../js/jquery-3.7.1.min.js"></script>
-	<script src="../js/custom.js"></script>
-	<script src="../js/sweetalert2.js"></script>
-	<script>
-	if (location.href.indexOf("localhost") < 0 && location.href.indexOf("127.") < 0) document.write('<script src="../js/sValidator.js"><\/script>');
-	</script>
-  <style>
-    .rank-input {
-      width: 40px;
-      text-align: center;
-      margin-right: 10px;
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Exelon Survey</title>
+  <link rel="stylesheet" href="../css/bootstrap.min.css">
+  <link rel="stylesheet" href="../css/aos.css">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="../css/sweetalert2.css">
+  <link rel="shortcut icon" type="image/x-icon" href="../img/favicon.ico" />
+  <script src="../js/gtm-head.js"></script>
+  <script src="../js/jquery-3.7.1.min.js"></script>
+  <script src="../js/custom.js"></script>
+  <script src="../js/sweetalert2.js"></script>
+  <script>
+    if (location.href.indexOf("localhost") < 0 && location.href.indexOf("127.") < 0) {
+      document.write('<script src="../js/sValidator.js"><\/script>');
     }
-    .rank-option {
-      display: flex;
-      align-items: center;
-      margin-bottom: 1rem;
-    }
-  </style>
+  </script>
 </head>
 
 <body>
   <!--TRACKING DO NOT REMOVE-->
   <noscript>
     <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
-            style="display:none;visibility:hidden">
-    </iframe>
+      style="display:none;visibility:hidden"></iframe>
   </noscript>
-  <!-- End Google Tag Manager (noscript) -->
 
-	<div class="container-lg px-0 mb-5 pb-5">
-		<div class="hero-container pt-4">
-			<div class="d-flex flex-column flex-lg-row justify-content-evenly">
-				<div class="col-12 order-last order-lg-first">
-					<h1 class="d-inline-block mt-0 mt-lg-5 text-start">
-						Q5. When it comes to understanding my benefits—what’s available, how to use them, and where to find details—the information I receive is:
-					</h1>
-				</div>
-			</div>
-		</div>
+  <div class="container-lg px-0 mb-5 pb-5">
+    <div class="hero-container pt-4">
+      <div class="d-flex flex-column flex-lg-row justify-content-evenly">
+        <div class="col-12 order-last order-lg-first">
+          <h1 class="d-inline-block mt-0 mt-lg-5 text-start">
+            Q5. Please provide your feedback (maximum 500 characters):
+          </h1>
+        </div>
+      </div>
+    </div>
 
-		<div class="row">
-			<div class="col-12 col-lg-12">
-				<div class="border border-2 border-dark px-5 pb-5 mb-5">
+    <div class="row mt-4">
+      <div class="col-12">
+        <textarea id="q5_feedback" class="form-control" rows="6" maxlength="500"></textarea>
+        <small id="charCount" class="form-text text-muted">0 / 500 characters</small>
+      </div>
+    </div>
 
-					<div class="rank-option">
-						<input type="text" class="rank-input" maxlength="1" id="rank_1">
-						<label for="rank_1">Not Enough</label>
-					</div>
+    <div class="row mt-4">
+      <div class="col-12 pe-3 pe-lg-0">
+        <a href="q7.html" class="btn btn-primary">Next Question</a>
+      </div>
+    </div>
 
-					<div class="rank-option">
-						<input type="text" class="rank-input" maxlength="1" id="rank_2">
-						<label for="rank_2">Just Right</label>
-					</div>
+    <div class="row mt-5">
+      <div class="col-12">
+        <div class="progress" role="progressbar" aria-label="progress bar" aria-valuenow="25" aria-valuemin="0"
+          aria-valuemax="100">
+          <div class="progress-bar" style="width: 25%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-					<div class="rank-option">
-						<input type="text" class="rank-input" maxlength="1" id="rank_3">
-						<label for="rank_3">Too Much</label>
-					</div>
+  <div id="footer-placeholder" class="mt-auto"></div>
 
-				</div>
-			</div>
+  <script>
+    sessionStorage.setItem("page", 1);
 
-			<div class="col-12 col-lg-12 pe-3 pe-lg-0">
-				<a href="q7.html" class="btn btn-primary">Next Question</a>
-			</div>
+    $(function () {
+      $("#footer-placeholder").load("footer.html");
 
-			<div class="col-12 col-lg-12 pe-3 pe-lg-0 mt-5">
-				<div class="progress" role="progressbar" aria-label="progress bar" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">
-					<div class="progress-bar" style="width: 25%"></div>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<!-- Footer -->
-	<div id="footer-placeholder" class="mt-auto"></div>
-
-	<script>
-		sessionStorage.setItem("page",1);
-
-		$(function() {
-			$("#footer-placeholder").load("footer.html");
-		});
-
-		// Ranking validation
-		$(document).on("input", ".rank-input", function () {
-			let val = $(this).val().trim();
-
-			// allow only 1,2,3
-			if (!/^[123]$/.test(val)) {
-				$(this).val("");
-				return;
-			}
-
-			// prevent duplicates
-			let values = $(".rank-input").map(function () { return $(this).val(); }).get();
-			let duplicates = values.filter(v => v !== "").filter((v,i,a) => a.indexOf(v) !== i);
-
-			if (duplicates.length > 0) {
-				alert("Each ranking number (1, 2, 3) can only be used once.");
-				$(this).val("");
-			}
-		});
-	</script>
+      // live character counter
+      $("#q5_feedback").on("input", function () {
+        $("#charCount").text($(this).val().length + " / 500 characters");
+      });
+    });
+  </script>
 </body>
+
 </html>
