@@ -20,17 +20,21 @@
 	if (location.href.indexOf("localhost") < 0 && location.href.indexOf("127.") < 0) document.write('<script src="../js/sValidator.js"><\/script>');
 	</script>
   <style>
-    /* keep inputs narrow, consistent with UI */
     .rank-input {
       width: 40px;
       text-align: center;
       margin-right: 10px;
     }
+    .rank-option {
+      display: flex;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
   </style>
 </head>
 
-<body><!--TRACKING DO NOT REMOVE-->
-  <!-- Google Tag Manager (noscript) -->
+<body>
+  <!--TRACKING DO NOT REMOVE-->
   <noscript>
     <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
             style="display:none;visibility:hidden">
@@ -51,22 +55,22 @@
 
 		<div class="row">
 			<div class="col-12 col-lg-12">
-				<div class="d-flex flex-column border border-2 border-dark flex-lg-row justify-content-evenly px-5 pb-5 mb-5 align-items-centre form-check-inline">
+				<div class="border border-2 border-dark px-5 pb-5 mb-5">
 
-					<label for="q1_1" class="order-last order-lg-first form-check-label text-center mt-5 mt-lg-0">
+					<div class="rank-option">
 						<input type="text" class="rank-input" maxlength="1" id="rank_1">
-						<input type="radio" name="q1" id="q1_1" class="form-check-input mx-auto mt-3 mb-3 d-block" value="1"> Not Enough
-					</label>
+						<label for="rank_1">Not Enough</label>
+					</div>
 
-					<label for="q1_2" class="order-5 order-lg-2 form-check-label text-center mt-5 mt-lg-0">
+					<div class="rank-option">
 						<input type="text" class="rank-input" maxlength="1" id="rank_2">
-						<input type="radio" name="q1" id="q1_2" class="form-check-input mx-auto mt-3 mb-3 d-block" value="2"> Just Right
-					</label>
+						<label for="rank_2">Just Right</label>
+					</div>
 
-					<label for="q1_3" class="order-4 order-lg-3 form-check-label text-center mt-5 mt-lg-0">
+					<div class="rank-option">
 						<input type="text" class="rank-input" maxlength="1" id="rank_3">
-						<input type="radio" name="q1" id="q1_3" class="form-check-input mx-auto mt-3 mb-3 d-block" value="3"> Too Much
-					</label>
+						<label for="rank_3">Too Much</label>
+					</div>
 
 				</div>
 			</div>
@@ -88,9 +92,6 @@
 
 	<script>
 		sessionStorage.setItem("page",1);
-		if(sessionStorage.getItem("q1")){
-			$(".nextbutton").removeAttr("disabled");
-		}
 
 		$(function() {
 			$("#footer-placeholder").load("footer.html");
