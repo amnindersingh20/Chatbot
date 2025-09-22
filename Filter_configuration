@@ -1,2 +1,11 @@
-<RU_401kPln1or3_NotMaxContrib>:
-<G_Plan1and3Match> not in the back of specs
+print("repr(refValues):", repr(refValues))
+print("type(refValues):", type(refValues))
+try:
+    print("len(refValues):", len(refValues))
+except Exception as e:
+    print("len(refValues) raised:", e)
+
+for r in refValues:
+    print("ref:", repr(r))
+for f in fieldList:
+    print("field:", repr(f))
