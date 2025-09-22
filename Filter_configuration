@@ -2,117 +2,112 @@
 <html lang="en">
 
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta name="robots" content="noindex, nofollow">
-	<meta http-equiv="X-UA-Compatible" content="ie=edge">
-	<title>Marriott Survey</title>
-	<link rel="stylesheet" href="../css/bootstrap.min.css">
-	<link rel="stylesheet" href="../css/aos.css">
-	<link rel="stylesheet" href="../css/styles.css">
-	<link rel="stylesheet" href="../css/sweetalert2.css">
-	<link rel="shortcut icon" type="image/x-icon" href="../img/favicon.ico"/>
-	<script src="../js/gtm-head.js"></script>
-	<script src="../js/jquery-3.7.1.min.js"></script>
-	<script src="../js/custom.js"></script>
-	<script src="../js/sweetalert2.js"></script>
-	
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Marriott Survey</title>
+    <link rel="stylesheet" href="../css/bootstrap.min.css">
+    <link rel="stylesheet" href="../css/aos.css">
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/sweetalert2.css">
+    <link rel="shortcut icon" type="image/x-icon" href="../img/favicon.ico"/>
+    <script src="../js/gtm-head.js"></script>
+    <script src="../js/jquery-3.7.1.min.js"></script>
+    <script src="../js/custom.js"></script>
+    <script src="../js/sweetalert2.js"></script>
 </head>
 
-<body><!--TRACKING DO NOT REMOVE-->
-  <!-- Google Tag Manager (noscript) -->
-  <noscript>
-    <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
-            style="display:none;visibility:hidden">
-    </iframe>
-  </noscript>
-  <!-- End Google Tag Manager (noscript) -->
-	<div class="container-lg px-0 mb-5 pb-5">
-		<div class="hero-container pt-4">
-			<div class="d-flex flex-column flex-lg-row justify-content-evenly">
-				<div class="col-12 order-last order-lg-first">
-					<h1 class="d-inline-block  mt-0 mt-lg-5 text-start">Q1. Overall, how satisfied are you with the benefits currently offered by Marriott?</h1>
-				</div>
-				<!-- <div class="col-12 col-lg-8 px-3 px-lg-5">
-					<img src="../img/Element_2.jpg" class="img-fluid" alt="">
-				</div> -->
-			</div>
-		</div>
-		<div class="d-flex flex-column flex-lg-row justify-content-start px-5">
-			<h2 class="px-2 px-lg-5 py-3 purpletext"></h2>
-		</div>
-		<div class="row">
-			<div class="col-12 col-lg-12">
-				<div class="d-flex flex-column border border-2 border-dark flex-lg-row justify-content-evenly px-5 pb-5 mb-5 align-items-centre form-check-inline">
-					<label for="q1_a" class="order-last order-lg-first form-check-label text-center mt-5 mt-lg-0"><input type="radio" name="q1" id="q1_a" class="form-check-input mx-auto mt-3 mb-3 d-block" value="1"> Extremely<br>Dissatisfied</label>
-					<label for="q1_a" class="order-5 order-lg-2 form-check-label text-center mt-5 mt-lg-0"><input type="radio" name="q1" id="q1_a" class="form-check-input mx-auto mt-3 mb-3 d-block" value="2"> Dissatisfied</label>
-					<label for="q1_a" class="order-4 order-lg-3 form-check-label text-center mt-5 mt-lg-0"><input type="radio" name="q1" id="q1_a" class="form-check-input mx-auto mt-3 mb-3 d-block" value="3"> Slightly<br> Dissatisfied</label>
-					<label for="q1_a" class="order-3 order-lg-4 form-check-label text-center mt-5 mt-lg-0"><input type="radio" name="q1" id="q1_a" class="form-check-input mx-auto mt-3 mb-3 d-block" value="4"> Slightly<br>Satisfied</label>
-					<label for="q1_a" class="order-2 order-lg-5 form-check-label text-center mt-5 mt-lg-0"><input type="radio" name="q1" id="q1_a" class="form-check-input mx-auto mt-3 mb-3 d-block" value="5"> Satisfied</label>
-					<label for="q1_a" class="order-first order-lg-last form-check-label text-center mt-2 mt-lg-0"><input type="radio" name="q1" id="q1_a" class="form-check-input mx-auto mt-3 mb-3 d-block" value="6"> Extremely<br>Satisfied</label>
-				</div>
-			</div>
-			
-			
-			<div class="col-12 col-lg-12 pe-3 pe-lg-0">
-				<a href="q2.html" class="btn btn-primary disabled">Next Question</a>
+<body>
+    <!-- Google Tag Manager (noscript) -->
+    <noscript>
+        <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
+                style="display:none;visibility:hidden"></iframe>
+    </noscript>
+    <!-- End Google Tag Manager (noscript) -->
 
-				
-			</div>
-			<!-- <div class="col-12 col-lg-12 pe-3 pe-lg-0 mt-5">
-				<div class="progress" role="progressbar" aria-label="progress bar" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">
-			<div class="progress-bar" style="width: 25%"></div>
-			</div>
+    <div class="container-lg px-0 mb-5 pb-5">
+        <div class="hero-container pt-4">
+            <div class="d-flex flex-column flex-lg-row justify-content-evenly">
+                <div class="col-12 order-last order-lg-first">
+                    <h1 class="d-inline-block mt-0 mt-lg-5 text-start">
+                        Q1. Overall, how satisfied are you with the benefits currently offered by Marriott?
+                    </h1>
+                </div>
+            </div>
+        </div>
 
-			</div> -->
-			<div class="survey-progress my-4">
+        <div class="row">
+            <div class="col-12 col-lg-12">
+                <div class="d-flex flex-column border border-2 border-dark flex-lg-row justify-content-evenly px-5 pb-5 mb-5 align-items-center form-check-inline">
 
-			<div class="progress bar">
-				<div class="progress-bar bg-primary" role="progressbar" style="width: 0%;" aria-valuenow="0"
-					aria-valuemin="0" aria-valuemax="100"></div>
-			</div>
-			<div class="d-flex justify-content-between align-items-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
-				<span class="per">0%</span>
-				<span class="flex-grow-1 text-center">Survey Completion Percentage</span>
-				<span class="per">100%</span>
-			</div>
-			<!-- <div class="d-flex justify-content-between">
-				<span class="per">0%</span>
-				<span class="per">100%</span>
-			</div>
-			<div class="text-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
-				Survey Completion Percentage
-			</div> -->
-		</div>
-		</div>
-	</div>
-	<!-- <footer class="mt-5">
-		<section class="footer-top border-bottom border-white pt-5">
-		</section>
-		<div class="container">
-    <div class="row">
-			<div class="col-12 col-lg-12 pt-3">
-					<img src="img/MI-rev.png" alt="logo" class="ft_logo">
-				</div>
-		</div>
-		</div>
-</footer> -->
+                    <label for="q1_1" class="text-center mt-5 mt-lg-0 order-last order-lg-first form-check-label">
+                        <input type="radio" name="q1" id="q1_1" class="form-check-input mx-auto mt-3 mb-3 d-block" value="1">
+                        Extremely<br>Dissatisfied
+                    </label>
 
-<div id="footer-placeholder" class="mt-auto"></div>
-	 
+                    <label for="q1_2" class="text-center mt-5 mt-lg-0 order-5 order-lg-2 form-check-label">
+                        <input type="radio" name="q1" id="q1_2" class="form-check-input mx-auto mt-3 mb-3 d-block" value="2">
+                        Dissatisfied
+                    </label>
+
+                    <label for="q1_3" class="text-center mt-5 mt-lg-0 order-4 order-lg-3 form-check-label">
+                        <input type="radio" name="q1" id="q1_3" class="form-check-input mx-auto mt-3 mb-3 d-block" value="3">
+                        Slightly<br>Dissatisfied
+                    </label>
+
+                    <label for="q1_4" class="text-center mt-5 mt-lg-0 order-3 order-lg-4 form-check-label">
+                        <input type="radio" name="q1" id="q1_4" class="form-check-input mx-auto mt-3 mb-3 d-block" value="4">
+                        Slightly<br>Satisfied
+                    </label>
+
+                    <label for="q1_5" class="text-center mt-5 mt-lg-0 order-2 order-lg-5 form-check-label">
+                        <input type="radio" name="q1" id="q1_5" class="form-check-input mx-auto mt-3 mb-3 d-block" value="5">
+                        Satisfied
+                    </label>
+
+                    <label for="q1_6" class="text-center mt-2 mt-lg-0 order-first order-lg-last form-check-label">
+                        <input type="radio" name="q1" id="q1_6" class="form-check-input mx-auto mt-3 mb-3 d-block" value="6">
+                        Extremely<br>Satisfied
+                    </label>
+
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-12 pe-3 pe-lg-0">
+                <a href="q2.html" class="btn btn-primary disabled nextbutton">Next Question</a>
+            </div>
+
+            <div class="survey-progress my-4">
+                <div class="progress">
+                    <div class="progress-bar bg-primary" role="progressbar" style="width: 0%;" aria-valuenow="0"
+                        aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
+                    <span class="per">0%</span>
+                    <span class="flex-grow-1 text-center">Survey Completion Percentage</span>
+                    <span class="per">100%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="footer-placeholder" class="mt-auto"></div>
+
     <script src="js/sExtendUtil.js"></script>
     <script src="js/saveSurveyResponse_Mariott.js"></script>
-	<script>
-	if (location.href.indexOf("localhost") < 0 && location.href.indexOf("127.") < 0) document.write('<script src="../js/sValidator.js"><\/script>');
-		sessionStorage.setItem("page",1);
-		if(sessionStorage.getItem("q1")){
-			$(".nextbutton").removeAttr("disabled");
-		}
-		$(function() {
-      $("#footer-placeholder").load("footer.html");
-    });
-	</script>
-</body>
+    <script>
+        if (location.href.indexOf("localhost") < 0 && location.href.indexOf("127.") < 0) 
+            document.write('<script src="../js/sValidator.js"><\/script>');
 
+        sessionStorage.setItem("page", 1);
+        if(sessionStorage.getItem("q1")){
+            $(".nextbutton").removeAttr("disabled");
+        }
+
+        $(function() {
+            $("#footer-placeholder").load("footer.html");
+        });
+    </script>
+</body>
 </html>
