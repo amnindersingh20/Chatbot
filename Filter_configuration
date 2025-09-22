@@ -1,3 +1,483 @@
-Last code [('n', 110), ('t', 116), ('r', 114), ('i', 105), ('b', 98), ('>', 62)]
+import copy
+import re
 
-repr '<RU_401kPln1or3_NotMaxContrib>'
+
+
+relationals = {'EQ':'NE', 'NE':'EQ', 'GT':'LE', 'GE':'LT', 'LT':'GE', 'LE':'GT', 'Contains':'Does Not Contain', 'Does Not Contain':'Contains', 'Starts With':'Does Not Start With', 'Does Not Start With':'Starts With', 'Ends With':'Does Not End With', 'Does Not End With':'Ends With'}
+
+
+#Replaces strings with placeholders in definition
+def create_placeholders(text, startBracket, endBracket, prefix, placeholders):
+    text = text.strip()
+    if startBracket in text:
+        try:
+            if prefix == 'PRN':
+                if startBracket not in text[1:] and text[0] == startBracket and text[-1] == endBracket:
+                    return(text[1:-1], placeholders)
+                else:
+                    tempText = text[:text.find(endBracket) + 1][::-1]
+                    tempText = tempText[:tempText.find(startBracket) + 1][::-1]
+            else:
+                tempText = text[text.find(startBracket):text.find(endBracket, text.find(startBracket) + 1) + 1]
+            
+            if tempText == '':
+                return(text, placeholders)
+
+        except:
+            return(text, placeholders)
+        
+        if prefix == 'PRN':
+            placeholder = '!!#' + prefix + str(len(placeholders)) + '#!!'
+        else:
+            placeholder = '!##' + prefix + str(len(placeholders)) + '##!'
+        
+        text = text.replace(tempText, placeholder)
+        placeholders.append(tempText)
+        return(create_placeholders(text, startBracket, endBracket, prefix, placeholders))
+
+    else:
+        return(text, placeholders)
+
+
+#Replaces placesholders with original text
+def remove_placeholders(text, placeholders):
+    for ph in re.findall(r'!##[A-Z]{3}\d+##!', text):
+        prefix = re.search(r'[A-Z]{3}', ph).group()
+        if prefix in placeholders:
+            num = int(re.search(r'\d+', ph).group()) 
+            text = text.replace(ph, placeholders[prefix][int(num)])
+    
+    return text
+
+
+#Adds back text from between parens 
+def show_paren_text(text, parenTexts):
+    for _ in range(len(parenTexts)):
+        if '!!#PRN' not in text:
+            return text
+            
+        for ptId, parenText in enumerate(parenTexts):
+            text = text.replace('!!#PRN' + str(ptId) + '#!!', parenText)
+
+    return text
+
+
+#Builds out the ends of the branches for the rule dictionary
+def define_rule_end(ruleEndDef, parenText):
+    for relational in list(relationals.keys()):
+        if relational in ruleEndDef:
+            rightSide = ruleEndDef[ruleEndDef.find(relational) + len(relational):].strip()
+            #Breaks out GE conditions
+            if relational == 'GE':
+                return break_up_rule(ruleEndDef.replace(relational, 'GT') + '\nOR\n' + ruleEndDef.replace(relational, 'EQ'), parenText)
+            #Breaks out LE conditions
+            elif relational == 'LE':
+                return break_up_rule(ruleEndDef.replace(relational, 'LT') + '\nOR\n' + ruleEndDef.replace(relational, 'EQ'), parenText)
+            #Replaces GT 0 with NE 0 to avoid the condition LT 0
+            elif relational == 'GT' and rightSide == '0':
+                return break_up_rule(ruleEndDef.replace(relational, 'NE'), parenText)
+            #Breaks out comma seperatd lists
+            elif relational in ['EQ', 'Contains', 'Starts With', 'Ends With'] and ',' in rightSide:
+                return break_up_rule(ruleEndDef.replace(rightSide, rightSide.split(',',1)[0]) + '\nOR\n' + ruleEndDef.replace(rightSide, rightSide.split(',',1)[1]), parenText)
+            elif relational in ['NE', 'Does Not Contain', 'Does Not Start With', 'Does Not End With'] and ',' in rightSide:
+                return break_up_rule(ruleEndDef.replace(rightSide, rightSide.split(',',1)[0]) + '\nAND\n' + ruleEndDef.replace(rightSide, rightSide.split(',',1)[1]), parenText)
+            else:
+                ruleEnd = {}
+                ruleEnd['conector'] = 'END'
+                ruleEnd['posInv'] = ''
+                ruleEnd['relational'] = relational
+                ruleEnd['left'] = show_paren_text(ruleEndDef[:ruleEndDef.find(relational)].strip(), parenText)
+                ruleEnd['right'] = show_paren_text(rightSide, parenText)
+                return ruleEnd
+
+
+#Creates a tree of the rule structure
+def break_up_rule(ruleDef, parenText):
+    ruleDef = show_paren_text(ruleDef, parenText).strip()
+    parenText = []
+    if '(' in ruleDef:
+        if ruleDef[0] == '(' and ruleDef[-1] == ')' and '(' not in ruleDef[1:]:#NOTE Fix
+            ruleDef = ruleDef[1:-1]
+        else:
+            ruleDef, parenText = create_placeholders(ruleDef, '(', ')', 'PRN', [])
+
+    if 'OR' in ruleDef:
+        ruleOr = {}
+        ruleOr['conector'] = 'OR'
+        ruleOr['posInv'] = ''
+        leftSide = break_up_rule(ruleDef[:ruleDef.find('OR')].strip(), parenText)
+        rightSide = break_up_rule(ruleDef[ruleDef.find('OR') + len('OR'):].strip(), parenText)
+        ruleOr['sides'] = [leftSide, rightSide]
+        return ruleOr
+    elif 'AND' in ruleDef:
+        ruleAnd = {}
+        ruleAnd['conector'] = 'AND'
+        ruleAnd['posInv'] = ''
+        leftSide = break_up_rule(ruleDef[:ruleDef.find('AND')].strip(), parenText)
+        rightSide = break_up_rule(ruleDef[ruleDef.find('AND') + len('AND'):].strip(), parenText)
+        ruleAnd['sides'] = [leftSide, rightSide]
+        return ruleAnd
+    else:
+        return define_rule_end(ruleDef, parenText)
+
+
+def add_pos_inv_to_dict(ruleDict, path, posInv):
+    if path == []:
+        ruleDict['posInv'] = posInv
+        return(ruleDict)
+    else:
+        ruleDict['sides'][path[0]] = add_pos_inv_to_dict(ruleDict['sides'][path[0]], path[1:], posInv)
+        return(ruleDict)
+
+
+#Goes through the rule tree to mark positive
+def create_positive(ruleDict, path, isolate):
+    ruleDict = add_pos_inv_to_dict(ruleDict, path, 'p')
+    subRuleDict = copy.deepcopy(ruleDict)
+    for pathRoad in path:
+        subRuleDict = subRuleDict['sides'][pathRoad]
+
+    if subRuleDict['conector'] == 'AND':
+        create_positive(ruleDict, path + [0], isolate)
+        create_positive(ruleDict, path + [1], isolate)
+    elif subRuleDict['conector'] == 'OR':
+        if isolate:
+            if subRuleDict['sides'][0]['posInv'] == 'p':
+                create_positive(ruleDict, path + [0], True)
+                create_inverse(ruleDict, path + [1], False)
+            elif subRuleDict['sides'][1]['posInv'] == 'p':
+                create_inverse(ruleDict, path + [0], False)
+                create_positive(ruleDict, path + [1], True)
+            else:
+                create_positive(ruleDict, path + [0], False)
+                create_neutral(ruleDict, path + [1])
+        else:
+            if subRuleDict['sides'][1]['posInv'] == 'p':
+                create_neutral(ruleDict, path + [0])
+                create_positive(ruleDict, path + [1], False)
+            else:
+                create_positive(ruleDict, path + [0], False)
+                create_neutral(ruleDict, path + [1])
+
+    return ruleDict
+
+
+#Goes through the rule tree to mark inverse
+def create_inverse(ruleDict, path, isolate):   
+    ruleDict = add_pos_inv_to_dict(ruleDict, path, 'i')
+    subRuleDict = copy.deepcopy(ruleDict)
+    for pathRoad in path:
+        subRuleDict = subRuleDict['sides'][pathRoad]
+
+    if subRuleDict['conector'] == 'AND':
+        if isolate:
+            if subRuleDict['sides'][0]['posInv'] == 'i':
+                create_inverse(ruleDict, path + [0], True)
+                create_positive(ruleDict, path + [1], False)
+            elif subRuleDict['sides'][1]['posInv'] == 'i':
+                create_positive(ruleDict, path + [0], False)
+                create_inverse(ruleDict, path + [1], True)
+            else:
+                create_inverse(ruleDict, path + [0], False)
+                create_neutral(ruleDict, path + [1])
+        else:
+            if subRuleDict['sides'][1]['posInv'] == 'i':
+                create_neutral(ruleDict, path + [0])
+                create_inverse(ruleDict, path + [1], False)
+            else:
+                create_inverse(ruleDict, path + [0], False)
+                create_neutral(ruleDict, path + [1])
+    elif subRuleDict['conector'] == 'OR':
+        create_inverse(ruleDict, path + [0], isolate)
+        create_inverse(ruleDict, path + [1], isolate)
+    return ruleDict
+
+
+#Goes through the rule tree to mark neutral
+def create_neutral(ruleDict, path):
+    ruleDict = add_pos_inv_to_dict(ruleDict, path, 'n')
+    subRuleDict = copy.deepcopy(ruleDict)
+    for pathRoad in path:
+        subRuleDict = subRuleDict['sides'][pathRoad]
+
+    if subRuleDict['conector'] == 'AND' or subRuleDict['conector'] == 'OR':
+        create_neutral(ruleDict, path + [0])
+        create_neutral(ruleDict, path + [1])
+    return ruleDict
+
+
+#Goes through the rule tree to and creates a list of all the tree ends
+def create_list_of_ends(ruleDict, ends):
+    if ruleDict['conector'] == 'END':
+        if ruleDict['posInv'] == 'n':
+            return ends
+        else:
+            return ends + [ruleDict]
+    else:
+        ends = create_list_of_ends(ruleDict['sides'][0], ends)
+        ends = create_list_of_ends(ruleDict['sides'][1], ends)
+    return ends
+
+
+#Removes any duplicate scenarios from the scenario list
+def remove_duplicate_rule_scenarios(scenarios):
+    cleanScenarios = []
+    for scenarioNum in range(len(scenarios)):
+        for compareScenario in cleanScenarios + scenarios[scenarioNum + 1:]:
+            if len(scenarios[scenarioNum]) <= len(compareScenario):
+                for logicPiece in scenarios[scenarioNum]:
+                    included = True
+                    if logicPiece not in compareScenario:
+                        included = False
+                        break
+                
+                if included:
+                    break
+        else:
+            cleanScenarios.append(scenarios[scenarioNum])
+    
+    return cleanScenarios
+
+
+#Returns a list of positive scenarios for each tree end for rule testing
+def get_positive_rule_scenarios(ruleDict, scenarios, path, isolate):
+    subRuleDict = copy.deepcopy(ruleDict)
+    for pathRoad in path:
+        subRuleDict = subRuleDict['sides'][pathRoad]
+
+    if subRuleDict['conector'] == 'END':
+        scenarioRuleDict = copy.deepcopy(ruleDict)
+        for pathLength in range(len(path) + 1):
+            add_pos_inv_to_dict(scenarioRuleDict, path[:pathLength], 'p')
+        
+        create_positive(scenarioRuleDict, [], isolate)
+        return scenarios + [create_list_of_ends(scenarioRuleDict, [])]
+    else:
+        scenarios = get_positive_rule_scenarios(ruleDict, scenarios, path + [0], isolate)
+        scenarios = get_positive_rule_scenarios(ruleDict, scenarios, path + [1], isolate)
+
+    if isolate:
+        return remove_duplicate_rule_scenarios(scenarios)
+    else:
+        return scenarios
+
+
+#Returns a list of inverse scenarios for each tree end for rule testing
+def get_inverse_rule_scenarios(ruleDict, scenarios, path, isolate):
+    subRuleDict = copy.deepcopy(ruleDict)
+    for pathRoad in path:
+        subRuleDict = subRuleDict['sides'][pathRoad]
+
+    if subRuleDict['conector'] == 'END':
+        scenarioRuleDict = copy.deepcopy(ruleDict)
+        for pathLength in range(len(path) + 1):
+            add_pos_inv_to_dict(scenarioRuleDict, path[:pathLength], 'i')
+    
+        create_inverse(scenarioRuleDict, [], isolate)
+        return scenarios + [create_list_of_ends(scenarioRuleDict, [])]
+    else:
+        scenarios = get_inverse_rule_scenarios(ruleDict, scenarios, path + [0], isolate)
+        scenarios = get_inverse_rule_scenarios(ruleDict, scenarios, path + [1], isolate)
+
+    if isolate:
+        return remove_duplicate_rule_scenarios(scenarios)
+    else:
+        return scenarios
+
+
+#Removes conditions made unnecessary by other conditions
+def clean_rule_scenario(scenario):
+    cleaned = False
+    for logicPiece in scenario:
+        #Removes unnecessary logic copared to EQ
+        if logicPiece['relational'] in ['EQ', 'Contains', 'Starts With', 'Ends With']:
+            for comparePiece in scenario:
+                if logicPiece['left'] == comparePiece['left'] and comparePiece is not logicPiece:
+                    scenario.remove(comparePiece)
+                    cleaned = True
+
+        #Removes unnecessary logic copared to NE
+        elif logicPiece['relational'] == 'NE':
+            for comparePiece in scenario:
+                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] == comparePiece['right'] and comparePiece['relational'] == 'LE':
+                    scenario.remove(comparePiece)
+                    logicPiece['relational'] = 'LT'
+                    cleaned = True
+                elif logicPiece['left'] == comparePiece['left'] and logicPiece['right'] == comparePiece['right'] and comparePiece['relational'] == 'GE':
+                    scenario.remove(comparePiece)
+                    logicPiece['relational'] = 'GT'
+                    cleaned = True
+        
+        #Removes unnecessary logic copared to GT
+        elif logicPiece['relational'] == 'GT':
+            for comparePiece in scenario:
+                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] >= comparePiece['right'] and comparePiece['relational'] in ['NE', 'GT', 'GE'] and comparePiece is not logicPiece:
+                    scenario.remove(comparePiece)
+                    cleaned = True
+        
+        #Removes unnecessary logic copared to GE
+        elif logicPiece['relational'] == 'GE':
+            for comparePiece in scenario:
+                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] > comparePiece['right'] and comparePiece['relational'] in ['NE', 'GT', 'GE'] and comparePiece is not logicPiece:
+                    scenario.remove(comparePiece)
+                    cleaned = True
+
+        #Removes unnecessary logic copared to LT
+        elif logicPiece['relational'] == 'LT':
+            for comparePiece in scenario:
+                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] <= comparePiece['right'] and comparePiece['relational'] in ['NE', 'LT', 'LE'] and comparePiece is not logicPiece:
+                    scenario.remove(comparePiece)
+                    cleaned = True
+        
+        #Removes unnecessary logic copared to LE
+        elif logicPiece['relational'] == 'LE':
+            for comparePiece in scenario:
+                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] < comparePiece['right'] and comparePiece['relational'] in ['NE', 'LT', 'LE'] and comparePiece is not logicPiece:
+                    scenario.remove(comparePiece)
+                    cleaned = True
+    
+    if cleaned:
+        clean_rule_scenario(scenario)
+
+
+#Merges any like NE 'Does not contain' conditions
+def condense_rule_scenario_ne(scenario):
+    for logicPiece in scenario:
+        if logicPiece['relational'] in ['NE', 'Does Not Contain', 'Does Not Start With', 'Does Not End With']:
+            cleanScenario = []
+            for comparePiece in scenario:
+                if comparePiece == logicPiece:
+                    firstNE = len(cleanScenario)
+                    cleanScenario.append(comparePiece)
+                elif comparePiece['relational'] == logicPiece['relational'] and logicPiece['left'] == comparePiece['left']:
+                    cleanScenario[firstNE]['right'] = cleanScenario[firstNE]['right'] + ', ' + comparePiece['right']
+                else:
+                    cleanScenario.append(comparePiece)
+            
+            if cleanScenario != scenario:
+                return condense_rule_scenario_ne(cleanScenario)
+    
+    return scenario
+
+
+#Expand GE, LE
+def expand_rule_scenario(scenarios):
+    for scenNum, scenario in enumerate(scenarios):
+        clean_rule_scenario(scenarios[scenNum])
+        for logicNum, logicPiece in enumerate(scenario):
+            if logicPiece['relational'] == 'LE':
+                logicPiece['relational'] = 'EQ'
+                newScenario = copy.deepcopy(scenario)
+                newScenario[logicNum]['relational'] = 'LT'
+                scenarios.insert(scenNum, newScenario)
+            elif logicPiece['relational'] == 'GE':
+                logicPiece['relational'] = 'GT'
+                newScenario = copy.deepcopy(scenario)
+                newScenario[logicNum]['relational'] = 'EQ'
+                scenarios.insert(scenNum, newScenario)
+
+
+#Translates scenario into a string
+def build_rule_scenarios(scenarios, placeholders):
+    formatedScenarios = []
+    for scenarioNum in range(len(scenarios)):
+        for logicPiece in scenarios[scenarioNum]:
+            if logicPiece['posInv'] == 'i':
+                logicPiece['posInv'] = 'p'
+                logicPiece['relational'] = relationals[logicPiece['relational']]
+            if logicPiece['relational'] == 'NE':
+                if logicPiece['right'] == '0':
+                    logicPiece['relational'] = 'GT'
+                elif logicPiece['right'] == 'True':
+                    logicPiece['relational'] = 'EQ'
+                    logicPiece['right'] = 'False'
+                elif logicPiece['right'] == 'False':
+                    logicPiece['relational'] = 'EQ'
+                    logicPiece['right'] = 'True'
+
+
+    #Expand GE, LE
+    expand_rule_scenario(scenarios)
+    for scenarioNum in range(len(scenarios)):
+        #Removes NE condition if matching EQ condition exists
+        clean_rule_scenario(scenarios[scenarioNum])
+        #Merges any like NE conditions
+        scenarios[scenarioNum] = condense_rule_scenario_ne(scenarios[scenarioNum])
+        formatedScenarioList = []
+        for logicPiece in scenarios[scenarioNum]:
+            left = remove_placeholders(logicPiece['left'], placeholders)
+            right = remove_placeholders(logicPiece['right'], placeholders)
+            formatedScenarioList.append(left + ' ' + logicPiece['relational'] + ' ' + right)
+
+        formatedScenario = ('\nAND\n').join(formatedScenarioList)
+        if formatedScenario not in formatedScenarios:
+            formatedScenarios.append(formatedScenario)
+
+    return formatedScenarios
+
+
+#Checks for common syntax issues 
+def syntax_review(text, refValues, fieldList):
+    syntaxErrors = []
+    missingRefs = []
+    #Checks the definition for a list of common issues
+    badStrings = ['”', '“', '=', 'NE True', 'EQ true', 'EQ false']
+    for badSring in badStrings:
+        if badSring in text:
+            syntaxErrors.append('Check definition for: ' + badSring)
+    
+    #Checks that all brackets have an open and close
+    brackets = [{'open':'(', 'close':')'}, {'open':'[', 'close':']'}, {'open':'{', 'close':'}'}, {'open':'<', 'close':'>'}]
+    try:
+        for bracket in brackets:
+            openNum = text.count(bracket['open'])
+            closeNum = text.count(bracket['close'])
+            if openNum > closeNum:
+                syntaxErrors.append('"' + bracket['close'] + '" missing')
+            elif openNum < closeNum:
+                syntaxErrors.append('"' + bracket['open'] + '" missing')
+        
+        if text.count('"') % 2 != 0:
+            syntaxErrors.append('Quote is missing')
+    except:
+        pass
+
+    #Checks that References are in back of the specs
+    try:
+        for reference in refValues:
+            if reference not in fieldList:
+                missingRefs.append(reference + ' not in the back of specs')
+    
+    except:
+        pass
+
+    return(syntaxErrors, missingRefs)
+
+
+#Breaks up and reviews a single rule
+class Rule:
+    def __init__(self, ruleName, ruleDef, fieldList):
+        self.ruleName = ruleName
+        self.ruleDef = ruleDef.strip()
+        self.fieldList = fieldList
+        self.syntaxErrors = []
+        self.missingRefs = []
+        self.refValues = []
+        self.success = True
+
+        try:
+            self.cleanDef = self.ruleDef.replace('[','(').replace(']',')').replace('{','(').replace('}',')').replace('”','"').replace('“','"').replace('=','EQ').replace('NE True','EQ False').replace('EQ true','EQ True').replace('EQ false','EQ False')
+            self.ruleDefWPh, self.refValues = create_placeholders(self.cleanDef, '<', '>', 'REF', [])
+            self.ruleDefWPh, self.strValues = create_placeholders(self.ruleDefWPh, '"', '"', 'STR', [])
+            self.placeholders = {'REF':self.refValues, 'STR':self.strValues}
+            self.posScenarios = build_rule_scenarios(get_positive_rule_scenarios(break_up_rule(self.ruleDefWPh, []), [], [], True), self.placeholders)
+            self.invScenarios = [invScen for invScen in build_rule_scenarios(get_inverse_rule_scenarios(break_up_rule(self.ruleDefWPh, []), [], [], True), self.placeholders) if invScen not in  self.posScenarios]
+            self.allPosScenarios = build_rule_scenarios(get_positive_rule_scenarios(break_up_rule(self.ruleDefWPh, []), [], [], False), self.placeholders)
+        except:
+            self.syntaxErrors.append('Unable to break out rule')
+            self.success = False
+        
+        errors = syntax_review(ruleDef, self.refValues, self.fieldList)
+        self.syntaxErrors += errors[0]
+        self.missingRefs += errors[1]
+
