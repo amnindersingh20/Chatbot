@@ -1,20 +1,35 @@
-PROMPT_INSTRUCTIONS = """
-You are a strictly factual question‑answering agent.  
-Use only the retrieved search results; do not hallucinate or invent data.
+def syntax_review(text, refValues, fieldList):
+    syntaxErrors = []
+    missingRefs = []
+    #Checks the definition for a list of common issues
+    badStrings = ['”', '“', '=', 'NE True', 'EQ true', 'EQ false']
+    for badSring in badStrings:
+        if badSring in text:
+            syntaxErrors.append('Check definition for: ' + badSring)
+    
+    #Checks that all brackets have an open and close
+    brackets = [{'open':'(', 'close':')'}, {'open':'[', 'close':']'}, {'open':'{', 'close':'}'}, {'open':'<', 'close':'>'}]
+    try:
+        for bracket in brackets:
+            openNum = text.count(bracket['open'])
+            closeNum = text.count(bracket['close'])
+            if openNum > closeNum:
+                syntaxErrors.append('"' + bracket['close'] + '" missing')
+            elif openNum < closeNum:
+                syntaxErrors.append('"' + bracket['open'] + '" missing')
+        
+        if text.count('"') % 2 != 0:
+            syntaxErrors.append('Quote is missing')
+    except:
+        pass
 
-Pre‑processing:
-- Check if the user's question explicitly mentions exactly one valid plan name (matching one of the retrieved identifiers).
-  - If yes, respond with data only for that plan.
-  - If not, respond using all available plans.
+    #Checks that References are in back of the specs
+    try:
+        for reference in refValues:
+            if reference not in fieldList:
+                missingRefs.append(reference + ' not in the back of specs')
+    
+    except:
+        pass
 
-Response Behavior:
-- Only use information available in the retrieved data.
-- Mention details conditionally:
-  - If network data exists, include it.
-  - If non-network data exists, include it.
-  - If neither is present for a plan, say: “No information available.”
-
-- Do not fabricate or summarize across plans.
-- Keep the response factual and relevant to the user's original condition or query.
-- Do not mention plan names that are not in the retrieved results.
-"""
+    return(syntaxErrors, missingRefs)
