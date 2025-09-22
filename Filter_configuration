@@ -1,16 +1,38 @@
 from docx import Document
 
-# Load your Word doc
-doc = Document("YourSpecDoc.docx")
+# Path to your Word spec document
+spec_path = "YourSpecDoc.docx"
 
-# Extract all text from the document
-all_text = []
+# Load the Word document
+doc = Document(spec_path)
+
+# Extract all text lines that might represent field names
+raw_fields = []
 for para in doc.paragraphs:
     text = para.text.strip()
-    if text:  # ignore empty lines
-        all_text.append(text)
+    if text:  # skip empty lines
+        raw_fields.append(text)
 
-# Print raw values with repr to see hidden chars
-print("=== Fields from Word ===")
-for t in all_text:
+# Detect and print hidden/unusual characters
+print("=== Raw Fields with repr() ===")
+for t in raw_fields:
     print(f"Raw: {t} | repr: {repr(t)} | length: {len(t)}")
+    for c in t:
+        if ord(c) < 32 or ord(c) > 126:
+            print(f"  Hidden char detected: {repr(c)} in field: {t}")
+
+# Clean the field list: remove non-breaking spaces, smart quotes, extra whitespace, normalize case
+clean_fields = [
+    t.strip()
+     .replace('\xa0','')        # Remove non-breaking spaces
+     .replace('“','"').replace('”','"')  # Normalize quotes
+     .upper()                   # Convert to uppercase to match script
+    for t in raw_fields
+]
+
+print("\n=== Cleaned Fields Ready for Script ===")
+for t in clean_fields:
+    print(t)
+
+# Now you can use `clean_fields` as the `fieldList` in your Rule class:
+# rule = Rule(ruleName, ruleDef, clean_fields)
