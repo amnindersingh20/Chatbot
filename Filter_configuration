@@ -1,11 +1,69 @@
-print("repr(refValues):", repr(refValues))
-print("type(refValues):", type(refValues))
-try:
-    print("len(refValues):", len(refValues))
-except Exception as e:
-    print("len(refValues) raised:", e)
+def syntax_review(text, refValues, fieldList):
+    syntaxErrors = []
+    missingRefs = []
+    #Checks the definition for a list of common issues
+    badStrings = ['”', '“', '=', 'NE True', 'EQ true', 'EQ false']
+    for badSring in badStrings:
+        if badSring in text:
+            syntaxErrors.append('Check definition for: ' + badSring)
+    
+    #Checks that all brackets have an open and close
+    brackets = [{'open':'(', 'close':')'}, {'open':'[', 'close':']'}, {'open':'{', 'close':'}'}, {'open':'<', 'close':'>'}]
+    try:
+        for bracket in brackets:
+            openNum = text.count(bracket['open'])
+            closeNum = text.count(bracket['close'])
+            if openNum > closeNum:
+                syntaxErrors.append('"' + bracket['close'] + '" missing')
+            elif openNum < closeNum:
+                syntaxErrors.append('"' + bracket['open'] + '" missing')
+        
+        if text.count('"') % 2 != 0:
+            syntaxErrors.append('Quote is missing')
+    except:
+        pass
 
-for r in refValues:
-    print("ref:", repr(r))
-for f in fieldList:
-    print("field:", repr(f))
+    #Checks that References are in back of the specs
+    try:
+        # --- DEBUG PRINTS START (diagnostic only) ---
+        print("repr(refValues):", repr(refValues))
+        print("type(refValues):", type(refValues))
+        try:
+            print("len(refValues):", len(refValues))
+        except Exception as e:
+            print("len(refValues) raised:", e)
+
+        print("repr(fieldList):", repr(fieldList))
+        print("type(fieldList):", type(fieldList))
+        try:
+            print("len(fieldList):", len(fieldList))
+        except Exception as e:
+            print("len(fieldList) raised:", e)
+
+        # Per-item diagnostics (shows repr, length, last chars ords, and unicode_escape)
+        for r in refValues:
+            last_chars = r[-6:] if len(r) >= 6 else r
+            print(
+                "ref repr:", repr(r),
+                "| len:", len(r),
+                "| last_chars:", [(c, ord(c)) for c in last_chars],
+                "| unicode_escape:", r.encode('unicode_escape')
+            )
+        for f in fieldList:
+            last_chars_f = f[-6:] if len(f) >= 6 else f
+            print(
+                "field repr:", repr(f),
+                "| len:", len(f),
+                "| last_chars:", [(c, ord(c)) for c in last_chars_f],
+                "| unicode_escape:", f.encode('unicode_escape')
+            )
+        # --- DEBUG PRINTS END ---
+        
+        for reference in refValues:
+            if reference not in fieldList:
+                missingRefs.append(reference + ' not in the back of specs')
+    
+    except:
+        pass
+
+    return(syntaxErrors, missingRefs)
