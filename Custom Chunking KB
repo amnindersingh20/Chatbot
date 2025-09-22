@@ -1,99 +1,478 @@
-import os
-import json
-import uuid
-import logging
-import io
-import re
+import eel
+import copy
+from Tools.TestPlanningTools.AutoRule import Rule
+from Tools.TestPlanningTools.AutoCalc import Calc
+from Tools.TestPlanningTools.LoadSpecs import SpecTables, SitePage, word_table_to_array
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment, NamedStyle
+from openpyxl.cell import Cell
+import os.path
 
-import boto3
-import PyPDF2
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
-s3 = boto3.client("s3")
-bedrock = boto3.client("bedrock-agent", region_name=os.environ.get("AWS_REGION","us-east-1"))
+#Returns a path for a new file not already used
+def get_save_path(path):
+    if not os.path.isfile(path):
+        return(path)
+    else:
+        newPath = path
+        count = 1
+        while os.path.isfile(newPath):
+            newPath = path.split('.', 1)[0] + '(' + str(count) + ').' + path.split('.', 1)[1]
+            count += 1
+            
+        return(newPath)
 
-KB_ID = os.environ["BEDROCK_KB_ID"]
-DATA_SOURCE_ID = os.environ["DATA_SOURCE_ID"]
 
-CHUNK_SIZE    = int(os.environ.get("CHUNK_SIZE", 1000))
-CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 200))
+def copy_paste_arr(arr):
+    rows = []
+    for row in arr:
+        cells = []
+        for cell in row:
+            cells.append('"' + cell.replace('"', '""') + '"')
+        
+        rows.append(str(chr(9)).join(cells))
 
-def extract_population_id(key: str) -> str:
-    parts = key.split("/",2)
-    if len(parts)<3:
-        raise ValueError(f"Invalid S3 key format: {key}")
-    return parts[0]
+    return(str(chr(10)).join(rows))
 
-def extract_nin(filename: str) -> int:
-    name = os.path.splitext(filename)[0]
-    nums = [int(n) for n in re.findall(r"(\d+)", name)]
-    if not nums:
-        raise ValueError(f"No digits in filename: {filename}")
-    return nums[-1]
 
-def pdf_to_text(bucket, key):
-    obj = s3.get_object(Bucket=bucket,Key=key)
-    data = obj["Body"].read()
-    reader = PyPDF2.PdfReader(io.BytesIO(data))
-    return "\n".join(p.extract_text() or "" for p in reader.pages)
+def add_styles(wb):
+    bd = Side(style='thin', color="000000")
+    
+    if 'TP Row' not in wb.named_styles:
+        rowStyle = NamedStyle('TP Row')
+        rowStyle.font = Font(name='Calibri', size=11)
+        rowStyle.border = Border(left=bd, top=bd, right=bd, bottom=bd)
+        wb.add_named_style(rowStyle)
 
-def chunk_text(text):
-    start=0
-    L=len(text)
-    while start<L:
-        end=min(L, start+CHUNK_SIZE)
-        yield text[start:end]
-        start += CHUNK_SIZE-CHUNK_OVERLAP
+    if 'TP Overarching' not in wb.named_styles:
+        overarchingStyle = copy.copy(rowStyle)
+        overarchingStyle.name = 'TP Overarching'
+        overarchingStyle.fill = PatternFill(patternType='solid', fgColor = 'B7DEE8')
+        wb.add_named_style(overarchingStyle)
 
-def lambda_handler(event, context):
+    if 'TP Section' not in wb.named_styles:
+        sectionStyle = copy.copy(rowStyle)
+        sectionStyle.name = 'TP Section'
+        sectionStyle.fill = PatternFill(patternType='solid', fgColor = 'D9D9D9')
+        wb.add_named_style(sectionStyle)
+
+    if 'TP Page' not in wb.named_styles:
+        pageStyle = copy.copy(rowStyle)
+        pageStyle.name = 'TP Page'
+        pageStyle.fill = PatternFill(patternType='solid', fgColor = 'A6A6A6')
+        wb.add_named_style(pageStyle)
+
+
+def styled_cells(ws, data, style, test):
+    for index, d in enumerate(data):
+        c = Cell(ws, column="A", row=1, value=d)
+        c.style = style
+        if not test and index in [2, 3, 4, 5]:
+            c.style = 'TP Page'
+
+        if index in [2, 3, 4, 5, 7]:
+            c.alignment = Alignment(horizontal='center')
+
+        yield c
+
+
+def add_row_to_ws(ws, values, style):
     try:
-        rec = event["Records"][0]
-        bucket = rec["s3"]["bucket"]["name"]
-        key = rec["s3"]["object"]["key"]
-        filename = key.split("/")[-1]
+        test = len(values) < 3
+        values.extend([''] * (8 - len(values)))
+        ws.append(styled_cells(ws, values, style, test))
+    except:
+        ws.append(styled_cells(ws, ['ERROR'] + [''] * 7, style, False))
 
-        logger.info(f"Processing {bucket}/{key}")
-        population_id = extract_population_id(key)
-        nin = extract_nin(filename)
 
-        full_text = pdf_to_text(bucket,key)
-        docs = []
-        for chunk in chunk_text(full_text):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            doc_id = str(uuid.uuid4())
-            docs.append({
-              "content": {
-                "custom": {
-                  "customDocumentIdentifier": { "id": doc_id },
-                  "inlineContent": {
-                    "type":"text/plain",
-                    "textContent": { "data": chunk }
-                  }
-                }
-              },
-              "dataSourceType": "CUSTOM",
-              "metadata": {
-                "type": "INLINE",
-                "inlineAttributes": [
-                  {"key":"population_id", "value": {"stringValue": population_id}},
-                  {"key":"nin_priority",  "value": {"numberValue": float(nin)}},
-                  {"key":"source_key",    "value": {"stringValue": key}}
-                ]
-              }
-            })
+def tree_to_ws(tree, ws, isTranslation):
+    posInv = {True:'Positive', False:'Inverse'}
+    if tree['type'] == 'Block':
+        if tree['body']['overarchingRule'] != None:
+            add_row_to_ws(ws,['START: ' + tree['body']['overarchingRule']['ruleName'], posInv[tree['body']['overarchingRule']['pos']]], 'TP Overarching')
 
-        resp = bedrock.ingest_knowledge_base_documents(
-          knowledgeBaseId=KB_ID,
-          dataSourceId=DATA_SOURCE_ID,
-          documents=docs
-        )
-        logger.info("Ingestion job: %s", resp.get("jobId"))
-        return {"statusCode":200, "body":json.dumps(resp)}
+        if tree['body']['name'] != None:
+            add_row_to_ws(ws, [tree['body']['name']], 'TP Section')
+            
+        for index, content in enumerate(tree['body']['contents']):
+            if content not in tree['body']['contents'][:index]:
+                if isTranslation:
+                    tree_to_ws(content, ws, isTranslation)
+                else:
+                    if content['type'] == 'Rule':
+                        if content['body']['ruleName'] not in [c['body']['ruleName'] for c in tree['body']['contents'][:index] if c['type'] == 'Rule']:
+                            tree_to_ws(content, ws, isTranslation)
 
-    except Exception as e:
-        logger.error("Error", exc_info=True)
-        return {"statusCode":500, "body":str(e)}
+                    else:
+                        tree_to_ws(content, ws, isTranslation)
+
+        if tree['body']['overarchingRule'] != None:
+            if isTranslation:
+                add_row_to_ws(ws, ['END: ' + tree['body']['overarchingRule']['ruleName'], posInv[not tree['body']['overarchingRule']['pos']], 'NA'], 'TP Overarching')
+            else:
+                add_row_to_ws(ws, ['END: ' + tree['body']['overarchingRule']['ruleName'], posInv[not tree['body']['overarchingRule']['pos']]], 'TP Overarching')
+
+    elif tree['type'] == 'Link':
+        add_row_to_ws(ws, [tree['body']['linkID'], 'Link'], 'TP Row')
+    elif tree['type'] == 'Icon':
+        add_row_to_ws(ws, [tree['body']['iconID'], 'Icon'], 'TP Row')
+
+    elif tree['type'] == 'Rule':
+        add_row_to_ws(ws, [tree['body']['ruleName'], posInv[tree['body']['pos']]], 'TP Row')
+        if isTranslation:
+            add_row_to_ws(ws, [tree['body']['ruleName'], posInv[not tree['body']['pos']], 'NA'], 'TP Row')
+        else:
+            add_row_to_ws(ws, [tree['body']['ruleName'], posInv[not tree['body']['pos']]], 'TP Row')
+
+
+def print_content_ws_header(ws, name, clientName, clientNumber, password, transId):
+    #First row
+    headerText = [clientNumber + ' ' +  clientName + ' - ' + name,'','','="Populated: " & IFERROR(ROUNDDOWN(COUNTA(D3:D2000) * 100 / (COUNTA($A3:$A2000)- COUNTIF(C3:C2000, "NA")),0),0) & "%"','="Pass: " & IFERROR(ROUNDDOWN((COUNTIF(E3:E2000, "PASS") + COUNTIF(E4:E2000, "NA")) * 100 / (COUNTA($A3:$A2000) - COUNTIF($C3:$C2000, "NA")),0),0) & "%"', '="Fail: " & IFERROR(ROUNDUP(COUNTIF(E3:E2000, "FAIL") * 100 / (COUNTA($A3:$A2000)  - COUNTIF(C3:C2000, "NA")),0),0) & "%"', 'PASSWORD: ' + password +  ' TRANS/UDP: ' + transId]
+    ws.append(headerText)
+    ws.cell(1,1).font = Font(bold=True, name='Calibri', size=14)
+    for i in range(1, len(headerText) + 1):
+        ws.cell(1,i + 1).font = Font(name='Calibri', size=11)
+    #second row
+    headerText = ['','','Key Identifier', 'User ID', 'Results','Tester Time Stamp','Notes','JIRA']
+    ws.append(headerText)
+    colWidth = [40, 15, 20, 20, 12, 12, 40, 10]
+    for i in range(len(headerText)):
+        col = i + 1
+        ws.cell(2,col).fill = PatternFill(patternType='solid', fgColor = 'F2F2F2')
+        ws.cell(2,col).border = Border(Side(border_style='thin'), Side(border_style='thin'), Side(border_style='thin'), Side(border_style='thin'))
+        ws.cell(2,col).font = Font(bold=True, name='Ariel', size=9)
+        ws.cell(2,col).alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+        ws.column_dimensions[ws.cell(2,col).column_letter].width = colWidth[i]
+
+    ws.freeze_panes = 'A3'
+
+
+class ContentTP:
+    def __init__(self, specPath, aTRSpecPath, savePath, clientName, clientNumber, password, transId):
+        self.specPath = specPath
+        self.aTRSpecPath = aTRSpecPath
+        self.clientName = clientName
+        self.clientNumber = clientNumber
+        self.password = password
+        self.transId = transId
+        self.savePath = get_save_path(savePath + '/' + self.clientNumber + ' ' + self.clientName + ' - Content TP.xlsx')
+        self.spec = SpecTables(specPath=specPath, aTRSpecPath=aTRSpecPath)
+        self.get_site_pages()
+        self.print_pages()
+    
+
+    def get_site_pages(self):
+        #Gets a list of table indexes for site pages based on if the table contains Browser Title
+        self.sitePages = []
+        wireframe = False
+        for blockType, block, *_ in self.spec.docBlocks:
+            if blockType == 'Paragraph':
+                if 'Wireframe' in block:
+                    wireframe = True
+                elif block in ['GLOBAL MESSAGE CENTER (GMC)','Wireframe Layouts', 'Global Content']:
+                    break
+
+            elif wireframe and blockType == 'Table':
+                arr = word_table_to_array(block)
+                if 'Browser Title' in arr[0][0]:
+                    self.sitePages.append(SitePage(self.spec, block))
+                    wireframe = False
+
+
+    def print_pages(self):
+        wb = Workbook()
+        add_styles(wb)
+        for index, sitePage in enumerate(self.sitePages):
+            if index == 0:
+                ws = wb.active
+                ws.title = sitePage.pageName
+            else:
+                ws = wb.create_sheet(sitePage.pageName)
+
+            print_content_ws_header(ws, sitePage.pageName, self.clientName, self.clientNumber, self.password, self.transId)
+            tree_to_ws(sitePage.tree, ws, False)
+
+        wb.save(self.savePath)
+        wb.close
+
+
+def styled_refresh_cells(ws, data, style, test):
+    for index, d in enumerate(data):
+        c = Cell(ws, column="A", row=1, value=d)
+        c.style = style
+        c.alignment = Alignment(wrapText=True)
+        if index in [3, 4, 5, 6, 8]:
+            c.alignment = Alignment(horizontal='center')
+
+        if not test and index in [3, 4, 5, 6]:
+            c.style = 'TP Page'
+            c.alignment = Alignment(horizontal='center')
+
+        yield c
+
+
+def add_row_to_refresh_ws(ws, values, style, test):
+    values.extend([''] * (9 - len(values)))
+    ws.append(styled_refresh_cells(ws, values, style, test))
+
+
+def print_refresh_ws_header(ws, name, clientName, clientNumber, password, transId):
+    #First row
+    headerText = [clientNumber + ' ' +  clientName + ' - ' + name,'','','','="Populated: " & IFERROR(ROUNDDOWN(COUNTA(E3:E2000) * 100 / (COUNTA($A3:$A2000)- COUNTIF(D3:D2000, "NA")),0),0) & "%"','="Pass: " & IFERROR(ROUNDDOWN((COUNTIF(F3:F2000, "PASS") + COUNTIF(F3:F2000, "NA")) * 100 / (COUNTA($A$3:$A$2000) - COUNTIF($D$3:$D$2000, "NA")),0),0) & "%"', '="Fail: " & IFERROR(ROUNDUP(COUNTIF(F3:F2000, "FAIL") * 100 / (COUNTA($A3:$A2000)  - COUNTIF(D3:D2000, "NA")),0),0) & "%"', 'PASSWORD: ' + password +  ' TRANS/UDP: ' + transId]
+    ws.append(headerText)
+    ws.cell(1,1).font = Font(bold=True, name='Calibri', size=14)
+    for i in range(1, len(headerText) + 1):
+        ws.cell(1,i + 1).font = Font(name='Calibri', size=11)
+    #second row
+    headerText = ['','', '', 'Key Identifier', 'User ID', 'Results','Tester Time Stamp','Notes','JIRA']
+    ws.append(headerText)
+    colWidth = [30, 30, 30, 15, 15, 15, 15, 30, 10]
+    for i in range(len(headerText)):
+        col = i + 1
+        ws.cell(2,col).fill = PatternFill(patternType='solid', fgColor = 'F2F2F2')
+        ws.cell(2,col).border = Border(Side(border_style='thin'), Side(border_style='thin'), Side(border_style='thin'), Side(border_style='thin'))
+        ws.cell(2,col).font = Font(bold=True, name='Ariel', size=9)
+        ws.cell(2,col).alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+        ws.column_dimensions[ws.cell(2,col).column_letter].width = colWidth[i]
+
+    ws.freeze_panes = 'A3'
+
+
+def table_to_arr(table):
+    if len(table) > 3:
+        arr = [[table[0],'\r\n'.join(table[2].split('\r\n')[:-1])]] + [[table[i + 1].split('\r\n')[-1], '\r\n'.join(table[i + 3].split('\r\n')[:-1])] for i in range(1, len(table) - 3, 2)]
+    else:
+        arr = [[table[0], table[-1]]]
+
+    return(arr)
+
+
+class RefreshTP:
+    def __init__(self, clientName, clientNumber, refreshName, password, transId, rows, wbPath):
+        self.clientName = clientName
+        self.clientNumber = clientNumber
+        self.refreshName = refreshName
+        self.password = password
+        self.transId = transId
+        self.rows = rows
+        self.wbPath = wbPath
+        self.newWb = False
+        if not os.path.isfile(self.wbPath):
+            self.wb = Workbook()
+            self.newWb = True
+        else:
+            self.wb = load_workbook(self.wbPath)
+
+        self.print_ws()
+        self.wb.save(self.wbPath)
+        self.wb.close()
+    
+
+    def print_ws(self):
+        add_styles(self.wb)
+        if self.newWb:
+            ws = self.wb.active
+            ws.title = self.refreshName
+        else:
+            ws = self.wb.create_sheet(self.refreshName)
+
+        print_refresh_ws_header(ws, self.refreshName, self.clientName, self.clientNumber, self.password, self.transId)
+        classToStyle = {'testplanRow-page':'TP Page', 'testplanRow-section':'TP Section', 'testplanRow-overarching':'TP Overarching', 'testplanRow-rule':'TP Row', 'testplanRow-link':'TP Row','testplanRow':'TP Row'}
+        for row in self.rows:
+            add_row_to_refresh_ws(ws, row['cellText'], classToStyle[row['type']], row['test'])
+
+
+def print_repo_ws_header(ws, wsName, clientName, clientNumber, password, transId):
+    #First row
+    headerText = [clientNumber + ' ' + clientName + '-' + wsName, '', '', '', '="Populated: " & IFERROR(ROUND(COUNTA(E3:E2255) * 100 / (COUNTA($A3:$A2255)- COUNTIF(D3:D2334, "NA")),2),0) & "%"','="Pass: " & IFERROR(ROUND((COUNTIF(F3:F2334, "PASS") + COUNTIF(F3:F2334, "NA")) * 100 / (COUNTA($A3:$A2334) - COUNTIF(D3:D2334, "NA")),2),0) & "%"', '="Fail: " & IFERROR(ROUND((COUNTIF(F3:F2334, "FAIL")) * 100 / (COUNTA($A3:$A2334) - COUNTIF(D3:D2334, "NA")),2),0) & "%"', 'PASSWORD: ' + password +  ' TRANS/UDP: ' + transId]
+    ws.append(headerText)
+    ws.cell(1,1).font = Font(bold=True, name='Calibri', size=14)
+    for i in range(1, len(headerText) + 1):
+        ws.cell(1,i + 1).font = Font(name='Calibri', size=11)
+    #second row
+    headerText = [wsName,'Definition','Test Condition','Key Identifier', 'User ID', 'Results','Tester Time Stamp','Notes','JIRA']
+    ws.append(headerText)
+    colWidth = [30, 30, 30, 15, 15, 10, 12, 30, 10]
+    for i in range(len(headerText)):
+        col = i + 1
+        ws.cell(2,col).fill = PatternFill(patternType='solid', fgColor = 'F2F2F2')
+        ws.cell(2,col).border = Border(Side(border_style='thin'), Side(border_style='thin'), Side(border_style='thin'), Side(border_style='thin'))
+        ws.cell(2,col).font = Font(bold=True, name='Ariel', size=9)
+        ws.cell(2,col).alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+        ws.column_dimensions[ws.cell(2,col).column_letter].width = colWidth[i]
+
+    ws.freeze_panes = 'A3'
+
+
+def format_repo_row(ws, row):
+    for col in range(1, 10):
+        ws.cell(row, col).alignment = Alignment(wrapText=True)
+        ws.cell(row,col).border = Border(Side(border_style='thin'), Side(border_style='thin'), Side(border_style='thin'), Side(border_style='thin'))
+    
+    for col in range(4, 8): 
+        ws.cell(row, col).alignment = Alignment(horizontal='center')
+    
+    ws.cell(row, 9).alignment = Alignment(horizontal='center')
+
+
+class Repo:
+    def __init__(self, specPath, savePath, clientName, clientNumber, password, transId):
+        self.specPath = specPath
+        self.clientName = clientName
+        self.clientNumber = clientNumber
+        self.password = password
+        self.transId = transId
+        self.savePath = get_save_path(savePath + '/' + self.clientNumber + ' ' + self.clientName + ' - Rule Calc Repo.xlsx')
+        self.spec = SpecTables(specPath=self.specPath, repoOnly=True)
+        self.build_repo()
+
+
+    def build_repo_rules(self, rulesWs):
+        print_repo_ws_header(rulesWs, 'Rules', self.clientName, self.clientNumber, self.password, self.transId)
+        row = 3
+        for r in self.spec.rulesTable:
+            eel.updaete_message('Building ' + r['name'], 'grey')
+            rule = Rule(r['name'], r['definition'], self.spec.allFieldNames)
+            rulesWs.cell(row, 1).value = rule.ruleName
+            rulesWs.cell(row, 2).value = rule.ruleDef
+            allErrors = rule.syntaxErrors + rule.missingRefs
+            rulesWs.cell(row, 8).value = '\n'.join(allErrors)
+            format_repo_row(rulesWs, row)
+            try:
+                for posScenario in rule.posScenarios:
+                    rulesWs.cell(row, 1).value = rule.ruleName
+                    rulesWs.cell(row, 3).value = posScenario
+                    format_repo_row(rulesWs, row)
+                    row += 1
+
+                for invScenario in rule.invScenarios:
+                    rulesWs.cell(row, 1).value = rule.ruleName
+                    rulesWs.cell(row, 2).value = 'Inverse'
+                    rulesWs.cell(row, 3).value = invScenario
+                    format_repo_row(rulesWs, row)
+                    row += 1
+
+            except:
+                row += 1
+    
+
+    def build_repo_calcs(self, calcsWs):
+        print_repo_ws_header(calcsWs, 'Calcs', self.clientName, self.clientNumber, self.password, self.transId)
+        row = 3
+        for c in self.spec.calcsTable:
+            eel.updaete_message('Building ' + c['name'], 'grey')
+            calc = Calc(c['name'], c['definition'], self.spec.allFieldNames)
+            calcsWs.cell(row, 1).value = calc.calcName
+            calcsWs.cell(row, 2).value = calc.calcDef
+            allErrors = calc.syntaxErrors + calc.missingRefs
+            calcsWs.cell(row, 8).value = '\n'.join(allErrors)
+            format_repo_row(calcsWs, row)
+            try:
+                for scenario in calc.calcScenarios:
+                    calcsWs.cell(row, 1).value = calc.calcName
+                    calcsWs.cell(row, 3).value = scenario
+                    format_repo_row(calcsWs, row)
+                    row += 1
+
+            except:
+                row += 1
+
+
+    def build_repo(self):
+        repoWb = Workbook()
+        rulesWs = repoWb.active
+        rulesWs.title = 'Rules'
+        self.build_repo_rules(rulesWs)
+        caclcsWs = repoWb.create_sheet('Calcs')
+        self.build_repo_calcs(caclcsWs)
+
+        repoWb.save(self.savePath)
+        repoWb.close
+
+
+class SpecReview:
+    def __init__(self, specPath):
+        self.specPath = specPath
+        self.spec = SpecTables(specPath=self.specPath)
+        self.reviewRules()
+        self.reviewCalcs()
+    
+
+    def reviewRules(self):
+        self.ruleErrors = {}
+        for r in self.spec.rulesTable:
+            try:
+                rule = Rule(r['name'], r['definition'], self.spec.allFieldNames)
+                allErrors = rule.syntaxErrors + rule.missingRefs
+                if len(allErrors) > 0:
+                    self.ruleErrors[rule.ruleName] = allErrors
+            except:
+                pass
+
+    
+    def reviewCalcs(self):
+        self.calcErrors = {}
+        for c in self.spec.calcsTable:
+            try:
+                calc = Calc(c['name'], c['definition'], self.spec.allFieldNames)
+                allErrors = calc.syntaxErrors + calc.missingRefs
+                if len(allErrors) > 0:
+                    self.calcErrors[calc.calcName] = allErrors
+            except:
+                pass
+
+
+class BreakOutRule:
+    def __init__(self, ruleDef, ruleName = ''):
+        self.ruleDef = ruleDef
+        self.ruleName = ruleName
+        self.rule = Rule('', self.ruleDef, [])
+        self.errors = self.rule.syntaxErrors
+        self.arr = []
+        self.success = self.rule.success
+        if self.success:
+            self.makeArr()
+
+        self.copyString = copy_paste_arr(self.arr)
+
+
+    def makeArr(self):
+        for index, posScenario in enumerate(self.rule.posScenarios):
+            if index == 0:
+                self.arr.append([self.rule.ruleDef, posScenario])
+            else:
+                self.arr.append(['', posScenario])
+        
+        for index, invScenario in enumerate(self.rule.invScenarios):
+            self.arr.append(['Inverse', invScenario])
+
+        if self.ruleName != '':
+            self.arr = [[self.ruleName] + row for row in self.arr]
+
+
+class BreakOutCalc:
+    def __init__(self, calcDef, calcName = ''):
+        self.calcDef = calcDef
+        self.calcName = calcName
+        self.calc = Calc('', self.calcDef, [])
+        self.errors = self.calc.syntaxErrors
+        self.arr = []
+        self.paste = ''
+        self.success = self.calc.success
+        if self.success:
+            self.makeArr()
+
+        self.copyString = copy_paste_arr(self.arr)
+
+
+    def makeArr(self):
+        for index, posScenario in enumerate(self.calc.calcScenarios):
+            if index == 0:
+                self.arr.append([self.calc.calcDef, posScenario])
+            else:
+                self.arr.append(['', posScenario])
+        
+        if self.calcName != '':
+            self.arr = [[self.calcName] + row for row in self.arr]
+
