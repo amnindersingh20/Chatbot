@@ -1,483 +1,856 @@
+import eel
+from Tools.TestPlanningTools.AutoRule import create_placeholders
 import copy
+from collections import OrderedDict
+from docx import Document
+from docx.document import Document as _Document
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tbl
+from docx.table import _Cell, Table
+from docx.text.paragraph import Paragraph
+from openpyxl import load_workbook
 import re
 
 
 
-relationals = {'EQ':'NE', 'NE':'EQ', 'GT':'LE', 'GE':'LT', 'LT':'GE', 'LE':'GT', 'Contains':'Does Not Contain', 'Does Not Contain':'Contains', 'Starts With':'Does Not Start With', 'Does Not Start With':'Starts With', 'Ends With':'Does Not End With', 'Does Not End With':'Ends With'}
-
-
-#Replaces strings with placeholders in definition
-def create_placeholders(text, startBracket, endBracket, prefix, placeholders):
-    text = text.strip()
-    if startBracket in text:
-        try:
-            if prefix == 'PRN':
-                if startBracket not in text[1:] and text[0] == startBracket and text[-1] == endBracket:
-                    return(text[1:-1], placeholders)
-                else:
-                    tempText = text[:text.find(endBracket) + 1][::-1]
-                    tempText = tempText[:tempText.find(startBracket) + 1][::-1]
-            else:
-                tempText = text[text.find(startBracket):text.find(endBracket, text.find(startBracket) + 1) + 1]
-            
-            if tempText == '':
-                return(text, placeholders)
-
-        except:
-            return(text, placeholders)
-        
-        if prefix == 'PRN':
-            placeholder = '!!#' + prefix + str(len(placeholders)) + '#!!'
-        else:
-            placeholder = '!##' + prefix + str(len(placeholders)) + '##!'
-        
-        text = text.replace(tempText, placeholder)
-        placeholders.append(tempText)
-        return(create_placeholders(text, startBracket, endBracket, prefix, placeholders))
-
+#Allows the document to be parsed into both paragraphs and tables
+def iter_block_items(parent):
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
     else:
-        return(text, placeholders)
+        raise ValueError("something's not right")
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, parent)
 
 
-#Replaces placesholders with original text
-def remove_placeholders(text, placeholders):
-    for ph in re.findall(r'!##[A-Z]{3}\d+##!', text):
-        prefix = re.search(r'[A-Z]{3}', ph).group()
-        if prefix in placeholders:
-            num = int(re.search(r'\d+', ph).group()) 
-            text = text.replace(ph, placeholders[prefix][int(num)])
+#Saves each 'block' from our document into an array
+def create_block_array(docPath):
+    document = Document(docPath)
+    #Block item array (Block type('Paragraph','Table'), Block value, Paragraph style)
+    blockItemArray = []
+    for block in iter_block_items(document):
+        if isinstance(block, Paragraph):
+            parText = block.text.split('\n')
+            for line in parText:
+                if len(line) > 0 and line == parText[0]:
+                    blockItemArray.append(('Paragraph', line, block.style.name))
+                elif len(line) > 0:
+                    blockItemArray.append(('Paragraph', line, 'Normal'))
+
+        elif isinstance(block, Table):
+            blockItemArray.append(('Table', block))
+
+    return blockItemArray
+
+
+#Gets the table following a paragraph value
+def get_next_table(prevBlock, spec):
+    found = False
+    for blockType, block, *_ in spec.docBlocks:
+        if isinstance(prevBlock, str) and blockType == 'Paragraph':
+            if block.strip() == prevBlock:
+                found = True
+        elif not isinstance(prevBlock, str) and blockType == 'Table' and not found:
+            if block == prevBlock:
+                found = True
+        elif found and blockType == 'Table':
+            return(block)
     
-    return text
+    else:#loops through again looking or a sub string
+        if isinstance(prevBlock, str) and blockType == 'Paragraph':
+            if prevBlock in block:
+                found = True
+        elif not isinstance(prevBlock, str) and blockType == 'Table' and not found:
+            if block == prevBlock:
+                found = True
+        elif found and blockType == 'Table':
+            return(block)
 
 
-#Adds back text from between parens 
-def show_paren_text(text, parenTexts):
-    for _ in range(len(parenTexts)):
-        if '!!#PRN' not in text:
-            return text
+#Merges all paragraphs in a cell with a line break between paragraphs
+def cell_text_merge(cell):
+    cellParagraphs = []
+    for paragraph in cell.paragraphs:
+        cellParagraphs.append(paragraph.text.strip())
+    return '\n'.join(cellParagraphs)
+
+
+#outputs the table as an array
+def word_table_to_array(table):
+    tableList = []
+    for row in table.rows:
+        rowList =  []
+        for cellNum in range(len(row.cells)):
+            rowList.append(cell_text_merge(row.cells[cellNum]))
+
+        tableList.append(rowList)
+    
+    return tableList
+
+
+def get_refs_that_match(text, refs, multiple, rule):
+    try:
+        _, placeholders = create_placeholders(text, '<', '>', 'REF', [])
+        matches = []
+        for placeholder in placeholders:
+            if rule:
+                if placeholder in refs:
+                    matches.append({'ruleName':placeholder.replace('<', '').replace('>', ''), 'pos': True})
+                elif placeholder.replace('Inverse: ', '') in refs:
+                    matches.append({'ruleName':placeholder.replace('Inverse: ', '').replace('<', '').replace('>', ''), 'pos': False})
+                elif 'Inverse: ' in placeholder and not multiple and ' ' not in placeholder.replace('Inverse: ', ''):
+                    matches.append({'ruleName':placeholder.replace('Inverse: ', '').replace('<', '').replace('>', ''), 'pos': False})
+                elif not multiple and ' ' not in placeholder:
+                    matches.append({'ruleName':placeholder.replace('<', '').replace('>', ''), 'pos': True})
+            else:
+                if placeholder in refs:
+                    matches.append(placeholder.replace('<', '').replace('>', ''))
+    except:
+        if rule:
+            matches = [{'ruleName':'ISSUES WITH ANGLE BRACKETS IN: ' + text, 'pos': True}]
+        else:
+            matches = ['ISSUES WITH ANGLE BRACKETS IN: ' + text]
+
+    if multiple:
+        return(matches)
+    else:
+        if matches == []:
+            return(None)
+        else:
+            return(matches[0])
+
+
+def get_contents(text, allEpressions, allLinks, footnotes):
+    contents = []
+    try:
+        for embeddedRuleText in text.split('</')[1:]:
+            embeddedRule = get_refs_that_match('<' + embeddedRuleText, allEpressions, False, True)
+            if embeddedRule['pos']:
+                embeddedRuleName = embeddedRule['ruleName']
+            else:
+                embeddedRuleName = 'Inverse: ' + embeddedRule['ruleName']
+
+            if '<' + embeddedRuleName + '>' in text and '</' + embeddedRuleName + '>' in text:
+                embeddedText = text.split('<' + embeddedRuleName + '>', 1)[1].split('</' + embeddedRuleName + '>', 1)[0]
+                text = text.split('<' + embeddedRuleName + '>', 1)[0] + text.split('</' + embeddedRuleName + '>', 1)[1]
+                embeddedContent = get_contents(embeddedText, allEpressions, allLinks, footnotes)
+                contents.append({'type':'Block', 'body':{'name':None, 'overarchingRule':embeddedRule, 'contents':embeddedContent}})
+    except:
+        pass
+    
+    expressions = get_refs_that_match(text, allEpressions, True, True)
+    for expression in expressions:
+        contents.append({'type':'Rule', 'body':expression})
+
+    fns = get_refs_that_match(text, list(footnotes.keys()), True, False)
+    for fn in fns:
+        contents.append({'type':'Block', 'body':{'name':fn, 'overarchingRule':None, 'contents':get_contents(footnotes['<' + fn + '>'], allEpressions, allLinks, footnotes)}})
+
+
+    links = get_refs_that_match(text, allLinks, True, False)
+    for link in links:
+        contents.append({'type':'Link', 'body':{'linkID':link}})
+    
+    return(contents)
+
+
+def get_contents_from_table(arr, allEpressions, allLinks, footnotes, rulesCol, startRow):
+        tableContents = []
+        for row in arr[startRow:]:
+            if len(row) > 0:
+                rowRule = get_refs_that_match(row[rulesCol], allEpressions, False, True)
+                rowContents = []
+                for cell in row[:rulesCol]:
+                    rowContents += get_contents(cell, allEpressions, allLinks, footnotes)
             
-        for ptId, parenText in enumerate(parenTexts):
-            text = text.replace('!!#PRN' + str(ptId) + '#!!', parenText)
-
-    return text
-
-
-#Builds out the ends of the branches for the rule dictionary
-def define_rule_end(ruleEndDef, parenText):
-    for relational in list(relationals.keys()):
-        if relational in ruleEndDef:
-            rightSide = ruleEndDef[ruleEndDef.find(relational) + len(relational):].strip()
-            #Breaks out GE conditions
-            if relational == 'GE':
-                return break_up_rule(ruleEndDef.replace(relational, 'GT') + '\nOR\n' + ruleEndDef.replace(relational, 'EQ'), parenText)
-            #Breaks out LE conditions
-            elif relational == 'LE':
-                return break_up_rule(ruleEndDef.replace(relational, 'LT') + '\nOR\n' + ruleEndDef.replace(relational, 'EQ'), parenText)
-            #Replaces GT 0 with NE 0 to avoid the condition LT 0
-            elif relational == 'GT' and rightSide == '0':
-                return break_up_rule(ruleEndDef.replace(relational, 'NE'), parenText)
-            #Breaks out comma seperatd lists
-            elif relational in ['EQ', 'Contains', 'Starts With', 'Ends With'] and ',' in rightSide:
-                return break_up_rule(ruleEndDef.replace(rightSide, rightSide.split(',',1)[0]) + '\nOR\n' + ruleEndDef.replace(rightSide, rightSide.split(',',1)[1]), parenText)
-            elif relational in ['NE', 'Does Not Contain', 'Does Not Start With', 'Does Not End With'] and ',' in rightSide:
-                return break_up_rule(ruleEndDef.replace(rightSide, rightSide.split(',',1)[0]) + '\nAND\n' + ruleEndDef.replace(rightSide, rightSide.split(',',1)[1]), parenText)
-            else:
-                ruleEnd = {}
-                ruleEnd['conector'] = 'END'
-                ruleEnd['posInv'] = ''
-                ruleEnd['relational'] = relational
-                ruleEnd['left'] = show_paren_text(ruleEndDef[:ruleEndDef.find(relational)].strip(), parenText)
-                ruleEnd['right'] = show_paren_text(rightSide, parenText)
-                return ruleEnd
+                if rowContents == [] and rowRule !=None:
+                    tableContents.append({'type':'Rule', 'body':rowRule})
+                elif rowContents != []:
+                    tableContents.append({'type':'Block', 'body':{'name':None, 'overarchingRule':rowRule, 'contents':rowContents}})
+            
+        return(tableContents)
 
 
-#Creates a tree of the rule structure
-def break_up_rule(ruleDef, parenText):
-    ruleDef = show_paren_text(ruleDef, parenText).strip()
-    parenText = []
-    if '(' in ruleDef:
-        if ruleDef[0] == '(' and ruleDef[-1] == ')' and '(' not in ruleDef[1:]:#NOTE Fix
-            ruleDef = ruleDef[1:-1]
-        else:
-            ruleDef, parenText = create_placeholders(ruleDef, '(', ')', 'PRN', [])
+class SpecTables:
+    def __init__(self, specPath, aTRSpecPath="", repoOnly=False):
+        self.docBlocks = create_block_array(specPath)
+        self.aTRSpecPath = aTRSpecPath
+        self.repoOnly = repoOnly
+        self.baseLinksTable = []
+        self.linksTable = []
+        self.ssoTable = []
+        self.pdfsTable = []
+        self.calcsTable = []
+        self.baseExpressionsTable = []
+        self.rulesTable = []
+        self.constantsTable = []
+        self.dataListing = []
+        self.footnotes = {}
+        self.generate_back_of_spec_tables()
+        self.statementLinksTable = []
+        self.statementIconsTable = []
+        if self.aTRSpecPath != "":
+            self.generate_atr_spec_tables()
+            
+        self.allData = []
+        self.allLinks = []
+        self.allEpressions = []
+        self.allFieldNames = []
+        self.generate_super_tables()
+        self.aTRLinkTreeDict = {}
+        self.aTRIconTreeDict = {}
+        self.atr_specs_to_tree_dict()
+            
 
-    if 'OR' in ruleDef:
-        ruleOr = {}
-        ruleOr['conector'] = 'OR'
-        ruleOr['posInv'] = ''
-        leftSide = break_up_rule(ruleDef[:ruleDef.find('OR')].strip(), parenText)
-        rightSide = break_up_rule(ruleDef[ruleDef.find('OR') + len('OR'):].strip(), parenText)
-        ruleOr['sides'] = [leftSide, rightSide]
-        return ruleOr
-    elif 'AND' in ruleDef:
-        ruleAnd = {}
-        ruleAnd['conector'] = 'AND'
-        ruleAnd['posInv'] = ''
-        leftSide = break_up_rule(ruleDef[:ruleDef.find('AND')].strip(), parenText)
-        rightSide = break_up_rule(ruleDef[ruleDef.find('AND') + len('AND'):].strip(), parenText)
-        ruleAnd['sides'] = [leftSide, rightSide]
-        return ruleAnd
-    else:
-        return define_rule_end(ruleDef, parenText)
+    #Returns a list of dictionaries for needed fields from a table
+    def get_back_of_spec_table(self, table, columnHeaders, columnNames):
+        headerRow  = False
+        columnNums = []
+        for headerRowNum, row in enumerate(table.rows[:5]):
+            columnNums = []
+            for columnHeader in columnHeaders:
+                for cellNum in range(len(row.cells)):
+                    if columnHeader in cell_text_merge(row.cells[cellNum]):
+                        columnNums.append(cellNum)
+                        headerRow = True
+                        break
 
-
-def add_pos_inv_to_dict(ruleDict, path, posInv):
-    if path == []:
-        ruleDict['posInv'] = posInv
-        return(ruleDict)
-    else:
-        ruleDict['sides'][path[0]] = add_pos_inv_to_dict(ruleDict['sides'][path[0]], path[1:], posInv)
-        return(ruleDict)
-
-
-#Goes through the rule tree to mark positive
-def create_positive(ruleDict, path, isolate):
-    ruleDict = add_pos_inv_to_dict(ruleDict, path, 'p')
-    subRuleDict = copy.deepcopy(ruleDict)
-    for pathRoad in path:
-        subRuleDict = subRuleDict['sides'][pathRoad]
-
-    if subRuleDict['conector'] == 'AND':
-        create_positive(ruleDict, path + [0], isolate)
-        create_positive(ruleDict, path + [1], isolate)
-    elif subRuleDict['conector'] == 'OR':
-        if isolate:
-            if subRuleDict['sides'][0]['posInv'] == 'p':
-                create_positive(ruleDict, path + [0], True)
-                create_inverse(ruleDict, path + [1], False)
-            elif subRuleDict['sides'][1]['posInv'] == 'p':
-                create_inverse(ruleDict, path + [0], False)
-                create_positive(ruleDict, path + [1], True)
-            else:
-                create_positive(ruleDict, path + [0], False)
-                create_neutral(ruleDict, path + [1])
-        else:
-            if subRuleDict['sides'][1]['posInv'] == 'p':
-                create_neutral(ruleDict, path + [0])
-                create_positive(ruleDict, path + [1], False)
-            else:
-                create_positive(ruleDict, path + [0], False)
-                create_neutral(ruleDict, path + [1])
-
-    return ruleDict
-
-
-#Goes through the rule tree to mark inverse
-def create_inverse(ruleDict, path, isolate):   
-    ruleDict = add_pos_inv_to_dict(ruleDict, path, 'i')
-    subRuleDict = copy.deepcopy(ruleDict)
-    for pathRoad in path:
-        subRuleDict = subRuleDict['sides'][pathRoad]
-
-    if subRuleDict['conector'] == 'AND':
-        if isolate:
-            if subRuleDict['sides'][0]['posInv'] == 'i':
-                create_inverse(ruleDict, path + [0], True)
-                create_positive(ruleDict, path + [1], False)
-            elif subRuleDict['sides'][1]['posInv'] == 'i':
-                create_positive(ruleDict, path + [0], False)
-                create_inverse(ruleDict, path + [1], True)
-            else:
-                create_inverse(ruleDict, path + [0], False)
-                create_neutral(ruleDict, path + [1])
-        else:
-            if subRuleDict['sides'][1]['posInv'] == 'i':
-                create_neutral(ruleDict, path + [0])
-                create_inverse(ruleDict, path + [1], False)
-            else:
-                create_inverse(ruleDict, path + [0], False)
-                create_neutral(ruleDict, path + [1])
-    elif subRuleDict['conector'] == 'OR':
-        create_inverse(ruleDict, path + [0], isolate)
-        create_inverse(ruleDict, path + [1], isolate)
-    return ruleDict
-
-
-#Goes through the rule tree to mark neutral
-def create_neutral(ruleDict, path):
-    ruleDict = add_pos_inv_to_dict(ruleDict, path, 'n')
-    subRuleDict = copy.deepcopy(ruleDict)
-    for pathRoad in path:
-        subRuleDict = subRuleDict['sides'][pathRoad]
-
-    if subRuleDict['conector'] == 'AND' or subRuleDict['conector'] == 'OR':
-        create_neutral(ruleDict, path + [0])
-        create_neutral(ruleDict, path + [1])
-    return ruleDict
-
-
-#Goes through the rule tree to and creates a list of all the tree ends
-def create_list_of_ends(ruleDict, ends):
-    if ruleDict['conector'] == 'END':
-        if ruleDict['posInv'] == 'n':
-            return ends
-        else:
-            return ends + [ruleDict]
-    else:
-        ends = create_list_of_ends(ruleDict['sides'][0], ends)
-        ends = create_list_of_ends(ruleDict['sides'][1], ends)
-    return ends
-
-
-#Removes any duplicate scenarios from the scenario list
-def remove_duplicate_rule_scenarios(scenarios):
-    cleanScenarios = []
-    for scenarioNum in range(len(scenarios)):
-        for compareScenario in cleanScenarios + scenarios[scenarioNum + 1:]:
-            if len(scenarios[scenarioNum]) <= len(compareScenario):
-                for logicPiece in scenarios[scenarioNum]:
-                    included = True
-                    if logicPiece not in compareScenario:
-                        included = False
+            if headerRow and len(columnNums) == len(columnHeaders):
+                break
+        
+        if len(columnNums) != len(columnHeaders):
+            return []
+                    
+        tableValues = []
+        for row in table.rows[headerRowNum + 1:]:
+            rowDict = {}
+            completeRow = True
+            try:
+                cellText = cell_text_merge(row.cells[columnNums[0]]).strip()
+                try:
+                    if '<' in cellText:
+                        rowDict[columnNames[0]] = cellText[cellText.find('<'):cellText.find('>') + 1]
+                    elif len(cellText) == 0:
+                        completeRow = False
+                    else:
+                        rowDict[columnNames[0]] = '<' + cellText + '>'
+                except:
+                    rowDict[columnNames[0]] = cellText
+                
+                for fieldNum in range(1, len(columnNums)):
+                    rowDict[columnNames[fieldNum]] = cell_text_merge(row.cells[columnNums[fieldNum]]).strip()
+                    if rowDict[columnNames[fieldNum]] == '' and columnNames[fieldNum] != 'description':
+                        completeRow = False
                         break
                 
-                if included:
-                    break
-        else:
-            cleanScenarios.append(scenarios[scenarioNum])
-    
-    return cleanScenarios
+            except:
+                completeRow = False
+                break
 
+            if completeRow:
+                tableValues.append(rowDict)
 
-#Returns a list of positive scenarios for each tree end for rule testing
-def get_positive_rule_scenarios(ruleDict, scenarios, path, isolate):
-    subRuleDict = copy.deepcopy(ruleDict)
-    for pathRoad in path:
-        subRuleDict = subRuleDict['sides'][pathRoad]
-
-    if subRuleDict['conector'] == 'END':
-        scenarioRuleDict = copy.deepcopy(ruleDict)
-        for pathLength in range(len(path) + 1):
-            add_pos_inv_to_dict(scenarioRuleDict, path[:pathLength], 'p')
-        
-        create_positive(scenarioRuleDict, [], isolate)
-        return scenarios + [create_list_of_ends(scenarioRuleDict, [])]
-    else:
-        scenarios = get_positive_rule_scenarios(ruleDict, scenarios, path + [0], isolate)
-        scenarios = get_positive_rule_scenarios(ruleDict, scenarios, path + [1], isolate)
-
-    if isolate:
-        return remove_duplicate_rule_scenarios(scenarios)
-    else:
-        return scenarios
-
-
-#Returns a list of inverse scenarios for each tree end for rule testing
-def get_inverse_rule_scenarios(ruleDict, scenarios, path, isolate):
-    subRuleDict = copy.deepcopy(ruleDict)
-    for pathRoad in path:
-        subRuleDict = subRuleDict['sides'][pathRoad]
-
-    if subRuleDict['conector'] == 'END':
-        scenarioRuleDict = copy.deepcopy(ruleDict)
-        for pathLength in range(len(path) + 1):
-            add_pos_inv_to_dict(scenarioRuleDict, path[:pathLength], 'i')
-    
-        create_inverse(scenarioRuleDict, [], isolate)
-        return scenarios + [create_list_of_ends(scenarioRuleDict, [])]
-    else:
-        scenarios = get_inverse_rule_scenarios(ruleDict, scenarios, path + [0], isolate)
-        scenarios = get_inverse_rule_scenarios(ruleDict, scenarios, path + [1], isolate)
-
-    if isolate:
-        return remove_duplicate_rule_scenarios(scenarios)
-    else:
-        return scenarios
-
-
-#Removes conditions made unnecessary by other conditions
-def clean_rule_scenario(scenario):
-    cleaned = False
-    for logicPiece in scenario:
-        #Removes unnecessary logic copared to EQ
-        if logicPiece['relational'] in ['EQ', 'Contains', 'Starts With', 'Ends With']:
-            for comparePiece in scenario:
-                if logicPiece['left'] == comparePiece['left'] and comparePiece is not logicPiece:
-                    scenario.remove(comparePiece)
-                    cleaned = True
-
-        #Removes unnecessary logic copared to NE
-        elif logicPiece['relational'] == 'NE':
-            for comparePiece in scenario:
-                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] == comparePiece['right'] and comparePiece['relational'] == 'LE':
-                    scenario.remove(comparePiece)
-                    logicPiece['relational'] = 'LT'
-                    cleaned = True
-                elif logicPiece['left'] == comparePiece['left'] and logicPiece['right'] == comparePiece['right'] and comparePiece['relational'] == 'GE':
-                    scenario.remove(comparePiece)
-                    logicPiece['relational'] = 'GT'
-                    cleaned = True
-        
-        #Removes unnecessary logic copared to GT
-        elif logicPiece['relational'] == 'GT':
-            for comparePiece in scenario:
-                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] >= comparePiece['right'] and comparePiece['relational'] in ['NE', 'GT', 'GE'] and comparePiece is not logicPiece:
-                    scenario.remove(comparePiece)
-                    cleaned = True
-        
-        #Removes unnecessary logic copared to GE
-        elif logicPiece['relational'] == 'GE':
-            for comparePiece in scenario:
-                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] > comparePiece['right'] and comparePiece['relational'] in ['NE', 'GT', 'GE'] and comparePiece is not logicPiece:
-                    scenario.remove(comparePiece)
-                    cleaned = True
-
-        #Removes unnecessary logic copared to LT
-        elif logicPiece['relational'] == 'LT':
-            for comparePiece in scenario:
-                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] <= comparePiece['right'] and comparePiece['relational'] in ['NE', 'LT', 'LE'] and comparePiece is not logicPiece:
-                    scenario.remove(comparePiece)
-                    cleaned = True
-        
-        #Removes unnecessary logic copared to LE
-        elif logicPiece['relational'] == 'LE':
-            for comparePiece in scenario:
-                if logicPiece['left'] == comparePiece['left'] and logicPiece['right'] < comparePiece['right'] and comparePiece['relational'] in ['NE', 'LT', 'LE'] and comparePiece is not logicPiece:
-                    scenario.remove(comparePiece)
-                    cleaned = True
-    
-    if cleaned:
-        clean_rule_scenario(scenario)
-
-
-#Merges any like NE 'Does not contain' conditions
-def condense_rule_scenario_ne(scenario):
-    for logicPiece in scenario:
-        if logicPiece['relational'] in ['NE', 'Does Not Contain', 'Does Not Start With', 'Does Not End With']:
-            cleanScenario = []
-            for comparePiece in scenario:
-                if comparePiece == logicPiece:
-                    firstNE = len(cleanScenario)
-                    cleanScenario.append(comparePiece)
-                elif comparePiece['relational'] == logicPiece['relational'] and logicPiece['left'] == comparePiece['left']:
-                    cleanScenario[firstNE]['right'] = cleanScenario[firstNE]['right'] + ', ' + comparePiece['right']
-                else:
-                    cleanScenario.append(comparePiece)
+        return tableValues
             
-            if cleanScenario != scenario:
-                return condense_rule_scenario_ne(cleanScenario)
-    
-    return scenario
+
+    #Returns a list of dictionaries for needed fields from a table
+    def get_atr_spec_table(self, ws, columnHeaders, columnNames):
+        for rowNum, row in enumerate(ws.iter_rows(max_row=10)):
+            columnNums = {}
+            for columnHeaderNum, columnHeader in enumerate(columnHeaders):
+                for cell in row:
+                    if cell.value == None:
+                        pass
+                    elif columnHeader in cell.value:
+                        columnNums[columnNames[columnHeaderNum]] = cell.column - 1
+                        break
+                
+                else:
+                    break
+
+            if len(columnNums) == len(columnHeaders):
+                headerRow = rowNum + 1
+                break
+
+        else:
+            return []
 
 
-#Expand GE, LE
-def expand_rule_scenario(scenarios):
-    for scenNum, scenario in enumerate(scenarios):
-        clean_rule_scenario(scenarios[scenNum])
-        for logicNum, logicPiece in enumerate(scenario):
-            if logicPiece['relational'] == 'LE':
-                logicPiece['relational'] = 'EQ'
-                newScenario = copy.deepcopy(scenario)
-                newScenario[logicNum]['relational'] = 'LT'
-                scenarios.insert(scenNum, newScenario)
-            elif logicPiece['relational'] == 'GE':
-                logicPiece['relational'] = 'GT'
-                newScenario = copy.deepcopy(scenario)
-                newScenario[logicNum]['relational'] = 'EQ'
-                scenarios.insert(scenNum, newScenario)
+        tableValues = []
+        for row in ws.iter_rows(min_row=headerRow + 1):
+            try:
+                rowDict = {}
+                if row[columnNums[columnNames[0]]].value == None or row[columnNums[columnNames[0]]].value == "":
+                    raise Exception
+                for columnName in columnNames:
+                    cellText = row[columnNums[columnName]].value
+                    if cellText == None:
+                        rowDict[columnName] = ""
+                    # elif '<' in cellText and '>' in cellText:
+                    #     rowDict[columnName] = cellText[cellText.find('<'):cellText.find('>') + 1]
+                    else:
+                        rowDict[columnName] = cellText.strip()
+                
+                tableValues.append(rowDict)
 
+            except:
+                pass
 
-#Translates scenario into a string
-def build_rule_scenarios(scenarios, placeholders):
-    formatedScenarios = []
-    for scenarioNum in range(len(scenarios)):
-        for logicPiece in scenarios[scenarioNum]:
-            if logicPiece['posInv'] == 'i':
-                logicPiece['posInv'] = 'p'
-                logicPiece['relational'] = relationals[logicPiece['relational']]
-            if logicPiece['relational'] == 'NE':
-                if logicPiece['right'] == '0':
-                    logicPiece['relational'] = 'GT'
-                elif logicPiece['right'] == 'True':
-                    logicPiece['relational'] = 'EQ'
-                    logicPiece['right'] = 'False'
-                elif logicPiece['right'] == 'False':
-                    logicPiece['relational'] = 'EQ'
-                    logicPiece['right'] = 'True'
+        return tableValues
+            
 
+    #Grabs all back of spec info from specs
+    def generate_back_of_spec_tables(self):
+        section = ''
+        for blockType, block, *_ in self.docBlocks:
+            if blockType == 'Paragraph':
+                cleanBlock = block.strip().lower()
+                if cleanBlock == 'Upoint Base Links'.lower():
+                    section = 'baseLinks'
+                elif cleanBlock == 'Client Configured Links'.lower():
+                    section = 'links'
+                elif cleanBlock == 'Single Sign-On Links'.lower():
+                    section = 'ssos'
+                elif cleanBlock == 'PDF Links Listing'.lower():
+                    section = 'pdfs'
+                elif cleanBlock == 'Calculations'.lower():
+                    section = 'calcs'
+                elif cleanBlock == 'Upoint Base Expressions'.lower():
+                    section = 'baseExpressions'
+                elif cleanBlock == 'Client Configured Expressions'.lower():
+                    section = 'rules'
+                elif cleanBlock == 'Constants File'.lower() or cleanBlock == 'Constants'.lower() or cleanBlock == 'Global Constants'.lower():
+                    section = 'constants'
+                elif cleanBlock == 'Data Listing'.lower():
+                    section = 'dataListing'
+                elif '_FOOTNOTES'.lower() in cleanBlock:
+                    section = 'footnote'
+            elif blockType == 'Table':
+                try:
+                    try:
+                        eel.updaete_message('Reading ' + section, 'grey')
+                    except:
+                        pass
 
-    #Expand GE, LE
-    expand_rule_scenario(scenarios)
-    for scenarioNum in range(len(scenarios)):
-        #Removes NE condition if matching EQ condition exists
-        clean_rule_scenario(scenarios[scenarioNum])
-        #Merges any like NE conditions
-        scenarios[scenarioNum] = condense_rule_scenario_ne(scenarios[scenarioNum])
-        formatedScenarioList = []
-        for logicPiece in scenarios[scenarioNum]:
-            left = remove_placeholders(logicPiece['left'], placeholders)
-            right = remove_placeholders(logicPiece['right'], placeholders)
-            formatedScenarioList.append(left + ' ' + logicPiece['relational'] + ' ' + right)
-
-        formatedScenario = ('\nAND\n').join(formatedScenarioList)
-        if formatedScenario not in formatedScenarios:
-            formatedScenarios.append(formatedScenario)
-
-    return formatedScenarios
-
-
-#Checks for common syntax issues 
-def syntax_review(text, refValues, fieldList):
-    syntaxErrors = []
-    missingRefs = []
-    #Checks the definition for a list of common issues
-    badStrings = ['”', '“', '=', 'NE True', 'EQ true', 'EQ false']
-    for badSring in badStrings:
-        if badSring in text:
-            syntaxErrors.append('Check definition for: ' + badSring)
-    
-    #Checks that all brackets have an open and close
-    brackets = [{'open':'(', 'close':')'}, {'open':'[', 'close':']'}, {'open':'{', 'close':'}'}, {'open':'<', 'close':'>'}]
-    try:
-        for bracket in brackets:
-            openNum = text.count(bracket['open'])
-            closeNum = text.count(bracket['close'])
-            if openNum > closeNum:
-                syntaxErrors.append('"' + bracket['close'] + '" missing')
-            elif openNum < closeNum:
-                syntaxErrors.append('"' + bracket['open'] + '" missing')
-        
-        if text.count('"') % 2 != 0:
-            syntaxErrors.append('Quote is missing')
-    except:
-        pass
-
-    #Checks that References are in back of the specs
-    try:
-        for reference in refValues:
-            if reference not in fieldList:
-                missingRefs.append(reference + ' not in the back of specs')
-    
-    except:
-        pass
-
-    return(syntaxErrors, missingRefs)
-
-
-#Breaks up and reviews a single rule
-class Rule:
-    def __init__(self, ruleName, ruleDef, fieldList):
-        self.ruleName = ruleName
-        self.ruleDef = ruleDef.strip()
-        self.fieldList = fieldList
-        self.syntaxErrors = []
-        self.missingRefs = []
-        self.refValues = []
-        self.success = True
+                    if section == 'baseLinks' and not self.repoOnly:
+                        self.baseLinksTable += self.get_back_of_spec_table(block, ['Link Title', 'Link Text', 'URL', 'Description'], ['name', 'text', 'url', 'description'])
+                    elif section == 'links' and not self.repoOnly:
+                        self.linksTable += self.get_back_of_spec_table(block, ['Link ID', 'Link Text', 'URL', 'Description'], ['name', 'text', 'url', 'description'])
+                    elif section == 'ssos' and not self.repoOnly:
+                        self.ssoTable += self.get_back_of_spec_table(block, ['Link Title'], ['name'])
+                    elif section == 'pdfs' and not self.repoOnly:
+                        self.pdfsTable += self.get_back_of_spec_table(block, ['Link ID', 'Link Text', 'Expression', 'Title', 'Synopsis', 'Search Tag', 'URL'],\
+                        ['name', 'text', 'eligibility', 'description', 'synopsis', 'searchFilters', 'url'])
+                    elif section == 'calcs':
+                        self.calcsTable += self.get_back_of_spec_table(block, ['Field Name', 'Description', 'Source/Details'], ['name', 'description', 'definition'])
+                    elif section == 'baseExpressions':
+                        self.baseExpressionsTable += self.get_back_of_spec_table(block, ['Field Name', 'Description', 'Source/Details'], ['name', 'description', 'definition'])
+                    elif section == 'rules':
+                        self.rulesTable += self.get_back_of_spec_table(block, ['Field Name', 'Description', 'Source/Details'], ['name', 'description', 'definition'])
+                    elif section == 'constants':
+                        self.constantsTable += self.get_back_of_spec_table(block, ['Field Name', 'Type', 'Description', 'Value'], ['name', 'type', 'description', 'value'])
+                    elif section == 'dataListing':
+                        self.dataListing += self.get_back_of_spec_table(block, ['Field Name'], ['name'])
+                    elif section == 'footnote' and not self.repoOnly:
+                        fnTable = word_table_to_array(block)
+                        for row in fnTable[2:]:
+                            try:
+                                self.footnotes[row[0].strip()] = row[2]
+                            except:
+                                pass
+                            
+                        section = ''
+                        
+                              
+                except:
+                    pass
 
         try:
-            self.cleanDef = self.ruleDef.replace('[','(').replace(']',')').replace('{','(').replace('}',')').replace('”','"').replace('“','"').replace('=','EQ').replace('NE True','EQ False').replace('EQ true','EQ True').replace('EQ false','EQ False')
-            self.ruleDefWPh, self.refValues = create_placeholders(self.cleanDef, '<', '>', 'REF', [])
-            self.ruleDefWPh, self.strValues = create_placeholders(self.ruleDefWPh, '"', '"', 'STR', [])
-            self.placeholders = {'REF':self.refValues, 'STR':self.strValues}
-            self.posScenarios = build_rule_scenarios(get_positive_rule_scenarios(break_up_rule(self.ruleDefWPh, []), [], [], True), self.placeholders)
-            self.invScenarios = [invScen for invScen in build_rule_scenarios(get_inverse_rule_scenarios(break_up_rule(self.ruleDefWPh, []), [], [], True), self.placeholders) if invScen not in  self.posScenarios]
-            self.allPosScenarios = build_rule_scenarios(get_positive_rule_scenarios(break_up_rule(self.ruleDefWPh, []), [], [], False), self.placeholders)
+            eel.updaete_message('')
         except:
-            self.syntaxErrors.append('Unable to break out rule')
-            self.success = False
-        
-        errors = syntax_review(ruleDef, self.refValues, self.fieldList)
-        self.syntaxErrors += errors[0]
-        self.missingRefs += errors[1]
+            pass
 
+
+    #Grabs tables from ATR specs
+    def generate_atr_spec_tables(self):
+        wb = load_workbook(self.aTRSpecPath)
+        for ws in wb.worksheets:
+            if ws.title == 'UPoint Base Links':
+                self.baseLinksTable += self.get_atr_spec_table(ws, ['Link Title', 'Link Text', 'URL', 'Description'], ['name', 'text', 'url', 'description'])
+            elif ws.title == 'Client Configured Links':
+                self.linksTable += self.get_atr_spec_table(ws, ['Link ID', 'Link Text', 'URL', 'Description'], ['name', 'text', 'url', 'description'])
+            elif ws.title == 'Single Sign-On Links':
+                self.ssoTable += self.get_atr_spec_table(ws, ['Link Title'], ['name'])
+            elif ws.title == 'PDF Links':
+                self.pdfsTable += self.get_atr_spec_table(ws, ['Link ID', 'Link Text', 'Expression', 'Title', 'Synopsis', 'Search Tag', 'URL'],\
+                ['name', 'text', 'eligibility', 'description', 'synopsis', 'searchFilters', 'url'])
+            elif ws.title == 'YTR Statement Links':
+                self.statementLinksTable = self.get_atr_spec_table(ws, ['ATR Section', 'Link ID', 'Expressions'], ['section', 'linkName', 'expression'])
+            elif ws.title == 'YTR Images':
+                self.statementIconsTable = self.get_atr_spec_table(ws, ['Sub-Section Id', 'Icon File Name', 'Hex Color Code'], ['section', 'iconName', 'color'])
+
+
+    #Combines lists into more generic catagories 
+    def generate_super_tables(self):
+        for table in [self.constantsTable, self.dataListing]:
+            self.allData += [d['name'] for d in table if 'name' in d]
+
+        for table in [self.baseLinksTable, self.linksTable, self.ssoTable, self.pdfsTable]:
+            self.allLinks += [d['name'] for d in table if 'name' in d]
+
+        for table in [self.baseExpressionsTable, self.rulesTable]:
+            self.allEpressions += [d['name'] for d in table if 'name' in d]
+
+        self.allFieldNames += self.allData
+        self.allFieldNames += self.allLinks
+        self.allFieldNames += self.allEpressions
+        for table in [self.calcsTable]:
+            self.allFieldNames += [d['name'] for d in table if 'name' in d]
+
+
+    def atr_specs_to_tree_dict(self):
+        # #NOTE: Links now in word specs
+        # for link in self.statementLinksTable:
+        #     if link['section'] not in self.aTRLinkTreeDict:
+        #         self.aTRLinkTreeDict[link['section']] = []
+                
+        #     linkName = link['linkName'].replace('<','').replace('>','')
+        #     linkTree = {'type':'Link', 'body':{'linkID':linkName}}
+        #     if link['expression'] == "":
+        #         self.aTRLinkTreeDict[link['section']].append(linkTree)
+        #     else:
+        #         overarchingRule = get_refs_that_match(link['expression'], self.allEpressions, False, True)
+        #         self.aTRLinkTreeDict[link['section']].append({'type':'Block', 'body':{'name': None, 'overarchingRule': overarchingRule, 'contents':[linkTree]}})
+        
+        for icon in self.statementIconsTable:
+            if icon['section'] not in self.aTRIconTreeDict:
+                self.aTRIconTreeDict[icon['section']] = []
+                
+            iconName = icon['iconName'].replace('<','').replace('>','')
+            iconTree = {'type':'Icon', 'body':{'iconID':iconName}}
+            self.aTRIconTreeDict[icon['section']].append(iconTree)
+
+
+    #returns a list of references not in back of specs. NOTE Issues with many false positives
+    def get_all_refs_not_in_back(self):
+        refs = []
+        for blockType, block, *_ in self.docBlocks:
+            if blockType == 'Table':
+                arr = word_table_to_array(block)
+                if 'Field Name' not in arr[0][0]:
+                    for row in arr:
+                        for cell in row:
+                            if '<' in cell:
+                                try:
+                                    _, placeholders = create_placeholders(cell, '<', '>', 'FLD', [])
+                                    refs += placeholders
+                                except:
+                                    pass
+        
+
+        notInBack = []
+        for ref in list(set(refs)):
+            if ref in self.allFieldNames:
+                pass
+            elif ref.replace('Inverse: ', '') in self.allFieldNames:
+                pass
+            elif len(ref) > 5 and ref[:5] in ['<REF_', '<IMG_', '<FN_', '<FUNC', '<TMPL', '<NOTE', '<Note', '<PM N', '<Cook']:
+                pass
+            elif len(ref) > 4 and ref[:4] == '<FN_':
+                pass
+            elif len(ref) > 10 and ref[:10] == '<IST_BADGE':
+                pass
+            elif '-' not in ref and '_' not in ref:
+                pass
+            else:
+                notInBack.append(ref)
+
+        notInBack.sort()
+        return(notInBack)
+
+
+class SitePage:
+    def __init__(self, spec, table):
+        self.spec = spec
+        self.table = table
+        self.arr = word_table_to_array(table)
+        self.overallEligibility = self.get_page_eligibility()
+        self.pageName = re.sub('[^a-zA-Z- ]+', '', self.arr[0][1])
+        self.refNames = self.get_page_refs()
+        self.tree = self.build_tree()
+
+                
+    def get_page_eligibility(self):
+        for row in self.arr:
+            for colNum, cell in enumerate(row):
+                if 'Eligibility' in cell:
+                    field = get_refs_that_match(row[colNum + 1], self.spec.allEpressions, False, True)
+                    if field == None or field['ruleName'] in ['na', 'n/a', 'NA', 'N/A', 'Admin-owned', 'CBA-owned']:
+                        return(None)
+                    else:
+                        return(field)
+
+
+        else:
+            return(None)
+
+
+    def get_page_refs(self):
+        refArr = word_table_to_array(get_next_table(self.table, self.spec))
+        refs = []
+        for row in refArr:
+            for cell in row:
+                _, placeholders = create_placeholders(cell, '<', '>', 'REF', [])
+                refs += [placeholder.replace('<REF_', '').replace('>', '') for placeholder in placeholders if '<REF_' in placeholder]
+        
+
+        return(list(OrderedDict.fromkeys(refs)))
+
+
+    def build_tree(self):
+        #Determine what type of ref each is
+        contents = []
+        if self.refNames == []:
+            try:
+                contents.append(WebContent(self.spec, self.table).tree)
+            except:
+                contents.append({'type':'Block', 'body':{'name':'Webcontent - POSSIBLE ERROR', 'overarchingRule': None, 'contents':[]}})
+        else:    
+            for refName in self.refNames:
+                try:
+                    if refName in ['G1', 'G2', 'FAVHOME']:
+                        contents.append({'type':'Block', 'body':{'name':refName, 'overarchingRule': None, 'contents':[]}})
+                    elif 'TILEPORT' in refName:
+                        contents.append(TilePortlet(self.spec, refName).tree)
+                    elif ('YTR' in refName and 'Statement' in refName) or 'YOURTOTALREWARDS_WIDGET' in refName :
+                        contents.append(YTRStatement(self.spec, refName).tree)
+                    elif 'Total' in refName and 'Compensation' in refName:
+                        contents.append(TotalComp(self.spec, refName).tree)
+                    elif re.search(r'^CONTENT_.*_UCE$', refName) != None:
+                        contents.append(UceWebContent(self.spec, refName).tree)
+                    elif '_INTRO' in refName:
+                        contents.append(WebContent(self.spec, refName).tree)
+                    else:
+                        contents.append({'type':'Block', 'body':{'name':refName + ' - POSSIBLE ERROR', 'overarchingRule': None, 'contents':[]}})
+                except:
+                    contents.append({'type':'Block', 'body':{'name':refName + ' - POSSIBLE ERROR', 'overarchingRule': None, 'contents':[]}})
+
+        return({'type':'Block', 'body':{'name':None, 'overarchingRule': self.overallEligibility, 'contents':contents}})
+
+
+class WebContent:
+    def __init__(self, spec, name):
+        self.spec = spec
+        self.name = name
+        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
+        self.contents = get_contents_from_table(self.arr, self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, -1, 0)
+        self.tree = self.build_tree()
+    
+
+    def build_tree(self):
+        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':None, 'contents':self.contents}})
+
+
+class UceWebContent:
+    def __init__(self, spec, name):
+        self.spec = spec
+        self.name = name
+        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
+        self.get_header_info()
+        self.contents = []
+        self.tree = self.build_tree()
+    
+
+    def get_header_info(self):
+        found = False
+        self.eligCol = 1
+        self.startRow = 0
+        self.overallEligibility = None
+        for rowNum, row in enumerate(self.arr):
+            for colNum, cell in enumerate(row):
+                if 'Overall Eligibility' in cell:
+                    found = True
+                    self.eligCol = colNum
+                    self.startRow = rowNum + 1
+                    self.overallEligibility = get_refs_that_match(self.arr[self.startRow][self.eligCol], self.spec.allEpressions, False, True)
+            
+            if found:
+                break
+    
+
+    def build_tree(self):
+        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':self.overallEligibility, 'contents':self.contents}})
+
+
+class TotalComp:
+    def __init__(self, spec, name):
+        self.spec = spec
+        self.name = name
+        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
+        self.get_header_info()
+        self.contents = get_contents_from_table([([''] * (self.eligCol + 1)) + row[self.eligCol + 1:] for row in self.arr], self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, self.rulesCol, self.startRow)
+        self.tree = self.build_tree()
+    
+
+    def get_header_info(self):
+        found = False
+        self.eligCol = 1
+        self.startRow = 0
+        self.overallEligibility = None
+        self.contentCol = 2
+        self.rulesCol = -2
+        for rowNum, row in enumerate(self.arr):
+            for colNum, cell in enumerate(row):
+                if 'Overall Eligibility' in cell:
+                    found = True
+                    self.eligCol = colNum
+                    self.startRow = rowNum + 1
+                    self.overallEligibility = get_refs_that_match(self.arr[self.startRow][self.eligCol], self.spec.allEpressions, False, True)
+                if 'Body/Destination' in cell:
+                    self.contentCol = colNum
+                if 'Destination Rules' in cell:
+                    self.rulesCol = colNum
+            
+            if found:
+                break
+
+
+    def build_tree(self):
+        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':self.overallEligibility, 'contents':self.contents}})
+
+
+class TilePortlet:
+    def __init__(self, spec, name):
+        self.spec = spec
+        self.name = name
+        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
+        self.get_section_header()
+        self.get_tiles()
+        self.tree = self.build_tree()
+
+
+    def get_section_header(self):
+        found = False
+        for row in self.arr:
+            for colNum, cell in enumerate(row):
+                if 'Expression' in cell:
+                    found = True
+                    self.overallEligibility = get_refs_that_match(row[colNum + 1], self.spec.allEpressions, False, True)
+                    break
+
+            if found:
+                break
+
+        else:
+            self.overallEligibility = None
+
+
+    def get_tiles(self):
+        found = False
+        for rowNum, row in enumerate(self.arr):
+            for colNum, cell in enumerate(row):
+                if 'Tile ID' in cell:
+                    found = True
+                    self.startRow = rowNum + 1
+                    self.tileCol = colNum
+                    break
+
+            if found:
+                break
+        
+        else:
+            self.startRow = 0
+            self.tileCol = 0
+
+        self.tiles = []
+        for row in self.arr[self.startRow:]:
+            try:
+                tileName = row[self.tileCol].strip().split(' ')[0]
+                tile = Tile(self.spec, tileName)
+                if tile.tree['body']['name'] != '':
+                    self.tiles.append(tile)
+
+            except:
+                pass
+    
+
+    def build_tree(self):
+        contents = [tile.tree for tile in self.tiles]
+        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':self.overallEligibility, 'contents':contents}})
+
+
+class Tile:
+    def __init__(self, spec, name):
+        self.spec = spec
+        self.name = name
+        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
+        self.get_header_info()
+        self.contents = get_contents_from_table([([''] * (self.eligCol + 1)) + row[self.eligCol + 1:] for row in self.arr], self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, self.rulesCol, self.startRow)
+        self.tree = self.build_tree()
+    
+
+    def get_header_info(self):
+        found = False
+        self.eligCol = 1
+        self.startRow = 0
+        self.overallEligibility = None
+        self.contentCol = 2
+        self.rulesCol = -2
+        for rowNum, row in enumerate(self.arr):
+            for colNum, cell in enumerate(row):
+                if 'Overall Eligibility' in cell:
+                    found = True
+                    self.eligCol = colNum
+                    self.startRow = rowNum + 1
+                    self.overallEligibility = get_refs_that_match(self.arr[self.startRow][self.eligCol], self.spec.allEpressions, False, True)
+                if 'Content/Destination' in cell:
+                    self.contentCol = colNum
+                if 'Destination Rules' in cell:
+                    self.rulesCol = colNum
+            
+            if found:
+                break
+    
+
+    def build_tree(self):
+        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':self.overallEligibility, 'contents':self.contents}})
+
+
+class YTRStatement:
+    def __init__(self, spec, name):
+        self.spec = spec
+        self.name = name
+        self.sections = []
+        self.get_sections()
+        self.build_tree()
+
+
+    #looks for the table that contains the main statement sections
+    def get_sections(self):
+        sectionArr = word_table_to_array(get_next_table(self.name, self.spec))
+        #Gets section and any overarching rules
+        for row in sectionArr:
+            if 'DTLMAX>' in row[0]:
+                #Gets section name
+                _, placeholders = create_placeholders(row[0], '<', '>', 'SEC', [])
+                for placeholder in placeholders:
+                    if 'DTLMAX>' in placeholder:
+                        sectionName = placeholder.replace('<REF_', '').replace('>', '')
+                        break
+                
+                #Gets section expression if any
+                self.eligibility = get_refs_that_match(row[-1], self.spec.allEpressions, False, True)
+                
+                #Builds out each section
+                self.sections.append(StmtSection(self.spec, sectionName, self.eligibility))
+
+
+    def build_tree(self):
+        contents = [section.tree for section in self.sections]
+        self.tree = {'type':'Block', 'body':{'name': self.name, 'overarchingRule': None, 'contents':contents}}
+
+
+class StmtSection:
+    def __init__(self, spec, sectionName, eligibility):
+        self.spec = spec
+        self.sectionName = sectionName
+        self.eligibility = eligibility
+        self.contents = []
+        self.get_section_header()
+        self.get_StmtItems()
+        self.get_sub_sections()
+        self.tree = self.build_tree()
+
+
+    def get_section_header(self):
+        sectionHdrArr = word_table_to_array(get_next_table(self.sectionName, self.spec))
+        #Checks Section table for overarching rule
+        if self.eligibility == None:
+            if 'Attributes/Notes' in sectionHdrArr[0][-1] and len(sectionHdrArr) > 1:
+                self.eligibility = get_refs_that_match(sectionHdrArr[1][-1], self.spec.allEpressions, False, True)
+            else:
+                self.eligibility = get_refs_that_match(sectionHdrArr[0][-1], self.spec.allEpressions, False, True)
+
+        self.contents += get_contents_from_table([row[:-1] + [''] for row in sectionHdrArr], self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, -1, 0)
+
+
+    def get_StmtItems(self):
+        self.StmtItems = []
+        blockName = ''
+        for blockType, block, *_ in self.spec.docBlocks:
+            if blockType == 'Paragraph':
+                if self.sectionName + '_' in block:
+                    blockName = block.strip()
+            elif blockType == 'Table' and blockName != '':
+                self.StmtItems.append(StmtItem(self.spec, blockName, block))
+                blockName = ''
+
+
+    def get_sub_sections(self):
+        self.subSections = []
+        self.subSectionsNames = list(OrderedDict.fromkeys([block.blockSubSection for block in self.StmtItems]))
+        for subSectionsName in self.subSectionsNames:
+            subSectionsBlocks = [block for block in self.StmtItems if block.blockSubSection == subSectionsName]
+            if subSectionsBlocks[0].isHeader:
+                subSectionsHeader = subSectionsBlocks[0]
+                subSectionsBlocks = subSectionsBlocks[1:]
+            else:
+                subSectionsHeader = None
+            
+            self.subSections.append(StmtSubSection(self.spec, subSectionsHeader, subSectionsBlocks))
+    
+
+    def build_tree(self):
+        self.contents += [subSection.tree for subSection in self.subSections]
+        return({'type':'Block', 'body':{'name':self.sectionName, 'overarchingRule':self.eligibility, 'contents':self.contents}})
+
+
+class StmtSubSection:
+    def __init__(self, spec, header, blocks):
+        self.spec = spec
+        self.header = header
+        self.blocks = blocks
+        self.tree = self.build_tree()
+
+
+    def build_tree(self):
+        if self.header == None:
+            return({'type':'Block', 'body':{'name':None, 'overarchingRule': None, 'contents':[block.tree for block in self.blocks]}})
+        else:
+            tree = copy.deepcopy(self.header.tree)
+            tree['body']['contents'] += [block.tree for block in self.blocks]
+            return(tree)
+
+
+class StmtItem:
+    def __init__(self, spec, name, table):
+        self.spec = spec
+        self.name = name
+        self.blockSection = "_".join(name.split('_')[:-1])
+        self.table = table
+        self.arr = word_table_to_array(table)
+        if '_HEAD' in self.name:
+            self.isHeader = True
+            self.blockSubSection = name.split('_')[-1].replace('HEAD', '')
+            self.blockNum = 'HEAD'
+        else:
+            self.isHeader = False  
+            self.blockSubSection = name.split('_')[-1][0]
+            self.blockNum = name.split('_')[-1][1:]
+        self.overarchingRule = get_refs_that_match(self.arr[0][-1], self.spec.allEpressions, False, True)
+        contentArr = copy.copy(self.arr)
+        contentArr[0][-1] = ''
+        self.contents = []
+        if self.name in self.spec.aTRIconTreeDict:
+            self.contents += self.spec.aTRIconTreeDict[self.name]
+
+        self.contents += get_contents_from_table(contentArr, self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, -1, 0)
+        if self.name in self.spec.aTRLinkTreeDict:
+            self.contents += self.spec.aTRLinkTreeDict[self.name]
+
+        self.tree = {'type':'Block', 'body':{'name':self.name, 'overarchingRule': self.overarchingRule, 'contents':self.contents}}
