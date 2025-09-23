@@ -1,856 +1,200 @@
-import eel
-from Tools.TestPlanningTools.AutoRule import create_placeholders
-import copy
-from collections import OrderedDict
-from docx import Document
-from docx.document import Document as _Document
-from docx.oxml.text.paragraph import CT_P
-from docx.oxml.table import CT_Tbl
-from docx.table import _Cell, Table
-from docx.text.paragraph import Paragraph
-from openpyxl import load_workbook
-import re
-
-
-
-#Allows the document to be parsed into both paragraphs and tables
-def iter_block_items(parent):
-    if isinstance(parent, _Document):
-        parent_elm = parent.element.body
-    elif isinstance(parent, _Cell):
-        parent_elm = parent._tc
-    else:
-        raise ValueError("something's not right")
-    for child in parent_elm.iterchildren():
-        if isinstance(child, CT_P):
-            yield Paragraph(child, parent)
-        elif isinstance(child, CT_Tbl):
-            yield Table(child, parent)
-
-
-#Saves each 'block' from our document into an array
-def create_block_array(docPath):
-    document = Document(docPath)
-    #Block item array (Block type('Paragraph','Table'), Block value, Paragraph style)
-    blockItemArray = []
-    for block in iter_block_items(document):
-        if isinstance(block, Paragraph):
-            parText = block.text.split('\n')
-            for line in parText:
-                if len(line) > 0 and line == parText[0]:
-                    blockItemArray.append(('Paragraph', line, block.style.name))
-                elif len(line) > 0:
-                    blockItemArray.append(('Paragraph', line, 'Normal'))
-
-        elif isinstance(block, Table):
-            blockItemArray.append(('Table', block))
-
-    return blockItemArray
-
-
-#Gets the table following a paragraph value
-def get_next_table(prevBlock, spec):
-    found = False
-    for blockType, block, *_ in spec.docBlocks:
-        if isinstance(prevBlock, str) and blockType == 'Paragraph':
-            if block.strip() == prevBlock:
-                found = True
-        elif not isinstance(prevBlock, str) and blockType == 'Table' and not found:
-            if block == prevBlock:
-                found = True
-        elif found and blockType == 'Table':
-            return(block)
-    
-    else:#loops through again looking or a sub string
-        if isinstance(prevBlock, str) and blockType == 'Paragraph':
-            if prevBlock in block:
-                found = True
-        elif not isinstance(prevBlock, str) and blockType == 'Table' and not found:
-            if block == prevBlock:
-                found = True
-        elif found and blockType == 'Table':
-            return(block)
-
-
-#Merges all paragraphs in a cell with a line break between paragraphs
-def cell_text_merge(cell):
-    cellParagraphs = []
-    for paragraph in cell.paragraphs:
-        cellParagraphs.append(paragraph.text.strip())
-    return '\n'.join(cellParagraphs)
-
-
-#outputs the table as an array
-def word_table_to_array(table):
-    tableList = []
-    for row in table.rows:
-        rowList =  []
-        for cellNum in range(len(row.cells)):
-            rowList.append(cell_text_merge(row.cells[cellNum]))
-
-        tableList.append(rowList)
-    
-    return tableList
-
-
-def get_refs_that_match(text, refs, multiple, rule):
-    try:
-        _, placeholders = create_placeholders(text, '<', '>', 'REF', [])
-        matches = []
-        for placeholder in placeholders:
-            if rule:
-                if placeholder in refs:
-                    matches.append({'ruleName':placeholder.replace('<', '').replace('>', ''), 'pos': True})
-                elif placeholder.replace('Inverse: ', '') in refs:
-                    matches.append({'ruleName':placeholder.replace('Inverse: ', '').replace('<', '').replace('>', ''), 'pos': False})
-                elif 'Inverse: ' in placeholder and not multiple and ' ' not in placeholder.replace('Inverse: ', ''):
-                    matches.append({'ruleName':placeholder.replace('Inverse: ', '').replace('<', '').replace('>', ''), 'pos': False})
-                elif not multiple and ' ' not in placeholder:
-                    matches.append({'ruleName':placeholder.replace('<', '').replace('>', ''), 'pos': True})
-            else:
-                if placeholder in refs:
-                    matches.append(placeholder.replace('<', '').replace('>', ''))
-    except:
-        if rule:
-            matches = [{'ruleName':'ISSUES WITH ANGLE BRACKETS IN: ' + text, 'pos': True}]
-        else:
-            matches = ['ISSUES WITH ANGLE BRACKETS IN: ' + text]
-
-    if multiple:
-        return(matches)
-    else:
-        if matches == []:
-            return(None)
-        else:
-            return(matches[0])
-
-
-def get_contents(text, allEpressions, allLinks, footnotes):
-    contents = []
-    try:
-        for embeddedRuleText in text.split('</')[1:]:
-            embeddedRule = get_refs_that_match('<' + embeddedRuleText, allEpressions, False, True)
-            if embeddedRule['pos']:
-                embeddedRuleName = embeddedRule['ruleName']
-            else:
-                embeddedRuleName = 'Inverse: ' + embeddedRule['ruleName']
-
-            if '<' + embeddedRuleName + '>' in text and '</' + embeddedRuleName + '>' in text:
-                embeddedText = text.split('<' + embeddedRuleName + '>', 1)[1].split('</' + embeddedRuleName + '>', 1)[0]
-                text = text.split('<' + embeddedRuleName + '>', 1)[0] + text.split('</' + embeddedRuleName + '>', 1)[1]
-                embeddedContent = get_contents(embeddedText, allEpressions, allLinks, footnotes)
-                contents.append({'type':'Block', 'body':{'name':None, 'overarchingRule':embeddedRule, 'contents':embeddedContent}})
-    except:
-        pass
-    
-    expressions = get_refs_that_match(text, allEpressions, True, True)
-    for expression in expressions:
-        contents.append({'type':'Rule', 'body':expression})
-
-    fns = get_refs_that_match(text, list(footnotes.keys()), True, False)
-    for fn in fns:
-        contents.append({'type':'Block', 'body':{'name':fn, 'overarchingRule':None, 'contents':get_contents(footnotes['<' + fn + '>'], allEpressions, allLinks, footnotes)}})
-
-
-    links = get_refs_that_match(text, allLinks, True, False)
-    for link in links:
-        contents.append({'type':'Link', 'body':{'linkID':link}})
-    
-    return(contents)
-
-
-def get_contents_from_table(arr, allEpressions, allLinks, footnotes, rulesCol, startRow):
-        tableContents = []
-        for row in arr[startRow:]:
-            if len(row) > 0:
-                rowRule = get_refs_that_match(row[rulesCol], allEpressions, False, True)
-                rowContents = []
-                for cell in row[:rulesCol]:
-                    rowContents += get_contents(cell, allEpressions, allLinks, footnotes)
-            
-                if rowContents == [] and rowRule !=None:
-                    tableContents.append({'type':'Rule', 'body':rowRule})
-                elif rowContents != []:
-                    tableContents.append({'type':'Block', 'body':{'name':None, 'overarchingRule':rowRule, 'contents':rowContents}})
-            
-        return(tableContents)
-
-
-class SpecTables:
-    def __init__(self, specPath, aTRSpecPath="", repoOnly=False):
-        self.docBlocks = create_block_array(specPath)
-        self.aTRSpecPath = aTRSpecPath
-        self.repoOnly = repoOnly
-        self.baseLinksTable = []
-        self.linksTable = []
-        self.ssoTable = []
-        self.pdfsTable = []
-        self.calcsTable = []
-        self.baseExpressionsTable = []
-        self.rulesTable = []
-        self.constantsTable = []
-        self.dataListing = []
-        self.footnotes = {}
-        self.generate_back_of_spec_tables()
-        self.statementLinksTable = []
-        self.statementIconsTable = []
-        if self.aTRSpecPath != "":
-            self.generate_atr_spec_tables()
-            
-        self.allData = []
-        self.allLinks = []
-        self.allEpressions = []
-        self.allFieldNames = []
-        self.generate_super_tables()
-        self.aTRLinkTreeDict = {}
-        self.aTRIconTreeDict = {}
-        self.atr_specs_to_tree_dict()
-            
-
-    #Returns a list of dictionaries for needed fields from a table
-    def get_back_of_spec_table(self, table, columnHeaders, columnNames):
-        headerRow  = False
-        columnNums = []
-        for headerRowNum, row in enumerate(table.rows[:5]):
-            columnNums = []
-            for columnHeader in columnHeaders:
-                for cellNum in range(len(row.cells)):
-                    if columnHeader in cell_text_merge(row.cells[cellNum]):
-                        columnNums.append(cellNum)
-                        headerRow = True
-                        break
-
-            if headerRow and len(columnNums) == len(columnHeaders):
-                break
-        
-        if len(columnNums) != len(columnHeaders):
-            return []
-                    
-        tableValues = []
-        for row in table.rows[headerRowNum + 1:]:
-            rowDict = {}
-            completeRow = True
-            try:
-                cellText = cell_text_merge(row.cells[columnNums[0]]).strip()
-                try:
-                    if '<' in cellText:
-                        rowDict[columnNames[0]] = cellText[cellText.find('<'):cellText.find('>') + 1]
-                    elif len(cellText) == 0:
-                        completeRow = False
-                    else:
-                        rowDict[columnNames[0]] = '<' + cellText + '>'
-                except:
-                    rowDict[columnNames[0]] = cellText
-                
-                for fieldNum in range(1, len(columnNums)):
-                    rowDict[columnNames[fieldNum]] = cell_text_merge(row.cells[columnNums[fieldNum]]).strip()
-                    if rowDict[columnNames[fieldNum]] == '' and columnNames[fieldNum] != 'description':
-                        completeRow = False
-                        break
-                
-            except:
-                completeRow = False
-                break
-
-            if completeRow:
-                tableValues.append(rowDict)
-
-        return tableValues
-            
-
-    #Returns a list of dictionaries for needed fields from a table
-    def get_atr_spec_table(self, ws, columnHeaders, columnNames):
-        for rowNum, row in enumerate(ws.iter_rows(max_row=10)):
-            columnNums = {}
-            for columnHeaderNum, columnHeader in enumerate(columnHeaders):
-                for cell in row:
-                    if cell.value == None:
-                        pass
-                    elif columnHeader in cell.value:
-                        columnNums[columnNames[columnHeaderNum]] = cell.column - 1
-                        break
-                
-                else:
-                    break
-
-            if len(columnNums) == len(columnHeaders):
-                headerRow = rowNum + 1
-                break
-
-        else:
-            return []
-
-
-        tableValues = []
-        for row in ws.iter_rows(min_row=headerRow + 1):
-            try:
-                rowDict = {}
-                if row[columnNums[columnNames[0]]].value == None or row[columnNums[columnNames[0]]].value == "":
-                    raise Exception
-                for columnName in columnNames:
-                    cellText = row[columnNums[columnName]].value
-                    if cellText == None:
-                        rowDict[columnName] = ""
-                    # elif '<' in cellText and '>' in cellText:
-                    #     rowDict[columnName] = cellText[cellText.find('<'):cellText.find('>') + 1]
-                    else:
-                        rowDict[columnName] = cellText.strip()
-                
-                tableValues.append(rowDict)
-
-            except:
-                pass
-
-        return tableValues
-            
-
-    #Grabs all back of spec info from specs
-    def generate_back_of_spec_tables(self):
-        section = ''
-        for blockType, block, *_ in self.docBlocks:
-            if blockType == 'Paragraph':
-                cleanBlock = block.strip().lower()
-                if cleanBlock == 'Upoint Base Links'.lower():
-                    section = 'baseLinks'
-                elif cleanBlock == 'Client Configured Links'.lower():
-                    section = 'links'
-                elif cleanBlock == 'Single Sign-On Links'.lower():
-                    section = 'ssos'
-                elif cleanBlock == 'PDF Links Listing'.lower():
-                    section = 'pdfs'
-                elif cleanBlock == 'Calculations'.lower():
-                    section = 'calcs'
-                elif cleanBlock == 'Upoint Base Expressions'.lower():
-                    section = 'baseExpressions'
-                elif cleanBlock == 'Client Configured Expressions'.lower():
-                    section = 'rules'
-                elif cleanBlock == 'Constants File'.lower() or cleanBlock == 'Constants'.lower() or cleanBlock == 'Global Constants'.lower():
-                    section = 'constants'
-                elif cleanBlock == 'Data Listing'.lower():
-                    section = 'dataListing'
-                elif '_FOOTNOTES'.lower() in cleanBlock:
-                    section = 'footnote'
-            elif blockType == 'Table':
-                try:
-                    try:
-                        eel.updaete_message('Reading ' + section, 'grey')
-                    except:
-                        pass
-
-                    if section == 'baseLinks' and not self.repoOnly:
-                        self.baseLinksTable += self.get_back_of_spec_table(block, ['Link Title', 'Link Text', 'URL', 'Description'], ['name', 'text', 'url', 'description'])
-                    elif section == 'links' and not self.repoOnly:
-                        self.linksTable += self.get_back_of_spec_table(block, ['Link ID', 'Link Text', 'URL', 'Description'], ['name', 'text', 'url', 'description'])
-                    elif section == 'ssos' and not self.repoOnly:
-                        self.ssoTable += self.get_back_of_spec_table(block, ['Link Title'], ['name'])
-                    elif section == 'pdfs' and not self.repoOnly:
-                        self.pdfsTable += self.get_back_of_spec_table(block, ['Link ID', 'Link Text', 'Expression', 'Title', 'Synopsis', 'Search Tag', 'URL'],\
-                        ['name', 'text', 'eligibility', 'description', 'synopsis', 'searchFilters', 'url'])
-                    elif section == 'calcs':
-                        self.calcsTable += self.get_back_of_spec_table(block, ['Field Name', 'Description', 'Source/Details'], ['name', 'description', 'definition'])
-                    elif section == 'baseExpressions':
-                        self.baseExpressionsTable += self.get_back_of_spec_table(block, ['Field Name', 'Description', 'Source/Details'], ['name', 'description', 'definition'])
-                    elif section == 'rules':
-                        self.rulesTable += self.get_back_of_spec_table(block, ['Field Name', 'Description', 'Source/Details'], ['name', 'description', 'definition'])
-                    elif section == 'constants':
-                        self.constantsTable += self.get_back_of_spec_table(block, ['Field Name', 'Type', 'Description', 'Value'], ['name', 'type', 'description', 'value'])
-                    elif section == 'dataListing':
-                        self.dataListing += self.get_back_of_spec_table(block, ['Field Name'], ['name'])
-                    elif section == 'footnote' and not self.repoOnly:
-                        fnTable = word_table_to_array(block)
-                        for row in fnTable[2:]:
-                            try:
-                                self.footnotes[row[0].strip()] = row[2]
-                            except:
-                                pass
-                            
-                        section = ''
-                        
-                              
-                except:
-                    pass
-
-        try:
-            eel.updaete_message('')
-        except:
-            pass
-
-
-    #Grabs tables from ATR specs
-    def generate_atr_spec_tables(self):
-        wb = load_workbook(self.aTRSpecPath)
-        for ws in wb.worksheets:
-            if ws.title == 'UPoint Base Links':
-                self.baseLinksTable += self.get_atr_spec_table(ws, ['Link Title', 'Link Text', 'URL', 'Description'], ['name', 'text', 'url', 'description'])
-            elif ws.title == 'Client Configured Links':
-                self.linksTable += self.get_atr_spec_table(ws, ['Link ID', 'Link Text', 'URL', 'Description'], ['name', 'text', 'url', 'description'])
-            elif ws.title == 'Single Sign-On Links':
-                self.ssoTable += self.get_atr_spec_table(ws, ['Link Title'], ['name'])
-            elif ws.title == 'PDF Links':
-                self.pdfsTable += self.get_atr_spec_table(ws, ['Link ID', 'Link Text', 'Expression', 'Title', 'Synopsis', 'Search Tag', 'URL'],\
-                ['name', 'text', 'eligibility', 'description', 'synopsis', 'searchFilters', 'url'])
-            elif ws.title == 'YTR Statement Links':
-                self.statementLinksTable = self.get_atr_spec_table(ws, ['ATR Section', 'Link ID', 'Expressions'], ['section', 'linkName', 'expression'])
-            elif ws.title == 'YTR Images':
-                self.statementIconsTable = self.get_atr_spec_table(ws, ['Sub-Section Id', 'Icon File Name', 'Hex Color Code'], ['section', 'iconName', 'color'])
-
-
-    #Combines lists into more generic catagories 
-    def generate_super_tables(self):
-        for table in [self.constantsTable, self.dataListing]:
-            self.allData += [d['name'] for d in table if 'name' in d]
-
-        for table in [self.baseLinksTable, self.linksTable, self.ssoTable, self.pdfsTable]:
-            self.allLinks += [d['name'] for d in table if 'name' in d]
-
-        for table in [self.baseExpressionsTable, self.rulesTable]:
-            self.allEpressions += [d['name'] for d in table if 'name' in d]
-
-        self.allFieldNames += self.allData
-        self.allFieldNames += self.allLinks
-        self.allFieldNames += self.allEpressions
-        for table in [self.calcsTable]:
-            self.allFieldNames += [d['name'] for d in table if 'name' in d]
-
-
-    def atr_specs_to_tree_dict(self):
-        # #NOTE: Links now in word specs
-        # for link in self.statementLinksTable:
-        #     if link['section'] not in self.aTRLinkTreeDict:
-        #         self.aTRLinkTreeDict[link['section']] = []
-                
-        #     linkName = link['linkName'].replace('<','').replace('>','')
-        #     linkTree = {'type':'Link', 'body':{'linkID':linkName}}
-        #     if link['expression'] == "":
-        #         self.aTRLinkTreeDict[link['section']].append(linkTree)
-        #     else:
-        #         overarchingRule = get_refs_that_match(link['expression'], self.allEpressions, False, True)
-        #         self.aTRLinkTreeDict[link['section']].append({'type':'Block', 'body':{'name': None, 'overarchingRule': overarchingRule, 'contents':[linkTree]}})
-        
-        for icon in self.statementIconsTable:
-            if icon['section'] not in self.aTRIconTreeDict:
-                self.aTRIconTreeDict[icon['section']] = []
-                
-            iconName = icon['iconName'].replace('<','').replace('>','')
-            iconTree = {'type':'Icon', 'body':{'iconID':iconName}}
-            self.aTRIconTreeDict[icon['section']].append(iconTree)
-
-
-    #returns a list of references not in back of specs. NOTE Issues with many false positives
-    def get_all_refs_not_in_back(self):
-        refs = []
-        for blockType, block, *_ in self.docBlocks:
-            if blockType == 'Table':
-                arr = word_table_to_array(block)
-                if 'Field Name' not in arr[0][0]:
-                    for row in arr:
-                        for cell in row:
-                            if '<' in cell:
-                                try:
-                                    _, placeholders = create_placeholders(cell, '<', '>', 'FLD', [])
-                                    refs += placeholders
-                                except:
-                                    pass
-        
-
-        notInBack = []
-        for ref in list(set(refs)):
-            if ref in self.allFieldNames:
-                pass
-            elif ref.replace('Inverse: ', '') in self.allFieldNames:
-                pass
-            elif len(ref) > 5 and ref[:5] in ['<REF_', '<IMG_', '<FN_', '<FUNC', '<TMPL', '<NOTE', '<Note', '<PM N', '<Cook']:
-                pass
-            elif len(ref) > 4 and ref[:4] == '<FN_':
-                pass
-            elif len(ref) > 10 and ref[:10] == '<IST_BADGE':
-                pass
-            elif '-' not in ref and '_' not in ref:
-                pass
-            else:
-                notInBack.append(ref)
-
-        notInBack.sort()
-        return(notInBack)
-
-
-class SitePage:
-    def __init__(self, spec, table):
-        self.spec = spec
-        self.table = table
-        self.arr = word_table_to_array(table)
-        self.overallEligibility = self.get_page_eligibility()
-        self.pageName = re.sub('[^a-zA-Z- ]+', '', self.arr[0][1])
-        self.refNames = self.get_page_refs()
-        self.tree = self.build_tree()
-
-                
-    def get_page_eligibility(self):
-        for row in self.arr:
-            for colNum, cell in enumerate(row):
-                if 'Eligibility' in cell:
-                    field = get_refs_that_match(row[colNum + 1], self.spec.allEpressions, False, True)
-                    if field == None or field['ruleName'] in ['na', 'n/a', 'NA', 'N/A', 'Admin-owned', 'CBA-owned']:
-                        return(None)
-                    else:
-                        return(field)
-
-
-        else:
-            return(None)
-
-
-    def get_page_refs(self):
-        refArr = word_table_to_array(get_next_table(self.table, self.spec))
-        refs = []
-        for row in refArr:
-            for cell in row:
-                _, placeholders = create_placeholders(cell, '<', '>', 'REF', [])
-                refs += [placeholder.replace('<REF_', '').replace('>', '') for placeholder in placeholders if '<REF_' in placeholder]
-        
-
-        return(list(OrderedDict.fromkeys(refs)))
-
-
-    def build_tree(self):
-        #Determine what type of ref each is
-        contents = []
-        if self.refNames == []:
-            try:
-                contents.append(WebContent(self.spec, self.table).tree)
-            except:
-                contents.append({'type':'Block', 'body':{'name':'Webcontent - POSSIBLE ERROR', 'overarchingRule': None, 'contents':[]}})
-        else:    
-            for refName in self.refNames:
-                try:
-                    if refName in ['G1', 'G2', 'FAVHOME']:
-                        contents.append({'type':'Block', 'body':{'name':refName, 'overarchingRule': None, 'contents':[]}})
-                    elif 'TILEPORT' in refName:
-                        contents.append(TilePortlet(self.spec, refName).tree)
-                    elif ('YTR' in refName and 'Statement' in refName) or 'YOURTOTALREWARDS_WIDGET' in refName :
-                        contents.append(YTRStatement(self.spec, refName).tree)
-                    elif 'Total' in refName and 'Compensation' in refName:
-                        contents.append(TotalComp(self.spec, refName).tree)
-                    elif re.search(r'^CONTENT_.*_UCE$', refName) != None:
-                        contents.append(UceWebContent(self.spec, refName).tree)
-                    elif '_INTRO' in refName:
-                        contents.append(WebContent(self.spec, refName).tree)
-                    else:
-                        contents.append({'type':'Block', 'body':{'name':refName + ' - POSSIBLE ERROR', 'overarchingRule': None, 'contents':[]}})
-                except:
-                    contents.append({'type':'Block', 'body':{'name':refName + ' - POSSIBLE ERROR', 'overarchingRule': None, 'contents':[]}})
-
-        return({'type':'Block', 'body':{'name':None, 'overarchingRule': self.overallEligibility, 'contents':contents}})
-
-
-class WebContent:
-    def __init__(self, spec, name):
-        self.spec = spec
-        self.name = name
-        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
-        self.contents = get_contents_from_table(self.arr, self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, -1, 0)
-        self.tree = self.build_tree()
-    
-
-    def build_tree(self):
-        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':None, 'contents':self.contents}})
-
-
-class UceWebContent:
-    def __init__(self, spec, name):
-        self.spec = spec
-        self.name = name
-        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
-        self.get_header_info()
-        self.contents = []
-        self.tree = self.build_tree()
-    
-
-    def get_header_info(self):
-        found = False
-        self.eligCol = 1
-        self.startRow = 0
-        self.overallEligibility = None
-        for rowNum, row in enumerate(self.arr):
-            for colNum, cell in enumerate(row):
-                if 'Overall Eligibility' in cell:
-                    found = True
-                    self.eligCol = colNum
-                    self.startRow = rowNum + 1
-                    self.overallEligibility = get_refs_that_match(self.arr[self.startRow][self.eligCol], self.spec.allEpressions, False, True)
-            
-            if found:
-                break
-    
-
-    def build_tree(self):
-        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':self.overallEligibility, 'contents':self.contents}})
-
-
-class TotalComp:
-    def __init__(self, spec, name):
-        self.spec = spec
-        self.name = name
-        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
-        self.get_header_info()
-        self.contents = get_contents_from_table([([''] * (self.eligCol + 1)) + row[self.eligCol + 1:] for row in self.arr], self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, self.rulesCol, self.startRow)
-        self.tree = self.build_tree()
-    
-
-    def get_header_info(self):
-        found = False
-        self.eligCol = 1
-        self.startRow = 0
-        self.overallEligibility = None
-        self.contentCol = 2
-        self.rulesCol = -2
-        for rowNum, row in enumerate(self.arr):
-            for colNum, cell in enumerate(row):
-                if 'Overall Eligibility' in cell:
-                    found = True
-                    self.eligCol = colNum
-                    self.startRow = rowNum + 1
-                    self.overallEligibility = get_refs_that_match(self.arr[self.startRow][self.eligCol], self.spec.allEpressions, False, True)
-                if 'Body/Destination' in cell:
-                    self.contentCol = colNum
-                if 'Destination Rules' in cell:
-                    self.rulesCol = colNum
-            
-            if found:
-                break
-
-
-    def build_tree(self):
-        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':self.overallEligibility, 'contents':self.contents}})
-
-
-class TilePortlet:
-    def __init__(self, spec, name):
-        self.spec = spec
-        self.name = name
-        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
-        self.get_section_header()
-        self.get_tiles()
-        self.tree = self.build_tree()
-
-
-    def get_section_header(self):
-        found = False
-        for row in self.arr:
-            for colNum, cell in enumerate(row):
-                if 'Expression' in cell:
-                    found = True
-                    self.overallEligibility = get_refs_that_match(row[colNum + 1], self.spec.allEpressions, False, True)
-                    break
-
-            if found:
-                break
-
-        else:
-            self.overallEligibility = None
-
-
-    def get_tiles(self):
-        found = False
-        for rowNum, row in enumerate(self.arr):
-            for colNum, cell in enumerate(row):
-                if 'Tile ID' in cell:
-                    found = True
-                    self.startRow = rowNum + 1
-                    self.tileCol = colNum
-                    break
-
-            if found:
-                break
-        
-        else:
-            self.startRow = 0
-            self.tileCol = 0
-
-        self.tiles = []
-        for row in self.arr[self.startRow:]:
-            try:
-                tileName = row[self.tileCol].strip().split(' ')[0]
-                tile = Tile(self.spec, tileName)
-                if tile.tree['body']['name'] != '':
-                    self.tiles.append(tile)
-
-            except:
-                pass
-    
-
-    def build_tree(self):
-        contents = [tile.tree for tile in self.tiles]
-        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':self.overallEligibility, 'contents':contents}})
-
-
-class Tile:
-    def __init__(self, spec, name):
-        self.spec = spec
-        self.name = name
-        self.arr = word_table_to_array(get_next_table(self.name, self.spec))
-        self.get_header_info()
-        self.contents = get_contents_from_table([([''] * (self.eligCol + 1)) + row[self.eligCol + 1:] for row in self.arr], self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, self.rulesCol, self.startRow)
-        self.tree = self.build_tree()
-    
-
-    def get_header_info(self):
-        found = False
-        self.eligCol = 1
-        self.startRow = 0
-        self.overallEligibility = None
-        self.contentCol = 2
-        self.rulesCol = -2
-        for rowNum, row in enumerate(self.arr):
-            for colNum, cell in enumerate(row):
-                if 'Overall Eligibility' in cell:
-                    found = True
-                    self.eligCol = colNum
-                    self.startRow = rowNum + 1
-                    self.overallEligibility = get_refs_that_match(self.arr[self.startRow][self.eligCol], self.spec.allEpressions, False, True)
-                if 'Content/Destination' in cell:
-                    self.contentCol = colNum
-                if 'Destination Rules' in cell:
-                    self.rulesCol = colNum
-            
-            if found:
-                break
-    
-
-    def build_tree(self):
-        return({'type':'Block', 'body':{'name':self.name, 'overarchingRule':self.overallEligibility, 'contents':self.contents}})
-
-
-class YTRStatement:
-    def __init__(self, spec, name):
-        self.spec = spec
-        self.name = name
-        self.sections = []
-        self.get_sections()
-        self.build_tree()
-
-
-    #looks for the table that contains the main statement sections
-    def get_sections(self):
-        sectionArr = word_table_to_array(get_next_table(self.name, self.spec))
-        #Gets section and any overarching rules
-        for row in sectionArr:
-            if 'DTLMAX>' in row[0]:
-                #Gets section name
-                _, placeholders = create_placeholders(row[0], '<', '>', 'SEC', [])
-                for placeholder in placeholders:
-                    if 'DTLMAX>' in placeholder:
-                        sectionName = placeholder.replace('<REF_', '').replace('>', '')
-                        break
-                
-                #Gets section expression if any
-                self.eligibility = get_refs_that_match(row[-1], self.spec.allEpressions, False, True)
-                
-                #Builds out each section
-                self.sections.append(StmtSection(self.spec, sectionName, self.eligibility))
-
-
-    def build_tree(self):
-        contents = [section.tree for section in self.sections]
-        self.tree = {'type':'Block', 'body':{'name': self.name, 'overarchingRule': None, 'contents':contents}}
-
-
-class StmtSection:
-    def __init__(self, spec, sectionName, eligibility):
-        self.spec = spec
-        self.sectionName = sectionName
-        self.eligibility = eligibility
-        self.contents = []
-        self.get_section_header()
-        self.get_StmtItems()
-        self.get_sub_sections()
-        self.tree = self.build_tree()
-
-
-    def get_section_header(self):
-        sectionHdrArr = word_table_to_array(get_next_table(self.sectionName, self.spec))
-        #Checks Section table for overarching rule
-        if self.eligibility == None:
-            if 'Attributes/Notes' in sectionHdrArr[0][-1] and len(sectionHdrArr) > 1:
-                self.eligibility = get_refs_that_match(sectionHdrArr[1][-1], self.spec.allEpressions, False, True)
-            else:
-                self.eligibility = get_refs_that_match(sectionHdrArr[0][-1], self.spec.allEpressions, False, True)
-
-        self.contents += get_contents_from_table([row[:-1] + [''] for row in sectionHdrArr], self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, -1, 0)
-
-
-    def get_StmtItems(self):
-        self.StmtItems = []
-        blockName = ''
-        for blockType, block, *_ in self.spec.docBlocks:
-            if blockType == 'Paragraph':
-                if self.sectionName + '_' in block:
-                    blockName = block.strip()
-            elif blockType == 'Table' and blockName != '':
-                self.StmtItems.append(StmtItem(self.spec, blockName, block))
-                blockName = ''
-
-
-    def get_sub_sections(self):
-        self.subSections = []
-        self.subSectionsNames = list(OrderedDict.fromkeys([block.blockSubSection for block in self.StmtItems]))
-        for subSectionsName in self.subSectionsNames:
-            subSectionsBlocks = [block for block in self.StmtItems if block.blockSubSection == subSectionsName]
-            if subSectionsBlocks[0].isHeader:
-                subSectionsHeader = subSectionsBlocks[0]
-                subSectionsBlocks = subSectionsBlocks[1:]
-            else:
-                subSectionsHeader = None
-            
-            self.subSections.append(StmtSubSection(self.spec, subSectionsHeader, subSectionsBlocks))
-    
-
-    def build_tree(self):
-        self.contents += [subSection.tree for subSection in self.subSections]
-        return({'type':'Block', 'body':{'name':self.sectionName, 'overarchingRule':self.eligibility, 'contents':self.contents}})
-
-
-class StmtSubSection:
-    def __init__(self, spec, header, blocks):
-        self.spec = spec
-        self.header = header
-        self.blocks = blocks
-        self.tree = self.build_tree()
-
-
-    def build_tree(self):
-        if self.header == None:
-            return({'type':'Block', 'body':{'name':None, 'overarchingRule': None, 'contents':[block.tree for block in self.blocks]}})
-        else:
-            tree = copy.deepcopy(self.header.tree)
-            tree['body']['contents'] += [block.tree for block in self.blocks]
-            return(tree)
-
-
-class StmtItem:
-    def __init__(self, spec, name, table):
-        self.spec = spec
-        self.name = name
-        self.blockSection = "_".join(name.split('_')[:-1])
-        self.table = table
-        self.arr = word_table_to_array(table)
-        if '_HEAD' in self.name:
-            self.isHeader = True
-            self.blockSubSection = name.split('_')[-1].replace('HEAD', '')
-            self.blockNum = 'HEAD'
-        else:
-            self.isHeader = False  
-            self.blockSubSection = name.split('_')[-1][0]
-            self.blockNum = name.split('_')[-1][1:]
-        self.overarchingRule = get_refs_that_match(self.arr[0][-1], self.spec.allEpressions, False, True)
-        contentArr = copy.copy(self.arr)
-        contentArr[0][-1] = ''
-        self.contents = []
-        if self.name in self.spec.aTRIconTreeDict:
-            self.contents += self.spec.aTRIconTreeDict[self.name]
-
-        self.contents += get_contents_from_table(contentArr, self.spec.allEpressions, self.spec.allLinks, self.spec.footnotes, -1, 0)
-        if self.name in self.spec.aTRLinkTreeDict:
-            self.contents += self.spec.aTRLinkTreeDict[self.name]
-
-        self.tree = {'type':'Block', 'body':{'name':self.name, 'overarchingRule': self.overarchingRule, 'contents':self.contents}}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="robots" content="noindex, nofollow">
+	<meta http-equiv="X-UA-Compatible" content="ie=edge">
+	<title>Marriot Survey</title>
+	<link rel="stylesheet" href="../css/bootstrap.min.css">
+	<link rel="stylesheet" href="../css/aos.css">
+	<link rel="stylesheet" href="../css/styles.css">
+	<link rel="stylesheet" href="../css/sweetalert2.css">
+	<link rel="shortcut icon" type="image/x-icon" href="../img/favicon.ico"/>
+	<script src="../js/gtm-head.js"></script>
+	<script src="../js/jquery-3.7.1.min.js"></script>
+	<script src="../js/custom.js"></script>
+	<script src="../js/sweetalert2.js"></script>
+</head>
+
+<body>
+  <!--TRACKING DO NOT REMOVE-->
+  <noscript>
+    <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
+            style="display:none;visibility:hidden">
+    </iframe>
+  </noscript>
+  <!-- End Google Tag Manager (noscript) -->
+
+	<div class="container-lg px-0 mb-5 pb-5">
+		<div class="hero-container pt-4">
+			<div class="d-flex flex-column flex-lg-row justify-content-evenly">
+				<div class="col-12 order-last order-lg-first">
+					<h1 class="d-inline-block mt-0 mt-lg-5 text-start">
+						Q6. What are your preferred ways to receive information about Marriott’s benefits throughout the year? Please rank the following channels by typing 1 for your top choice, 2 for your second, and so on until you have ranked them all:
+					</h1>
+				</div>
+			</div>
+		</div>
+
+		<div class="row">
+			<div class="border border-2 border-dark px-5 pb-5 mt-5">
+			<div class="col-12 col-lg-11 d-flex flex-column flex-lg-row mt-5">
+			<!-- <div class="col-12 col-lg-12"> -->
+				<div class="d-flex flex-column justify-content-start px-4 ms-2 pb-4 mb-0 mb-lg-5 align-items-start form-check-inline col-12 col-lg-5">
+					<div class="d-flex flex-row align-items-center mb-3">
+						<input type="text" name="q6" id="q6_1" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="1">
+						<label for="q6_1" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">mHUB</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_2" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="2">
+						<label for="q6_2" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">DLZ</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_3" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="3">
+						<label for="q6_3" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">MGS</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_4" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="4">
+						<label for="q6_4" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Email</label>
+					</div>
+					<div class="d-flex flex-row align-items-center mt-3 mb-0">
+						<input type="text" name="q6" id="q6_5" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="5">
+						<label for="q6_5" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Digital/printed flyers</label>
+					</div>
+					
+				</div>
+				<div class="d-flex flex-column justify-content-start px-4 ms-2 pb-5 mt-2 mt-lg-0 mb-0 align-items-start form-check-inline pe-0 pe-lg-5 col-12 col-lg-7">
+					<div class="d-flex flex-row align-items-center mt-0 mb-3">
+						<input type="text" name="q6" id="q6_6" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="6">
+						<label for="q6_6" class="form-check-label labelLight text-start fw-normal pe-5 fs-6 lh-125">Mail sent to home address</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_7" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="7">
+						<label for="q6_7" class="form-check-label labelLight text-start fw-normal pe-5 fs-6 lh-125">Text message notifications</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_8" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="8">
+						<label for="q6_8" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Mobile app</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_9" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="9">
+						<label for="q6_9" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Webinars hosted by the Benefits team or vendors</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_10" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="10">
+						<label for="q6_10" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Manager/supervisor-led discussions</label>
+					</div>
+					
+				</div>
+				</div>
+				<!-- <div class="border border-2 border-dark px-5 pb-5 mt-5">
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_1">
+						<label for="rank_1">mHUB</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_2">
+						<label for="rank_2">DLZ</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_3">
+						<label for="rank_3">MGS</label>
+					</div>
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_1">
+						<label for="rank_1">Email</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_2">
+						<label for="rank_2">Digital/printed flyers</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_3">
+						<label for="rank_3">Mail sent to home address</label>
+					</div>
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_3">
+						<label for="rank_3">Text message notifications </label>
+					</div>
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_1">
+						<label for="rank_1">Mobile app</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_2">
+						<label for="rank_2">Webinars hosted by the Benefits team or vendors</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_3">
+						<label for="rank_3">Manager/supervisor-led discussions</label>
+					</div>
+
+				</div> -->
+			</div>
+
+			<div class="col-12 col-lg-12 pe-3 pe-lg-0 mt-3">
+				<a href="q7.html" class="btn btn-primary disabled nextbutton">Next Question</a>
+			</div>
+
+			<!-- <div class="col-12 col-lg-12 pe-3 pe-lg-0 mt-5">
+				<div class="progress" role="progressbar" aria-label="progress bar" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">
+					<div class="progress-bar" style="width: 25%"></div>
+				</div>
+			</div> -->
+			<div class="survey-progress my-4">
+
+			<div class="progress bar">
+				<div class="progress-bar bg-primary" role="progressbar" style="width: 50%;" aria-valuenow="50"
+					aria-valuemin="0" aria-valuemax="100"></div>
+			</div>
+			<div class="d-flex justify-content-between align-items-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
+				<span class="per">0%</span>
+				<span class="flex-grow-1 text-center per">Survey Completion Percentage</span>
+				<span class="per">100%</span>
+			</div>
+			<!-- <div class="d-flex justify-content-between">
+				<span class="per">0%</span>
+				<span class="per">100%</span>
+			</div>
+			<div class="text-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
+				Survey Completion Percentage
+			</div> -->
+		</div>
+		</div>
+	</div>
+
+	<!-- Footer -->
+	<div id="footer-placeholder" class="mt-auto"></div>
+	 
+    <script src="js/sExtendUtil.js"></script>
+    <script src="js/saveSurveyResponse_Mariott.js"></script>
+
+	<script>
+
+		if (location.hostname.substring(0, 9) != "localhost" && location.hostname.substring(0, 9) != "127.0.0.1" && location.hostname.substring(0, 3) != "qa.") {
+            $.getScript("js/sValidator.js", function (data, textStatus, jqxhr) { });
+        }
+
+
+		
+		$(function() {
+			$("#footer-placeholder").load("footer.html");
+		});
+
+		sessionStorage.setItem("page", 6);
+			if (sessionStorage.getItem("q6")) {
+				$(".nextbutton").removeAttr("disabled");
+			}
+			$(".form-control").inputmask();
+	</script>
+</body>
+</html>
