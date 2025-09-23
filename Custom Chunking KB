@@ -10,26 +10,29 @@ case 6:
 
     // Clear if not allowed or duplicate
     if (!allowedValues.has(val) || values.includes(val)) {
-      this.value = "";
+      this.value = "0"; // set to zero instead of clearing
       $(this).trigger("input"); // force Inputmask/UI update
+      values.push("0");
     } else {
       values.push(val);
     }
   });
 
   // Validation checks
-  if (values.length === 3 && new Set(values).size === 3) {
+  if (
+    values.filter(v => v !== "0").length === 3 && 
+    new Set(values.filter(v => v !== "0")).size === 3
+  ) {
     $(".nextbutton").removeAttr("disabled").removeClass("disabled");
     $("#message").addClass("d-none");
-
-    // Save values in sessionStorage
-    inputs.each(function (i) {
-      sessionStorage.setItem("r" + (14 + i), this.value);
-    });
-
-    return true; // ✅ valid
   } else {
     $("#message").removeClass("d-none");
     $(".nextbutton").attr("disabled", true).addClass("disabled");
-    return false; // ❌ invalid
   }
+
+  // Save values in sessionStorage (always store, even 0s)
+  inputs.each(function (i) {
+    sessionStorage.setItem("r" + (14 + i), this.value);
+  });
+
+  return true;
