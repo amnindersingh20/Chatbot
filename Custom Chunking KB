@@ -8,21 +8,17 @@ case 6:
   inputs.each(function () {
     let val = this.value.trim();
 
-    // Clear if not allowed or duplicate
+    // Clear UI if not allowed or duplicate
     if (!allowedValues.has(val) || values.includes(val)) {
-      this.value = "0"; // set to zero instead of clearing
+      this.value = ""; // keep blank in UI
       $(this).trigger("input"); // force Inputmask/UI update
-      values.push("0");
     } else {
       values.push(val);
     }
   });
 
-  // Validation checks
-  if (
-    values.filter(v => v !== "0").length === 3 && 
-    new Set(values.filter(v => v !== "0")).size === 3
-  ) {
+  // Validation checks (only non-empty values count)
+  if (values.length === 3 && new Set(values).size === 3) {
     $(".nextbutton").removeAttr("disabled").removeClass("disabled");
     $("#message").addClass("d-none");
   } else {
@@ -30,9 +26,13 @@ case 6:
     $(".nextbutton").attr("disabled", true).addClass("disabled");
   }
 
-  // Save values in sessionStorage (always store, even 0s)
+  // Save values in sessionStorage
   inputs.each(function (i) {
-    sessionStorage.setItem("r" + (14 + i), this.value);
+    let val = this.value.trim();
+    if (!allowedValues.has(val)) {
+      val = "0"; // only in storage, not in UI
+    }
+    sessionStorage.setItem("r" + (14 + i), val);
   });
 
   return true;
