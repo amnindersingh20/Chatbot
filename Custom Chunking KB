@@ -29,10 +29,10 @@ case 6:
   // Save values in sessionStorage
   inputs.each(function (i) {
     let val = this.value.trim();
-    if (!allowedValues.has(val)) {
+    if (!allowedValues.has(val) || val === "") {
       val = "0"; // only in storage, not in UI
     }
     sessionStorage.setItem("r" + (14 + i), val);
   });
 
-  return true;
+  break; // ✅ Use break instead of return
