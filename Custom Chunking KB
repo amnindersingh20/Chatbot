@@ -2,14 +2,16 @@ case 6:
   const inputs = $('.form-control');
   const allowedValues = new Set(['1', '2', '3']);
   
-  let values = [];
+  let values = [];      // valid, unique inputs
+  let showWarning = false;
 
   // Validate each input
   inputs.each(function () {
     let val = this.value.trim();
 
-    // Clear UI if not allowed or duplicate
+    // If value is not allowed or already exists, clear it
     if (!allowedValues.has(val) || values.includes(val)) {
+      if (val !== "") showWarning = true; // user tried invalid/duplicate input
       this.value = ""; // keep blank in UI
       $(this).trigger("input"); // force Inputmask/UI update
     } else {
@@ -17,22 +19,25 @@ case 6:
     }
   });
 
-  // Validation checks (only non-empty values count)
-  if (values.length === 3 && new Set(values).size === 3) {
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-    $("#message").addClass("d-none");
-  } else {
+  // Show warning only if user tried invalid/duplicate input
+  if (showWarning) {
     $("#message").removeClass("d-none");
+  } else {
+    $("#message").addClass("d-none");
+  }
+
+  // Enable next button only if exactly 3 unique valid values
+  if (values.length === 3) {
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+  } else {
     $(".nextbutton").attr("disabled", true).addClass("disabled");
   }
 
-  // Save values in sessionStorage
+  // Save values in sessionStorage (store 0 for empty/unselected)
   inputs.each(function (i) {
     let val = this.value.trim();
-    if (!allowedValues.has(val) || val === "") {
-      val = "0"; // only in storage, not in UI
-    }
+    if (!allowedValues.has(val) || val === "") val = "0";
     sessionStorage.setItem("r" + (14 + i), val);
   });
 
-  break; // ✅ Use break instead of return
+  break;
