@@ -1,97 +1,4 @@
-var dataArray=[];
-function getSelectedRadioButtonValue(radioGroupName) {
-  radios = document.getElementsByName(radioGroupName);
-
-  var n = radios.length
-  for (var i = 0; i < n; i++) {
-    if (radios[i].checked) { return radios[i].value }
-  }
-}
-$(document).ready(function () {
-  $(".form-check-input").on("click", function () {
-    validateResponse(sessionStorage.getItem("page"));
-  })
-  $(".form-control").on("change", function () {
-    validateResponse(sessionStorage.getItem("page"));
-    if ($(this).val() != "") {
-      $(this).removeClass("emptyTextField"); $(this).addClass("enteredTextField");
-    } else {
-      $(this).removeClass("enteredTextField"); $(this).addClass("emptyTextField");
-    }
-  })
-  $(".form-control").on("focus", function () {
-    $(this).select();
-  });
-
-  $("#q7text").on("keyup", function () {
-    $(".charsremaining").text(50- $(this).val().length + (50- $(this).val().length == 1 ? " character" : " characters") + " remaining");
-    sessionStorage.setItem("r33", $("#q7text").val());
-    validateResponse(7);
-  })
-  $("#q8text").on("keyup", function () {
-    $(".charsremaining").text(500- $(this).val().length + (500- $(this).val().length == 1 ? " character" : " characters") + " remaining");
-    // sessionStorage.setItem("r33", $(this).val());
-  })
-  $("#info").on("click",function(){
-    Swal.fire({
-      html: '<p><strong>Instructions </strong></p><ul class="text-start"><li>Choose the answer that best represents your opinion.</li><li>Do not use the Back and Forward buttons at the top of your browser window.</li><li>When you&rsquo;re finished, click Submit Survey at the bottom of the final survey page.</li><li>Your responses are confidential. Survey responses go directly to the Alight Solutions research team, who will report only aggregated results back to Marriott.</li></ul>',
-      showCloseButton: true,
-      showConfirmButton: false
-    })
-  })
-  $("#submit").on("click", function () {
-    sessionStorage.setItem("r34", $("#q8text").val());
-    storeData();
-  })
-});
-
-
-function validateResponse(question) {
-
-  switch (parseInt(question)) {
-
-    case 1:
-      if (getSelectedRadioButtonValue("q1") != null) {
-        $(".nextbutton").removeAttr("disabled");
-        sessionStorage.setItem("r1", getSelectedRadioButtonValue("q1"))
-      }
-      break;
-
-
-    case 2:
-      if (getSelectedRadioButtonValue("q2a") != null && getSelectedRadioButtonValue("q2b") != null && getSelectedRadioButtonValue("q2c") != null) {
-        $(".nextbutton").removeAttr("disabled");
-        sessionStorage.setItem("r2", getSelectedRadioButtonValue("q2a"));
-        sessionStorage.setItem("r3", getSelectedRadioButtonValue("q2b"));
-        sessionStorage.setItem("r4", getSelectedRadioButtonValue("q2c"));
-      }
-      break;
-
-    case 3:
-      if (getSelectedRadioButtonValue("q3a") != null && getSelectedRadioButtonValue("q3b") != null) {
-        $(".nextbutton").removeAttr("disabled");
-        sessionStorage.setItem("r5", getSelectedRadioButtonValue("q3a"));
-        sessionStorage.setItem("r6", getSelectedRadioButtonValue("q3b"));
-      }
-      break;
-
-    case 4:
-      if (getSelectedRadioButtonValue("q4") != null) {
-        $(".nextbutton").removeAttr("disabled");
-        sessionStorage.setItem("r7", getSelectedRadioButtonValue("q4"))
-      }
-      break;
-
-    case 5:
-      if (getSelectedRadioButtonValue("q5a") != null && getSelectedRadioButtonValue("q5b") != null && getSelectedRadioButtonValue("q5c") != null) {
-        $(".nextbutton").removeAttr("disabled");
-        sessionStorage.setItem("r8", getSelectedRadioButtonValue("q5a"));
-        sessionStorage.setItem("r9", getSelectedRadioButtonValue("q5b"));
-        sessionStorage.setItem("r10", getSelectedRadioButtonValue("q5c"));
-      }
-      break;
-
-    case 6:
+case 6:
       // Copilot code
       const inputs = $('.form-control');
       const allowedValues = new Set(['','1', '2', '3']);
@@ -117,159 +24,23 @@ function validateResponse(question) {
       if (numericCount === 3 && numericValues.size === 3 && totalCount === 3) {
         $(".nextbutton").removeAttr("disabled");
         $("#message").addClass("d-none");
-        sessionStorage.setItem("r11", inputs[0].value);
-        sessionStorage.setItem("r12", inputs[1].value);
-        sessionStorage.setItem("r13", inputs[2].value);
-        sessionStorage.setItem("r14", inputs[3].value);
-        sessionStorage.setItem("r15", inputs[4].value);
-        sessionStorage.setItem("r16", inputs[5].value);
-        sessionStorage.setItem("r17", inputs[6].value);
-        sessionStorage.setItem("r18", inputs[7].value);
-        sessionStorage.setItem("r19", inputs[8].value);
-        sessionStorage.setItem("r20", inputs[9].value);
+        sessionStorage.setItem("r14", inputs[0].value);
+        sessionStorage.setItem("r15", inputs[1].value);
+        sessionStorage.setItem("r16", inputs[2].value);
+        sessionStorage.setItem("r17", inputs[3].value);
+        sessionStorage.setItem("r18", inputs[4].value);
+        sessionStorage.setItem("r19", inputs[5].value);
+        sessionStorage.setItem("r20", inputs[6].value);
+        sessionStorage.setItem("r21", inputs[7].value);
+        sessionStorage.setItem("r22", inputs[8].value);
+        sessionStorage.setItem("r23", inputs[9].value);
         return true; // Valid
       } else if (numericCount >= 3 || numericValues.size >= 3 || totalCount > 3) {
         $("#message").removeClass("d-none");
-        $(".nextbutton").attr("disabled", true);
+        $(".nextbutton").class("disabled", true);
         return false; // Invalid
       } else {
         //$("#message").removeClass("d-none");
-        $(".nextbutton").attr("disabled", true);
+        $(".nextbutton").class("disabled", true);
       }
       break;
-
-    case 7:
-      // Copilot code
-      const inputs2 = $('.form-control');
-      const allowedValues2 = new Set(['','1', '2', '3', '4', '5']);
-      const numericValues2 = new Set();
-      let numericCount2 = 0; let totalCount2 = 0;
-
-      for (let i = 0; i < inputs2.length; i++) {
-        const value2 = inputs2[i].value.trim();
-        if (allowedValues2.has(value2) && value2 != "") {
-          numericValues2.add(value2);
-          numericCount2++;
-          totalCount2++;
-        } else {
-          var tmp= value2;
-          inputs2[i].value = "";
-          //if (value2) { totalCount2++ }
-          if(tmp!=""){
-            console.log("returning false")
-            //return false;
-          }
-        }
-      }
-      //console.log(numericCount2, numericValues2.size, totalCount2)
-      //var q7emptyflag = ($("#q7text").val().length == 0) ? 1 : 0;
-      //var q7enteredflag = ($("#q7text").val().length == 0) ? 0 : 1;
-      //console.log(numericCount2, numericValues2.size, totalCount2,5-q7enteredflag)
-      if (numericCount2 === 5 && numericValues2.size === 5 && totalCount2 === 5) {
-        $(".nextbutton").removeAttr("disabled");
-        $("#message").addClass("d-none");
-        sessionStorage.setItem("r21", inputs2[0].value);
-        sessionStorage.setItem("r22", inputs2[1].value);
-        sessionStorage.setItem("r23", inputs2[2].value);
-        sessionStorage.setItem("r24", inputs2[3].value);
-        sessionStorage.setItem("r25", inputs2[4].value);
-        sessionStorage.setItem("r26", inputs2[5].value);
-        sessionStorage.setItem("r27", inputs2[6].value);
-        sessionStorage.setItem("r28", inputs2[7].value);
-        sessionStorage.setItem("r29", inputs2[8].value);
-        sessionStorage.setItem("r30", inputs2[9].value);
-        sessionStorage.setItem("r31", inputs2[10].value);
-        sessionStorage.setItem("r32", inputs2[11].value);
-        return true; // Valid
-      } else if (numericCount2 >= 5 || numericValues2.size >= 5 || totalCount2 > 5) {
-        $("#message").removeClass("d-none");
-        $(".nextbutton").attr("disabled", true);
-        return false; // Invalid
-      } else {
-        //$("#message").removeClass("d-none");
-        $(".nextbutton").attr("disabled", true);
-      }
-      break;
-
-  }
-
-}
-
-function storeData(){
-  var str = "";
-  for(var i=1;i<35;i++){
-    str += sessionStorage.getItem("r"+i) + (i < 33 ? "," : "" );
-    dataArray.push(sessionStorage.getItem("r"+i))
-  }
-  // sessionStorage.setItem("finalData",dataArray)
-  //console.log("data",dataArray.toString())
-  //console.log("data",dataArray)
-  saveSurvey();
-  //location = "finish.html"
-}
-
-
-//Site Timer
-
-var secs=1200;
-var timerID = null;
-var timerRunning = false;
-var delay = 1000;
-var servRenewInterval=400;
-
-function resetTimer()
-{
- console.log(secs)
-  // Set the length of the timer, in seconds
-  secs = 1200
-  if(sessionStorage.getItem("timer")==-1){sessionStorage.setItem("timer",secs)}
-  StopTheClock();
-  StartTheTimer();
-  var currentTime = new Date().getTime();
-  sessionStorage.setItem("lastAccessTime", new Date().getTime());
-  var lastAccessTime =sessionStorage.getItem("lastAccessTime");
-  console.log('lastUpdateInterval Interval:' + currentTime  + ":" + lastAccessTime );
-  var lastUpdateInterval = (currentTime - lastAccessTime)/1000;
-  //console.log('lastUpdateInterval Interval:' + lastUpdateInterval );
-  if ( lastUpdateInterval > servRenewInterval){
-	  console.log('Extending Session:');
-	  sessionStorage.setItem("lastServAccessTime", new Date().getTime());
-	  
-	  //extendSession();
-      // document.write('<script src="js/sValidator.js"><\/script>');
-  }
- 
-  
-}
-
-function StopTheClock()
-{
-  if(timerRunning)
-      clearTimeout(timerID)
-  timerRunning = false
-}
-
-function StartTheTimer()
-{
-  if (secs==0)
-  {
-      StopTheClock();
-      sessionStorage.clear();
-      //location.replace("notAuthorized.html");
-  }
-  else
-  {
-      secs = secs - 1;
-      sessionStorage.setItem("timer",secs)
-      timerRunning = true;
-      timerID = window.setTimeout(StartTheTimer, delay);
-      
-  }
-}  
-if(location.href.toLowerCase().indexOf("notAuthorized") < 0) {resetTimer()}
-else{sessionStorage.clear() }
-
-//document.addEventListener("mousemove", resetTimer);
-document.addEventListener("keydown", resetTimer);
-document.addEventListener("click", resetTimer);
-
