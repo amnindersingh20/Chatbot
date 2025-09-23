@@ -5,33 +5,22 @@ case 6:
   let values = []; // valid, unique inputs
   let showWarning = false;
 
-  // Validate each input
+  // First pass: validate and clear invalid/duplicate inputs
   inputs.each(function () {
     let val = this.value.trim();
 
-    if (val === "") {
-      // empty input, skip
-      return;
-    }
+    if (val === "") return; // skip empty inputs
 
-    // Check for invalid value or duplicate
     if (!allowedValues.has(val) || values.includes(val)) {
-      this.value = "";           // clear invalid/duplicate input
-      $(this).trigger("input");  // update UI
-      showWarning = false;       // reset warning immediately
+      showWarning = true;      // mark warning
+      this.value = "";          // clear invalid input
+      $(this).trigger("input"); // update UI
     } else {
-      values.push(val);          // store valid input
+      values.push(val);         // store valid input
     }
   });
 
-  // If any invalid/duplicate inputs remain, show warning
-  inputs.each(function () {
-    let val = this.value.trim();
-    if (val !== "" && (!allowedValues.has(val) || values.filter(v => v === val).length > 1)) {
-      showWarning = true;
-    }
-  });
-
+  // Show/hide warning based on invalid attempts
   if (showWarning) {
     $("#message").removeClass("d-none");
   } else {
