@@ -2,7 +2,7 @@ case 6:
   const inputs = $('.form-control');
   const allowedValues = new Set(['1', '2', '3']);
   
-  let values = [];      // valid, unique inputs
+  let values = []; // valid, unique inputs
   let showWarning = false;
 
   // Validate each input
@@ -16,15 +16,22 @@ case 6:
 
     // Check for invalid value or duplicate
     if (!allowedValues.has(val) || values.includes(val)) {
-      showWarning = true; // only set warning when user tries invalid/duplicate
-      this.value = "";     // clear the invalid input
-      $(this).trigger("input"); // update UI
+      this.value = "";           // clear invalid/duplicate input
+      $(this).trigger("input");  // update UI
+      showWarning = false;       // reset warning immediately
     } else {
-      values.push(val);   // store valid, unique input
+      values.push(val);          // store valid input
     }
   });
 
-  // Show warning only if user entered invalid/duplicate
+  // If any invalid/duplicate inputs remain, show warning
+  inputs.each(function () {
+    let val = this.value.trim();
+    if (val !== "" && (!allowedValues.has(val) || values.filter(v => v === val).length > 1)) {
+      showWarning = true;
+    }
+  });
+
   if (showWarning) {
     $("#message").removeClass("d-none");
   } else {
