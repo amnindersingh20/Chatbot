@@ -37,6 +37,7 @@
 				</div>
 			</div>
 		</div>
+        <div id="message" class="text-danger text-center fw-bold mx-auto pb-4 d-none">Please adjust your inputs. Rank your top 3 items only (by entering a 1, 2 or 3).</div>
 
 		<div class="row">
 			<div class="border border-2 border-dark px-5 pb-5 mt-5">
