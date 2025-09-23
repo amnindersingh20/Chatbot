@@ -1,47 +1,47 @@
-case 6:
-  const inputs = $('.form-control');
-  const allowedValues = new Set(['1', '2', '3']);
+case 7:
+  const inputs7 = $('.form-control');  // adjust selector if needed for this case
+  const allowedValues7 = new Set(['1', '2', '3', '4', '5']);
 
-  let values = [];       // valid unique entries
-  let hasInvalid = false; // flag for invalid or duplicate input
+  let values7 = [];       // valid unique entries
+  let hasInvalid7 = false; // flag for invalid or duplicate input
 
   // Check all inputs
-  inputs.each(function () {
+  inputs7.each(function () {
     let val = this.value.trim();
 
     if (val === "") return; // skip empty
 
     // Invalid if not in allowedValues
-    if (!allowedValues.has(val)) {
-      hasInvalid = true;
+    if (!allowedValues7.has(val)) {
+      hasInvalid7 = true;
     } 
     // Duplicate if already in values
-    else if (values.includes(val)) {
-      hasInvalid = true;
+    else if (values7.includes(val)) {
+      hasInvalid7 = true;
     } else {
-      values.push(val); // store valid unique value
+      values7.push(val); // store valid unique value
     }
   });
 
   // Show or hide warning
-  if (hasInvalid) {
+  if (hasInvalid7) {
     $("#message").removeClass("d-none");
   } else {
     $("#message").addClass("d-none");
   }
 
-  // Enable Next button only if exactly 3 valid unique entries and no invalid input
-  if (values.length === 3 && !hasInvalid) {
+  // Enable Next button only if exactly 5 valid unique entries and no invalid input
+  if (values7.length === 5 && !hasInvalid7) {
     $(".nextbutton").removeAttr("disabled").removeClass("disabled");
   } else {
     $(".nextbutton").attr("disabled", true).addClass("disabled");
   }
 
   // Save values in sessionStorage (store 0 for empty or invalid entries)
-  inputs.each(function (i) {
+  inputs7.each(function (i) {
     let val = this.value.trim();
-    if (!allowedValues.has(val) || val === "") val = "0"; 
-    sessionStorage.setItem("r" + (14 + i), val);
+    if (!allowedValues7.has(val) || val === "") val = "0"; 
+    sessionStorage.setItem("r" + (19 + i), val); // adjust keys as needed
   });
 
   break;
