@@ -1,48 +1,46 @@
 case 6:
-  const inputs = $('.form-control');
-  const allowedValues = new Set(['','1','2','3']);
-  const numericValues = new Set();
-  let numericCount = 0;
-  let hasDuplicate = false;
-  let hasInvalid = false;
+      // Copilot code
+      const inputs = $('.form-control');
+      const allowedValues = new Set(['','1', '2', '3']);
+      const numericValues = new Set();
+      let numericCount = 0; let totalCount = 0;
 
-  for (let i = 0; i < inputs.length; i++) {
-    const value = inputs[i].value.trim();
-
-    if (allowedValues.has(value) && value !== "") {
-      if (numericValues.has(value)) {
-        // duplicate detected
-        hasDuplicate = true;
-        inputs[i].value = ""; // clear duplicate
-      } else {
-        numericValues.add(value);
-        numericCount++;
+      for (let i = 0; i < inputs.length; i++) {
+        const value = inputs[i].value.trim();
+        if (allowedValues.has(value) && value != "") {
+          numericValues.add(value);
+          numericCount++;
+          totalCount++;
+        } else {
+          var tmp=value;
+          inputs[i].value = "";
+          if(tmp!=""){
+            console.log("returning false")
+            //return false;
+          }
+        }
       }
-    } else if (value !== "") {
-      // reset invalid entry (anything not 1, 2, or 3)
-      hasInvalid = true;
-      inputs[i].value = "";
-    }
-  }
-
-  if (!hasDuplicate && !hasInvalid && numericCount === 3 && numericValues.size === 3) {
-    // ✅ valid: exactly 3 unique entries
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-    $("#message").addClass("d-none");
-
-    // save r14–r23
-    inputs.each(function(i, el) {
-      sessionStorage.setItem("r" + (14+i), el.value);
-    });
-
-    return true;
-  } else {
-    // ❌ invalid: not enough, wrong values, or duplicate
-    let msg = "⚠️ Please rank exactly 3 options using 1, 2, and 3 without repeats.";
-    if (hasDuplicate) msg = "⚠️ Duplicate detected. Each rank (1, 2, 3) must be used only once.";
-    if (hasInvalid) msg = "⚠️ Invalid entry. Only 1, 2, or 3 are allowed.";
-
-    $("#message").text(msg).removeClass("d-none");
-    $(".nextbutton").attr("disabled", true).addClass("disabled");
-    return false;
-  }
+      //console.log(numericCount, numericValues.size, totalCount)
+      if (numericCount === 3 && numericValues.size === 3 && totalCount === 3) {
+        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+        $("#message").addClass("d-none");
+        sessionStorage.setItem("r14", inputs[0].value);
+        sessionStorage.setItem("r15", inputs[1].value);
+        sessionStorage.setItem("r16", inputs[2].value);
+        sessionStorage.setItem("r17", inputs[3].value);
+        sessionStorage.setItem("r18", inputs[4].value);
+        sessionStorage.setItem("r19", inputs[5].value);
+        sessionStorage.setItem("r20", inputs[6].value);
+        sessionStorage.setItem("r21", inputs[7].value);
+        sessionStorage.setItem("r22", inputs[8].value);
+        sessionStorage.setItem("r23", inputs[9].value);
+        return true; // Valid
+      } else if (numericCount >= 3 || numericValues.size >= 3 || totalCount > 3) {
+        $("#message").removeClass("d-none");
+        $(".nextbutton").attr("disabled", true).addClass("disabled");
+        return false; // Invalid
+      } else {
+        //$("#message").removeClass("d-none");
+        $(".nextbutton").class("disabled", true);
+      }
+      break;
