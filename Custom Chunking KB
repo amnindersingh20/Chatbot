@@ -1,46 +1,35 @@
 case 6:
-      // Copilot code
-      const inputs = $('.form-control');
-      const allowedValues = new Set(['','1', '2', '3']);
-      const numericValues = new Set();
-      let numericCount = 0; let totalCount = 0;
+  const inputs = $('.form-control');
+  const allowedValues = new Set(['1', '2', '3']);
+  
+  let values = [];
 
-      for (let i = 0; i < inputs.length; i++) {
-        const value = inputs[i].value.trim();
-        if (allowedValues.has(value) && value != "") {
-          numericValues.add(value);
-          numericCount++;
-          totalCount++;
-        } else {
-          var tmp=value;
-          inputs[i].value = "";
-          if(tmp!=""){
-            console.log("returning false")
-            //return false;
-          }
-        }
-      }
-      //console.log(numericCount, numericValues.size, totalCount)
-      if (numericCount === 3 && numericValues.size === 3 && totalCount === 3) {
-        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-        $("#message").addClass("d-none");
-        sessionStorage.setItem("r14", inputs[0].value);
-        sessionStorage.setItem("r15", inputs[1].value);
-        sessionStorage.setItem("r16", inputs[2].value);
-        sessionStorage.setItem("r17", inputs[3].value);
-        sessionStorage.setItem("r18", inputs[4].value);
-        sessionStorage.setItem("r19", inputs[5].value);
-        sessionStorage.setItem("r20", inputs[6].value);
-        sessionStorage.setItem("r21", inputs[7].value);
-        sessionStorage.setItem("r22", inputs[8].value);
-        sessionStorage.setItem("r23", inputs[9].value);
-        return true; // Valid
-      } else if (numericCount >= 3 || numericValues.size >= 3 || totalCount > 3) {
-        $("#message").removeClass("d-none");
-        $(".nextbutton").attr("disabled", true).addClass("disabled");
-        return false; // Invalid
-      } else {
-        //$("#message").removeClass("d-none");
-        $(".nextbutton").class("disabled", true);
-      }
-      break;
+  // Validate each input
+  inputs.each(function () {
+    let val = this.value.trim();
+
+    // Clear if not allowed or duplicate
+    if (!allowedValues.has(val) || values.includes(val)) {
+      this.value = "";
+      $(this).trigger("input"); // force Inputmask/UI update
+    } else {
+      values.push(val);
+    }
+  });
+
+  // Validation checks
+  if (values.length === 3 && new Set(values).size === 3) {
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+    $("#message").addClass("d-none");
+
+    // Save values in sessionStorage
+    inputs.each(function (i) {
+      sessionStorage.setItem("r" + (14 + i), this.value);
+    });
+
+    return true; // ✅ valid
+  } else {
+    $("#message").removeClass("d-none");
+    $(".nextbutton").attr("disabled", true).addClass("disabled");
+    return false; // ❌ invalid
+  }
