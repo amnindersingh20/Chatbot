@@ -1,1 +1,48 @@
-haha
+case 6:
+  const inputs = $('.form-control');
+  const allowedValues = new Set(['1', '2', '3']);
+  
+  let values = [];      // valid, unique inputs
+  let showWarning = false;
+
+  // Validate each input
+  inputs.each(function () {
+    let val = this.value.trim();
+
+    if (val === "") {
+      // empty input, skip
+      return;
+    }
+
+    // Check for invalid value or duplicate
+    if (!allowedValues.has(val) || values.includes(val)) {
+      showWarning = true; // only set warning when user tries invalid/duplicate
+      this.value = "";     // clear the invalid input
+      $(this).trigger("input"); // update UI
+    } else {
+      values.push(val);   // store valid, unique input
+    }
+  });
+
+  // Show warning only if user entered invalid/duplicate
+  if (showWarning) {
+    $("#message").removeClass("d-none");
+  } else {
+    $("#message").addClass("d-none");
+  }
+
+  // Enable next button only if exactly 3 unique valid values
+  if (values.length === 3) {
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+  } else {
+    $(".nextbutton").attr("disabled", true).addClass("disabled");
+  }
+
+  // Save values in sessionStorage (store 0 for empty/unselected)
+  inputs.each(function (i) {
+    let val = this.value.trim();
+    if (!allowedValues.has(val) || val === "") val = "0";
+    sessionStorage.setItem("r" + (14 + i), val);
+  });
+
+  break;
