@@ -1,40 +1,51 @@
 case 6:
-  const inputs6 = $('.form-control'); // adjust selector if all 10 inputs have this class
+  const inputs6 = $('.form-control'); // select all 10 inputs for this case
   const allowedValues6 = new Set(['1', '2', '3']);
 
-  let values6 = [];
   let hasInvalid6 = false;
+  let enteredValues6 = [];
 
-  // Validate all inputs
-  inputs6.each(function (i) {
+  // Collect all non-empty input values and check validity
+  inputs6.each(function () {
     let val = this.value.trim();
-
     if (val === "") return;
 
+    // Invalid if not allowed
     if (!allowedValues6.has(val)) {
       hasInvalid6 = true;
-    } else if (values6.includes(val)) {
-      hasInvalid6 = true;
-    } else {
-      values6.push(val);
     }
+
+    enteredValues6.push(val);
   });
 
-  // Show/hide warning
+  // Check for duplicates in entered values
+  const uniqueValues6 = new Set();
+  for (let val of enteredValues6) {
+    if (uniqueValues6.has(val)) {
+      hasInvalid6 = true; // duplicate found
+    } else {
+      uniqueValues6.add(val);
+    }
+  }
+
+  // Show or hide warning
   if (hasInvalid6) {
     $("#message").removeClass("d-none");
   } else {
     $("#message").addClass("d-none");
   }
 
-  // Next button enabled only if exactly 3 unique valid values
-  if (values6.length === 3 && !hasInvalid6) {
+  // Enable Next button only if exactly 3 unique valid values and no invalids
+  let validUniqueCount6 = enteredValues6.filter(v => allowedValues6.has(v))
+                                        .filter((v, i, arr) => arr.indexOf(v) === i).length;
+
+  if (validUniqueCount6 === 3 && !hasInvalid6) {
     $(".nextbutton").removeAttr("disabled").removeClass("disabled");
   } else {
     $(".nextbutton").attr("disabled", true).addClass("disabled");
   }
 
-  // Save to sessionStorage r14 → r23
+  // Save values in sessionStorage r14 → r23
   inputs6.each(function (i) {
     let val = this.value.trim();
     if (!allowedValues6.has(val) || val === "") val = "0";
