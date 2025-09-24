@@ -1,14 +1,18 @@
-const inputs7 = $('input[id^="q6_"]'); // your ids are q6_1..q6_12
+case 7: {
+  // Select only the Q7 inputs (ids q7_1 .. q7_12)
+  const inputs7 = $('input[id^="q7_"]');
   const allowedValues7 = new Set(['1','2','3','4','5']);
 
   let hasInvalid7 = false;
   const filledVals = [];
 
   inputs7.each(function() {
+    // If using Inputmask, get unmasked value; otherwise use .value
     let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
     raw = (raw || '').toString().trim();
 
-    if (raw === '') return;
+    if (raw === '') return; // skip empty inputs
+
     if (!allowedValues7.has(raw)) hasInvalid7 = true;
     filledVals.push(raw);
   });
@@ -16,18 +20,21 @@ const inputs7 = $('input[id^="q6_"]'); // your ids are q6_1..q6_12
   const uniqueFilled = new Set(filledVals);
   const hasDuplicates = uniqueFilled.size !== filledVals.length;
 
+  // Show or hide warning
   if (hasInvalid7 || hasDuplicates) $("#message").removeClass("d-none");
   else $("#message").addClass("d-none");
 
+  // Count unique valid ranks (1..5)
   const uniqueValidCount = Array.from(uniqueFilled).filter(v => allowedValues7.has(v)).length;
 
+  // Enable Next only when exactly 5 unique valid ranks, and no invalids/duplicates
   if (uniqueValidCount === 5 && !hasInvalid7 && !hasDuplicates) {
     $(".nextbutton").removeAttr("disabled").removeClass("disabled");
   } else {
     $(".nextbutton").attr("disabled", true).addClass("disabled");
   }
 
-  // Save r24 → r35
+  // Save values to sessionStorage r24 → r35 (use "0" for empty/invalid)
   inputs7.each(function(i) {
     let v = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
     v = (v || '').toString().trim();
@@ -35,7 +42,8 @@ const inputs7 = $('input[id^="q6_"]'); // your ids are q6_1..q6_12
     sessionStorage.setItem("r" + (24 + i), v);
   });
 
-  // debug log
+  // Debug log (remove once confirmed)
   console.log('case7 filled:', filledVals, 'uniqueValidCount:', uniqueValidCount, 'invalid:', hasInvalid7, 'duplicates:', hasDuplicates);
 
   break;
+}
