@@ -1,77 +1,20 @@
-case 1: {
-  // Q1 -> r1
-  const v1 = getSelectedRadioButtonValue("q1");
-  sessionStorage.setItem("r1", v1 != null ? v1 : "0");
+<div class="survey-progress my-3 mx-2">
+				<button type="button" class="btn bg-transparent my-0 mx-0" id="info"><img src="../img/Info_Btn.jpg" alt="Click for instructions"></button>
 
-  if (v1 != null) {
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-  } else {
-    $(".nextbutton").attr("disabled", true).addClass("disabled");
-  }
-  break;
-}
-
-case 2: {
-  // Q2 has two groups q2a -> r2 and q2b -> r3
-  const v2a = getSelectedRadioButtonValue("q2a");
-  const v2b = getSelectedRadioButtonValue("q2b");
-
-  sessionStorage.setItem("r2", v2a != null ? v2a : "0");
-  sessionStorage.setItem("r3", v2b != null ? v2b : "0");
-
-  if (v2a != null && v2b != null) {
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-  } else {
-    $(".nextbutton").attr("disabled", true).addClass("disabled");
-  }
-  break;
-}
-
-case 3: {
-  // Q3 has 5 sub-questions q3a..q3e -> r4..r8
-  const names3 = ["q3a","q3b","q3c","q3d","q3e"];
-  let allSelected3 = true;
-  for (let i = 0; i < names3.length; i++) {
-    const val = getSelectedRadioButtonValue(names3[i]);
-    sessionStorage.setItem("r" + (4 + i), val != null ? val : "0");
-    if (val == null) allSelected3 = false;
-  }
-
-  if (allSelected3) {
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-  } else {
-    $(".nextbutton").attr("disabled", true).addClass("disabled");
-  }
-  break;
-}
-
-case 4: {
-  // Q4 has 4 sub-questions q4a..q4d -> r9..r12
-  const names4 = ["q4a","q4b","q4c","q4d"];
-  let allSelected4 = true;
-  for (let i = 0; i < names4.length; i++) {
-    const val = getSelectedRadioButtonValue(names4[i]);
-    sessionStorage.setItem("r" + (9 + i), val != null ? val : "0");
-    if (val == null) allSelected4 = false;
-  }
-
-  if (allSelected4) {
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-  } else {
-    $(".nextbutton").attr("disabled", true).addClass("disabled");
-  }
-  break;
-}
-
-case 5: {
-  // Q5 -> r13
-  const v5 = getSelectedRadioButtonValue("q5");
-  sessionStorage.setItem("r13", v5 != null ? v5 : "0");
-
-  if (v5 != null) {
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-  } else {
-    $(".nextbutton").attr("disabled", true).addClass("disabled");
-  }
-  break;
-}
+			<div class="progress bar">
+				<div class="progress-bar bg-primary" role="progressbar" style="width: 0%;" aria-valuenow="0"
+					aria-valuemin="0" aria-valuemax="100"></div>
+			</div>
+			<div class="d-flex justify-content-between align-items-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
+				<span class="per">0%</span>
+				<span class="flex-grow-1 text-center">Survey Completion Percentage</span>
+				<span class="per">100%</span>
+			</div>
+			<!-- <div class="d-flex justify-content-between">
+				<span class="per">0%</span>
+				<span class="per">100%</span>
+			</div>
+			<div class="text-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
+				Survey Completion Percentage
+			</div> -->
+		</div>
