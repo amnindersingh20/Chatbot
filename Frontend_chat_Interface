@@ -1,201 +1,141 @@
-<!DOCTYPE html>
-<html lang="en">
+case 6: {
+  // case 6: allowed ranks 1..3, require exactly 3 unique valid ranks, save r14 -> r23
+  const inputs6 = $('input[id^="q6_"]'); // selects q6_1 ... q6_10 (or however many are present)
+  const allowedSet6 = new Set(['1','2','3']);
 
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta name="robots" content="noindex, nofollow">
-	<meta http-equiv="X-UA-Compatible" content="ie=edge">
-	<title>Marriot Survey</title>
-	<link rel="stylesheet" href="../css/bootstrap.min.css">
-	<link rel="stylesheet" href="../css/aos.css">
-	<link rel="stylesheet" href="../css/styles.css">
-	<link rel="stylesheet" href="../css/sweetalert2.css">
-	<link rel="shortcut icon" type="image/x-icon" href="../img/favicon.ico"/>
-	<script src="../js/gtm-head.js"></script>
-	<script src="../js/jquery-3.7.1.min.js"></script>
-	<script src="../js/custom.js"></script>
-	<script src="../js/sweetalert2.js"></script>
-</head>
+  let hasInvalid6 = false;
+  const filled6 = [];
 
-<body>
-  <!--TRACKING DO NOT REMOVE-->
-  <noscript>
-    <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
-            style="display:none;visibility:hidden">
-    </iframe>
-  </noscript>
-  <!-- End Google Tag Manager (noscript) -->
+  inputs6.each(function () {
+    let raw = this.value ? this.value.trim() : '';
 
-	<div class="container-lg px-0 mb-5 pb-5">
-		<div class="hero-container pt-4">
-			<div class="d-flex flex-column flex-lg-row justify-content-evenly">
-				<div class="col-12 order-last order-lg-first">
-					<h1 class="d-inline-block mt-0 mt-lg-5 text-start">
-						Q6. What are your preferred ways to receive information about Marriott’s benefits throughout the year? Please rank the following channels by typing 1 for your top choice, 2 for your second, and so on until you have ranked them all:
-					</h1>
-				</div>
-			</div>
-		</div>
-        <div id="message" class="text-danger text-center fw-bold mx-auto pb-4 d-none">Please adjust your inputs. Rank your top 3 items only (by entering a 1, 2 or 3).</div>
-
-		<div class="row">
-			<div class="border border-2 border-dark px-5 pb-5 mt-5">
-			<div class="col-12 col-lg-11 d-flex flex-column flex-lg-row mt-5">
-			<!-- <div class="col-12 col-lg-12"> -->
-				<div class="d-flex flex-column justify-content-start px-4 ms-2 pb-4 mb-0 mb-lg-5 align-items-start form-check-inline col-12 col-lg-5">
-					<div class="d-flex flex-row align-items-center mb-3">
-						<input type="text" name="q6" id="q6_1" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="1">
-						<label for="q6_1" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">mHUB</label>
-					</div>
-					<div class="d-flex flex-row align-items-center my-3">
-						<input type="text" name="q6" id="q6_2" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="2">
-						<label for="q6_2" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">DLZ</label>
-					</div>
-					<div class="d-flex flex-row align-items-center my-3">
-						<input type="text" name="q6" id="q6_3" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="3">
-						<label for="q6_3" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">MGS</label>
-					</div>
-					<div class="d-flex flex-row align-items-center my-3">
-						<input type="text" name="q6" id="q6_4" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="4">
-						<label for="q6_4" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Email</label>
-					</div>
-					<div class="d-flex flex-row align-items-center mt-3 mb-0">
-						<input type="text" name="q6" id="q6_5" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="5">
-						<label for="q6_5" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Digital/printed flyers</label>
-					</div>
-					
-				</div>
-				<div class="d-flex flex-column justify-content-start px-4 ms-2 pb-5 mt-2 mt-lg-0 mb-0 align-items-start form-check-inline pe-0 pe-lg-5 col-12 col-lg-7">
-					<div class="d-flex flex-row align-items-center mt-0 mb-3">
-						<input type="text" name="q6" id="q6_6" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="6">
-						<label for="q6_6" class="form-check-label labelLight text-start fw-normal pe-5 fs-6 lh-125">Mail sent to home address</label>
-					</div>
-					<div class="d-flex flex-row align-items-center my-3">
-						<input type="text" name="q6" id="q6_7" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="7">
-						<label for="q6_7" class="form-check-label labelLight text-start fw-normal pe-5 fs-6 lh-125">Text message notifications</label>
-					</div>
-					<div class="d-flex flex-row align-items-center my-3">
-						<input type="text" name="q6" id="q6_8" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="8">
-						<label for="q6_8" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Mobile app</label>
-					</div>
-					<div class="d-flex flex-row align-items-center my-3">
-						<input type="text" name="q6" id="q6_9" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="9">
-						<label for="q6_9" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Webinars hosted by the Benefits team or vendors</label>
-					</div>
-					<div class="d-flex flex-row align-items-center my-3">
-						<input type="text" name="q6" id="q6_10" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="10">
-						<label for="q6_10" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Manager/supervisor-led discussions</label>
-					</div>
-					
-				</div>
-				</div>
-				<!-- <div class="border border-2 border-dark px-5 pb-5 mt-5">
-
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_1">
-						<label for="rank_1">mHUB</label>
-					</div>
-
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_2">
-						<label for="rank_2">DLZ</label>
-					</div>
-
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_3">
-						<label for="rank_3">MGS</label>
-					</div>
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_1">
-						<label for="rank_1">Email</label>
-					</div>
-
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_2">
-						<label for="rank_2">Digital/printed flyers</label>
-					</div>
-
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_3">
-						<label for="rank_3">Mail sent to home address</label>
-					</div>
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_3">
-						<label for="rank_3">Text message notifications </label>
-					</div>
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_1">
-						<label for="rank_1">Mobile app</label>
-					</div>
-
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_2">
-						<label for="rank_2">Webinars hosted by the Benefits team or vendors</label>
-					</div>
-
-					<div class="rank-option mt-3 mb-3">
-						<input type="text" class="rank-input" maxlength="1" id="rank_3">
-						<label for="rank_3">Manager/supervisor-led discussions</label>
-					</div>
-
-				</div> -->
-			</div>
-
-			<div class="col-12 col-lg-12 pe-3 pe-lg-0 mt-3">
-				<a href="q7.html" class="btn btn-primary disabled nextbutton">Next Question</a>
-			</div>
-
-			<!-- <div class="col-12 col-lg-12 pe-3 pe-lg-0 mt-5">
-				<div class="progress" role="progressbar" aria-label="progress bar" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">
-					<div class="progress-bar" style="width: 25%"></div>
-				</div>
-			</div> -->
-			<div class="survey-progress my-4">
-
-			<div class="progress bar">
-				<div class="progress-bar bg-primary" role="progressbar" style="width: 50%;" aria-valuenow="50"
-					aria-valuemin="0" aria-valuemax="100"></div>
-			</div>
-			<div class="d-flex justify-content-between align-items-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
-				<span class="per">0%</span>
-				<span class="flex-grow-1 text-center per">Survey Completion Percentage</span>
-				<span class="per">100%</span>
-			</div>
-			<!-- <div class="d-flex justify-content-between">
-				<span class="per">0%</span>
-				<span class="per">100%</span>
-			</div>
-			<div class="text-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
-				Survey Completion Percentage
-			</div> -->
-		</div>
-		</div>
-	</div>
-
-	<!-- Footer -->
-	<div id="footer-placeholder" class="mt-auto"></div>
-	 
-    <script src="js/sExtendUtil.js"></script>
-    <script src="js/saveSurveyResponse_Mariott.js"></script>
-
-	<script>
-
-		if (location.hostname.substring(0, 9) != "localhost" && location.hostname.substring(0, 9) != "127.0.0.1" && location.hostname.substring(0, 3) != "qa.") {
-            $.getScript("js/sValidator.js", function (data, textStatus, jqxhr) { });
+    // prefer unmasked value if inputmask is used
+    try {
+      if (typeof $(this).inputmask === 'function') {
+        const unmasked = $(this).inputmask('unmaskedvalue');
+        if (unmasked !== undefined && unmasked !== null && String(unmasked).trim() !== '') {
+          raw = String(unmasked).trim();
         }
+      }
+    } catch (e) {
+      // ignore inputmask errors, use raw value
+    }
 
+    if (raw === '') return; // skip empties
 
-		
-		$(function() {
-			$("#footer-placeholder").load("footer.html");
-		});
+    if (!allowedSet6.has(raw)) {
+      hasInvalid6 = true;
+    }
 
-		sessionStorage.setItem("page", 6);
-			if (sessionStorage.getItem("q6")) {
-				$(".nextbutton").removeAttr("disabled");
-			}
-			$(".form-control").inputmask();
-	</script>
-</body>
-</html>
+    filled6.push(raw);
+  });
+
+  const uniqueFilled6 = new Set(filled6);
+  const hasDuplicates6 = uniqueFilled6.size !== filled6.length;
+
+  if (hasInvalid6 || hasDuplicates6) {
+    $("#message").removeClass("d-none");
+  } else {
+    $("#message").addClass("d-none");
+  }
+
+  const uniqueValidCount6 = Array.from(uniqueFilled6).filter(v => allowedSet6.has(v)).length;
+
+  if (uniqueValidCount6 === 3 && !hasInvalid6 && !hasDuplicates6) {
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+  } else {
+    $(".nextbutton").attr("disabled", true).addClass("disabled");
+  }
+
+  // Save to sessionStorage r14 -> r{14 + inputs6.length - 1}
+  inputs6.each(function(i) {
+    let raw = this.value ? this.value.trim() : '';
+    try {
+      if (typeof $(this).inputmask === 'function') {
+        const unmasked = $(this).inputmask('unmaskedvalue');
+        if (unmasked !== undefined && unmasked !== null && String(unmasked).trim() !== '') {
+          raw = String(unmasked).trim();
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    if (raw === '' || !allowedSet6.has(raw)) raw = "0";
+    sessionStorage.setItem("r" + (14 + i), raw);
+  });
+
+  // optional debug:
+  // console.log({filled6, uniqueValidCount6, hasInvalid6, hasDuplicates6});
+  break;
+}
+
+case 7: {
+  // case 7: allowed ranks 1..5, require exactly 5 unique valid ranks, save r24 -> r35
+  const inputs7 = $('input[id^="q6_"]'); // selects q6_1 ... q6_12 (or however many are present)
+  const allowedSet7 = new Set(['1','2','3','4','5']);
+
+  let hasInvalid7 = false;
+  const filled7 = [];
+
+  inputs7.each(function () {
+    let raw = this.value ? this.value.trim() : '';
+
+    // prefer unmasked value if inputmask is used
+    try {
+      if (typeof $(this).inputmask === 'function') {
+        const unmasked = $(this).inputmask('unmaskedvalue');
+        if (unmasked !== undefined && unmasked !== null && String(unmasked).trim() !== '') {
+          raw = String(unmasked).trim();
+        }
+      }
+    } catch (e) {
+      // ignore inputmask errors, use raw value
+    }
+
+    if (raw === '') return; // skip empties
+
+    if (!allowedSet7.has(raw)) {
+      hasInvalid7 = true;
+    }
+
+    filled7.push(raw);
+  });
+
+  const uniqueFilled7 = new Set(filled7);
+  const hasDuplicates7 = uniqueFilled7.size !== filled7.length;
+
+  if (hasInvalid7 || hasDuplicates7) {
+    $("#message").removeClass("d-none");
+  } else {
+    $("#message").addClass("d-none");
+  }
+
+  const uniqueValidCount7 = Array.from(uniqueFilled7).filter(v => allowedSet7.has(v)).length;
+
+  if (uniqueValidCount7 === 5 && !hasInvalid7 && !hasDuplicates7) {
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+  } else {
+    $(".nextbutton").attr("disabled", true).addClass("disabled");
+  }
+
+  // Save to sessionStorage r24 -> r{24 + inputs7.length - 1}
+  inputs7.each(function(i) {
+    let raw = this.value ? this.value.trim() : '';
+    try {
+      if (typeof $(this).inputmask === 'function') {
+        const unmasked = $(this).inputmask('unmaskedvalue');
+        if (unmasked !== undefined && unmasked !== null && String(unmasked).trim() !== '') {
+          raw = String(unmasked).trim();
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    if (raw === '' || !allowedSet7.has(raw)) raw = "0";
+    sessionStorage.setItem("r" + (24 + i), raw);
+  });
+
+  // optional debug:
+  // console.log({filled7, uniqueValidCount7, hasInvalid7, hasDuplicates7});
+  break;
+}
