@@ -1,85 +1,82 @@
 function saveSurveyResponse(pageName) {
-  var host = sessionStorage.getItem("host").split('validate')[0];
-  var ssoData = JSON.parse(sessionStorage.getItem('ssoData'));
-  var token = sessionStorage.getItem("token");
+	var host = sessionStorage.getItem("host").split('validate')[0];
+	var ssoData = JSON.parse(sessionStorage.getItem('ssoData'));
+	
+	var dataObj = {};
+ 	dataObj.projectId="Marriott_SURVEY";
+	dataObj.surveyBatchId="2026";   //ssoData.planYear if it has the right values
+ 	dataObj.overwritePrevResp=false;
+    dataObj.r1= sessionStorage.getItem("r1"),
+    dataObj.r2a= sessionStorage.getItem("r2"),
+    dataObj.r2b= sessionStorage.getItem("r3"),
+    dataObj.r3a= sessionStorage.getItem("r4"),
+    dataObj.r3b= sessionStorage.getItem("r5"),
+    dataObj.r3c= sessionStorage.getItem("r6"),
+    dataObj.r3d= sessionStorage.getItem("r7"),
+    dataObj.r3e= sessionStorage.getItem("r8"),
+    dataObj.r3f= sessionStorage.getItem("r9"),
+    dataObj.r4a= sessionStorage.getItem("r10"),
+    dataObj.r4b= sessionStorage.getItem("r11"),
+    dataObj.r4c= sessionStorage.getItem("r12"),
+    dataObj.r4d= sessionStorage.getItem("r13"),
+    dataObj.r5= sessionStorage.getItem("r14"),
+    dataObj.r6a= sessionStorage.getItem("r15"),
+    dataObj.r6b= sessionStorage.getItem("r16"),
+    dataObj.r6c= sessionStorage.getItem("r17"),
+    dataObj.r6d= sessionStorage.getItem("r18"),
+    dataObj.r6e= sessionStorage.getItem("r19"),
+    dataObj.r6f= sessionStorage.getItem("r20"),
+    dataObj.r6g= sessionStorage.getItem("r21"),
+    dataObj.r6h= sessionStorage.getItem("r22"),
+    dataObj.r6i= sessionStorage.getItem("r23"),
+    dataObj.r6j= sessionStorage.getItem("r24"),
+    dataObj.r7a= sessionStorage.getItem("r25"),
+    dataObj.r7b= sessionStorage.getItem("r26"),
+    dataObj.r7c= sessionStorage.getItem("r27"),
+    dataObj.r7d= sessionStorage.getItem("r28"),
+    dataObj.r7e= sessionStorage.getItem("r29"),
+    dataObj.r7f= sessionStorage.getItem("r30"),
+    dataObj.r7g= sessionStorage.getItem("r31"),
+    dataObj.r7h= sessionStorage.getItem("r32"),
+    dataObj.r7i= sessionStorage.getItem("r33"),
+    dataObj.r7j= sessionStorage.getItem("r34"),
+    dataObj.r7k= sessionStorage.getItem("r35"),
+    dataObj.r7l= sessionStorage.getItem("r36"),
+    dataObj.r8= sessionStorage.getItem("r37");
 
-  var dataObj = {};
-  dataObj.projectId = "Marriott_SURVEY";
-  dataObj.surveyBatchId = "2026";   // or use ssoData.planYear if available
-  dataObj.overwritePrevResp = false;
-
-  // --------------------------
-  // Map answers from sessionStorage into backend fields
-  // --------------------------
-
-  // Q1
-  dataObj.r1 = sessionStorage.getItem("r1") || "0";
-
-  // Q2 (2 answers)
-  dataObj.r2a = sessionStorage.getItem("r2") || "0";
-  dataObj.r2b = sessionStorage.getItem("r3") || "0";
-
-  // Q3 (5 answers → r4..r8)
-  dataObj.r3a = sessionStorage.getItem("r4") || "0";
-  dataObj.r3b = sessionStorage.getItem("r5") || "0";
-  dataObj.r3c = sessionStorage.getItem("r6") || "0";
-  dataObj.r3d = sessionStorage.getItem("r7") || "0";
-  dataObj.r3e = sessionStorage.getItem("r8") || "0";
-
-  // Q4 (4 answers → r9..r12)
-  dataObj.r4a = sessionStorage.getItem("r9") || "0";
-  dataObj.r4b = sessionStorage.getItem("r10") || "0";
-  dataObj.r4c = sessionStorage.getItem("r11") || "0";
-  dataObj.r4d = sessionStorage.getItem("r12") || "0";
-
-  // Q5 (single → r13)
-  dataObj.r5 = sessionStorage.getItem("r13") || "0";
-
-  // Q6 (10 answers → r14..r23 → r6a..r6j)
-  for (let i = 0; i < 10; i++) {
-    dataObj["r6" + String.fromCharCode(97 + i)] = sessionStorage.getItem("r" + (14 + i)) || "0";
-  }
-
-  // Q7 (12 answers → r24..r35 → r7a..r7l)
-  for (let i = 0; i < 12; i++) {
-    dataObj["r7" + String.fromCharCode(97 + i)] = sessionStorage.getItem("r" + (24 + i)) || "0";
-  }
-
-  // Q8 (free text → r36)
-  dataObj.r8 = sessionStorage.getItem("r36") || "";
-
-  // --------------------------
-  // Send to backend
-  // --------------------------
-  var responseJson = JSON.stringify(dataObj);
-  console.log("Sending payload:", responseJson);
-
-  var url = host + "saveSurveyResponseForAuthUser";
-
-  const request = new Request(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "DSI-Session-Token": ssoData.dsiSessionToken,
-      "DSI-Person-Token": token
-    },
-    body: responseJson,
-  });
-
-  fetch(request)
-    .then(response => {
-      if (response.status === 200) {
-        return response.text();
-      } else {
-        throw new Error("Error saving: " + response.status);
-      }
-    })
-    .then(responseData => {
-      console.log("Server replied:", responseData);
-      // Optionally redirect to finish.html or show success
-    })
-    .catch(error => {
-      console.error("Save failed:", error);
-      alert("There has been an error processing your request. Your entries were not saved. Please close the browser and retry.");
-    });
+	var responseJson =JSON.stringify(dataObj);
+	console.log ('dataObj:' + responseJson);
+ 	
+	var url = host + "saveSurveyResponseForAuthUser";
+	var token = sessionStorage.getItem("token");
+	
+     const request = new Request(url, {
+		  method: "POST",
+		  headers: { 'Content-Type': 'application/json','DSI-Session-Token': ssoData.dsiSessionToken, 'DSI-Person-Token': token },
+		  xhrFields: { withCredentials: true  },
+		  body: responseJson,
+     });
+     const fetchReq = fetch(request);
+     
+     fetchReq
+     	.then(response => {
+			console.log(response);
+			 if (response.status === 200) {
+				 var responseData =response.text();
+	             alert('Completion Recorded succesfully - Replace this after integration'); //Please replace alert per Site Requirement
+	             console.log(responseData);
+	             return ;
+	         } else {
+	        	  console.error('Error saving :' + response.status);
+	        	  throw new Error('Internal Server Error');
+	         }
+		})
+		.then(respData => {
+			 console.log('Saved Completion succesfully: ');
+		}) .catch(error => {
+			 	var error='There has been an error processing your request and your entries were not saved. Please close the browser and retry'
+			    console.error('Error saving :', error);
+			    alert(error) ; //Please replace this with error message per Site Requirements
+		});
+	 
 }
