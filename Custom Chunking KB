@@ -1,55 +1,55 @@
-case 7:
-  const inputs7 = $('.form-control'); // select all 12 inputs for case 7
-  const allowedValues7 = new Set(['1', '2', '3', '4', '5']);
+    case 7:
+      const inputs7 = $('.form-control'); // select all 12 inputs for case 7
+      const allowedValues7 = new Set(['1', '2', '3', '4', '5']);
 
-  let hasInvalid7 = false;
-  let enteredValues7 = [];
+      let hasInvalid7 = false;
+      let enteredValues7 = [];
 
-  // Collect all non-empty input values and check validity
-  inputs7.each(function () {
-    let val = this.value.trim();
-    if (val === "") return;
+      // Collect all non-empty input values and check validity
+      inputs7.each(function () {
+        let val = this.value.trim();
+        if (val === "") return;
 
-    // Invalid if not allowed
-    if (!allowedValues7.has(val)) {
-      hasInvalid7 = true;
-    }
+        // Invalid if not allowed
+        if (!allowedValues7.has(val)) {
+          hasInvalid7 = true;
+        }
 
-    enteredValues7.push(val);
-  });
+        enteredValues7.push(val);
+      });
 
-  // Check for duplicates in entered values
-  const uniqueValues7 = new Set();
-  for (let val of enteredValues7) {
-    if (uniqueValues7.has(val)) {
-      hasInvalid7 = true; // duplicate found
-    } else {
-      uniqueValues7.add(val);
-    }
-  }
+      // Check for duplicates in entered values
+      const uniqueValues7 = new Set();
+      for (let val of enteredValues7) {
+        if (uniqueValues7.has(val)) {
+          hasInvalid7 = true; // duplicate found
+        } else {
+          uniqueValues7.add(val);
+        }
+      }
 
-  // Show or hide warning
-  if (hasInvalid7) {
-    $("#message").removeClass("d-none");
-  } else {
-    $("#message").addClass("d-none");
-  }
+      // Show or hide warning
+      if (hasInvalid7) {
+        $("#message").removeClass("d-none");
+      } else {
+        $("#message").addClass("d-none");
+      }
 
-  // Enable Next button only if exactly 5 unique valid values and no invalids
-  let validUniqueCount7 = enteredValues7.filter(v => allowedValues7.has(v))
-                                        .filter((v, i, arr) => arr.indexOf(v) === i).length;
+      // Enable Next button only if exactly 5 unique valid values and no invalids
+      let validUniqueCount7 = enteredValues7.filter(v => allowedValues7.has(v))
+        .filter((v, i, arr) => arr.indexOf(v) === i).length;
 
-  if (validUniqueCount7 === 5 && !hasInvalid7) {
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-  } else {
-    $(".nextbutton").attr("disabled", true).addClass("disabled");
-  }
+      if (validUniqueCount7 === 5 && !hasInvalid7) {
+        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+      } else {
+        $(".nextbutton").attr("disabled", true).addClass("disabled");
+      }
 
-  // Save values in sessionStorage r24 → r35
-  inputs7.each(function (i) {
-    let val = this.value.trim();
-    if (!allowedValues7.has(val) || val === "") val = "0";
-    sessionStorage.setItem("r" + (24 + i), val);
-  });
+      // Save values in sessionStorage r24 → r35
+      inputs7.each(function (i) {
+        let val = this.value.trim();
+        if (!allowedValues7.has(val) || val === "") val = "0";
+        sessionStorage.setItem("r" + (24 + i), val);
+      });
 
-  break;
+      break;
