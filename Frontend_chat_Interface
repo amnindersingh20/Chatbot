@@ -1,4 +1,82 @@
-q6.html:214 
- Uncaught TypeError: $(...).inputmask is not a function
-    at q6.html:214:23
-(anonymous)	@	q6.html:214
+function saveSurveyResponse(pageName) {
+	var host = sessionStorage.getItem("host").split('validate')[0];
+	var ssoData = JSON.parse(sessionStorage.getItem('ssoData'));
+	
+	var dataObj = {};
+ 	dataObj.projectId=" Marriott_SURVEY";
+	dataObj.surveyBatchId="2026";   //ssoData.planYear if it has the right values
+ 	dataObj.overwritePrevResp=false;
+    dataObj.r1= r1,
+    dataObj.r2a= "1",
+    dataObj.r2b= "2",
+    dataObj.r3a= "5",
+    dataObj.r3b= "4",
+    dataObj.r3c= "5",
+    dataObj.r3d= "1",
+    dataObj.r3e= "3",
+    dataObj.r3f= "2",
+    dataObj.r4a= "5",
+    dataObj.r4b= "4",
+    dataObj.r4c= "3",
+    dataObj.r4d= "2",
+    dataObj.r5= "1",
+    dataObj.r6a= "1",
+    dataObj.r6b= "2",
+    dataObj.r6c= "3",
+    dataObj.r6d= "1",
+    dataObj.r6e= "0",
+    dataObj.r6f= "0",
+    dataObj.r6g= "0",
+    dataObj.r6h= "0",
+    dataObj.r6i= "0",
+    dataObj.r6j= "0",
+    dataObj.r7a= "0",
+    dataObj.r7b= "1",
+    dataObj.r7c= "2",
+    dataObj.r7d= "3",
+    dataObj.r7e= "0",
+    dataObj.r7f= "0",
+    dataObj.r7g= "0",
+    dataObj.r7h= "0",
+    dataObj.r7i= "0",
+    dataObj.r7j= "0",
+    dataObj.r7k= "0",
+    dataObj.r7l= "0",
+    dataObj.r8= "Free Form text"
+
+	var responseJson =JSON.stringify(dataObj);
+	console.log ('dataObj:' + responseJson);
+ 	
+	var url = host + "saveSurveyResponseForAuthUser";
+	var token = sessionStorage.getItem("token");
+	
+     const request = new Request(url, {
+		  method: "POST",
+		  headers: { 'Content-Type': 'application/json','DSI-Session-Token': ssoData.dsiSessionToken, 'DSI-Person-Token': token },
+		  xhrFields: { withCredentials: true  },
+		  body: responseJson,
+     });
+     const fetchReq = fetch(request);
+     
+     fetchReq
+     	.then(response => {
+			console.log(response);
+			 if (response.status === 200) {
+				 var responseData =response.text();
+	             //alert('Completion Recorded succesfully - Replace this after integration'); //Please replace alert per Site Requirement
+	             console.log(responseData);
+	             return ;
+	         } else {
+	        	  console.error('Error saving :' + response.status);
+	        	  throw new Error('Internal Server Error');
+	         }
+		})
+		.then(respData => {
+			 console.log('Saved Completion succesfully: ');
+		}) .catch(error => {
+			 	var error='There has been an error processing your request and your entries were not saved. Please close the browser and retry'
+			    console.error('Error saving :', error);
+			    alert(error) ; //Please replace this with error message per Site Requirements
+		});
+	 
+}
