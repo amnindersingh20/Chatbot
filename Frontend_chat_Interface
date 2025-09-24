@@ -1,21 +1,169 @@
-<!-- Replace your existing .survey-progress with this -->
-<div class="survey-progress my-3 mx-2 d-flex align-items-center">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marriot Survey</title>
+
+  <!-- Bootstrap CSS -->
+  <link rel="stylesheet" href="../css/bootstrap.min.css" />
+  <link rel="stylesheet" href="../css/aos.css" />
+  <link rel="stylesheet" href="../css/styles.css" />
+  <link rel="stylesheet" href="../css/sweetalert2.css" />
+
+  <!-- jQuery first (you already have this) -->
+  <script src="../js/jquery-3.7.1.min.js"></script>
+  <script src="../js/custom.js"></script>
+  <script src="../js/sweetalert2.js"></script>
+
+
+</head>
+<body class="d-flex flex-column min-vh-100">
+
+  <!-- TRACKING (keep as-is) -->
+  <noscript>
+    <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW"
+            height="0" width="0" style="display:none;visibility:hidden"></iframe>
+  </noscript>
+
+  <!-- MAIN (will grow to push footer down) -->
+  <main class="flex-fill">
+    <div class="container-lg px-0 mb-5 pb-5">
+      <div class="hero-container pt-4">
+        <div class="d-flex flex-column flex-lg-row justify-content-evenly">
+          <div class="col-12 order-last order-lg-first">
+            <h1 class="d-inline-block mt-0 mt-lg-5 text-start">
+              Q2. Please indicate the level to which you agree with these statements about Marriott benefits.<small class="fs-6"> (Select one response for each.)</small>
+            </h1>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex flex-column flex-lg-row justify-content-start">
+        <h2 class="py-3">I have a good understanding of my overall benefit programs and offerings.</h2>
+      </div>
+
+      <div class="row">
+        <div class="col-12 col-lg-12">
+          <div class="d-flex flex-column border border-2 border-dark flex-lg-row justify-content-evenly px-5 pb-5 mb-5 align-items-centre form-check-inline">
+            <label for="q2a_1" class="order-last order-lg-first form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2a" id="q2a_1" class="form-check-input mx-auto mt-3 mb-3 d-block" value="1"> Strongly<br>Disagree
+            </label>
+            <label for="q2a_2" class="order-5 order-lg-2 form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2a" id="q2a_2" class="form-check-input mx-auto mt-3 mb-3 d-block" value="2"> Disagree
+            </label>
+            <label for="q2a_3" class="order-4 order-lg-3 form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2a" id="q2a_3" class="form-check-input mx-auto mt-3 mb-3 d-block" value="3"> Slightly<br> Disagree
+            </label>
+            <label for="q2a_4" class="order-3 order-lg-4 form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2a" id="q2a_4" class="form-check-input mx-auto mt-3 mb-3 d-block" value="4"> Slightly<br>Agree
+            </label>
+            <label for="q2a_5" class="order-2 order-lg-5 form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2a" id="q2a_5" class="form-check-input mx-auto mt-3 mb-3 d-block" value="5"> Agree
+            </label>
+            <label for="q2a_6" class="order-first order-lg-last form-check-label text-center mt-2 mt-lg-0">
+              <input type="radio" name="q2a" id="q2a_6" class="form-check-input mx-auto mt-3 mb-3 d-block" value="6"> Extremely<br>Agree
+            </label>
+          </div>
+        </div>
+
+        <div class="d-flex flex-column flex-lg-row justify-content-start">
+          <h2 class="py-3">It’s easy to find the information needed to make the most of your benefits.</h2>
+        </div>
+
+        <div class="col-12 col-lg-12">
+          <div class="d-flex flex-column border border-2 border-dark flex-lg-row justify-content-evenly px-5 pb-5 mb-5 align-items-centre form-check-inline">
+            <label for="q2b_1" class="order-last order-lg-first form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2b" id="q2b_1" class="form-check-input mx-auto mt-3 mb-3 d-block" value="1"> Strongly<br>Disagree
+            </label>
+            <label for="q2b_2" class="order-5 order-lg-2 form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2b" id="q2b_2" class="form-check-input mx-auto mt-3 mb-3 d-block" value="2"> Disagree
+            </label>
+            <label for="q2b_3" class="order-4 order-lg-3 form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2b" id="q2b_3" class="form-check-input mx-auto mt-3 mb-3 d-block" value="3"> Slightly<br> Disagree
+            </label>
+            <label for="q2b_4" class="order-3 order-lg-4 form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2b" id="q2b_4" class="form-check-input mx-auto mt-3 mb-3 d-block" value="4"> Slightly<br>Agree
+            </label>
+            <label for="q2b_5" class="order-2 order-lg-5 form-check-label text-center mt-5 mt-lg-0">
+              <input type="radio" name="q2b" id="q2b_5" class="form-check-input mx-auto mt-3 mb-3 d-block" value="5"> Agree
+            </label>
+            <label for="q2b_6" class="order-first order-lg-last form-check-label text-center mt-2 mt-lg-0">
+              <input type="radio" name="q2b" id="q2b_6" class="form-check-input mx-auto mt-3 mb-3 d-block" value="6"> Extremely<br>Agree
+            </label>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-12 pe-3 pe-lg-0">
+          <a href="q3.html" class="btn btn-primary disabled nextbutton">Next Question</a>
+        </div>
+
+        <!-- <div class="col-12 col-lg-12 pe-3 pe-lg-0 mt-5">
+          <div class="progress" role="progressbar" aria-label="progress bar" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar" style="width: 25%"></div>
+          </div>
+        </div> -->
+
+        <div class="survey-progress my-3 mx-2 d-flex align-items-center">
   <!-- Info button -->
   <button type="button" class="btn bg-transparent p-0 me-3" id="info" aria-label="instructions">
     <img src="../img/Info_Btn.jpg" alt="Click for instructions" style="width:36px; height:auto; display:block;">
   </button>
 
   <!-- Progress bar (flex-grow so it fills available space) -->
-  <div class="flex-grow-1 me-3">
+  <div class="flex-grow-1 me-3 mt-3">
     <div class="progress" role="progressbar" aria-label="progress bar" style="height: 10px;">
       <div class="progress-bar bg-primary" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
     </div>
-  </div>
-
-  <!-- Percent / label group -->
-  <div class="d-flex align-items-center small fw-bold text-uppercase" style="letter-spacing: 1px;">
-    <span class="per me-3" style="min-width:36px; text-align:left;">0%</span>
+	<div class="d-flex align-items-center small fw-bold text-uppercase" style="letter-spacing: 1px;">
+    <span class="per me-3" style="min-width:36px; text-align:left;">12.5%</span>
     <span class="flex-grow-1 text-center d-none d-sm-inline" style="min-width:160px;">Survey Completion Percentage</span>
     <span class="per ms-3" style="min-width:36px; text-align:right;">100%</span>
   </div>
+  </div>
+
+  <!-- Percent / label group -->
+  
 </div>
+
+
+
+        <!-- <div class="survey-progress my-4">
+
+			<div class="progress bar">
+				<div class="progress-bar bg-primary" role="progressbar" style="width: 20%;" aria-valuenow="20"
+					aria-valuemin="0" aria-valuemax="100"></div>
+			</div>
+      <div class="d-flex justify-content-between align-items-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
+				<span class="per">0%</span>
+				<span class="flex-grow-1 text-center per per">Survey Completion Percentage</span>
+				<span class="per">100%</span>
+			</div>
+		</div> -->
+      </div>
+    </div>
+  </main>
+
+  <!-- FOOTER PLACEHOLDER: IMPORTANT -> use a DIV with mt-auto (not a <footer>) -->
+  <div id="footer-placeholder" class="mt-auto"></div>
+   
+    <script src="js/sExtendUtil.js"></script>
+    <script src="js/saveSurveyResponse_Mariott.js"></script>
+
+  <script>
+    if (location.hostname.substring(0, 9) != "localhost" && location.hostname.substring(0, 9) != "127.0.0.1" && location.hostname.substring(0, 3) != "qa.") {
+            $.getScript("js/sValidator.js", function (data, textStatus, jqxhr) { });
+        }
+    // adjust the path if footer.html sits in another folder
+    $(function() {
+      $("#footer-placeholder").load("footer.html");
+    });
+
+    // existing session code
+    sessionStorage.setItem("page", 2);
+    if (sessionStorage.getItem("q2a")) {
+      $(".nextbutton").removeClass("disabled");
+    }
+  </script>
+</body>
+</html>
