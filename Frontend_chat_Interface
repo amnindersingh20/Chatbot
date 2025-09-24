@@ -5,18 +5,54 @@ function saveSurveyResponse(pageName) {
 
   var dataObj = {};
   dataObj.projectId = "Marriott_SURVEY";
-  dataObj.surveyBatchId = "2026";  // or ssoData.planYear if valid
+  dataObj.surveyBatchId = "2026";   // or use ssoData.planYear if available
   dataObj.overwritePrevResp = false;
 
-  // Pull from sessionStorage instead of undefined globals
-  dataObj.r1  = sessionStorage.getItem("r1")  || "0";
-  dataObj.r2a = sessionStorage.getItem("r2a") || "0";
-  dataObj.r2b = sessionStorage.getItem("r2b") || "0";
-  ...
-  dataObj.r36 = sessionStorage.getItem("r36") || "";
+  // --------------------------
+  // Map answers from sessionStorage into backend fields
+  // --------------------------
 
+  // Q1
+  dataObj.r1 = sessionStorage.getItem("r1") || "0";
+
+  // Q2 (2 answers)
+  dataObj.r2a = sessionStorage.getItem("r2") || "0";
+  dataObj.r2b = sessionStorage.getItem("r3") || "0";
+
+  // Q3 (5 answers → r4..r8)
+  dataObj.r3a = sessionStorage.getItem("r4") || "0";
+  dataObj.r3b = sessionStorage.getItem("r5") || "0";
+  dataObj.r3c = sessionStorage.getItem("r6") || "0";
+  dataObj.r3d = sessionStorage.getItem("r7") || "0";
+  dataObj.r3e = sessionStorage.getItem("r8") || "0";
+
+  // Q4 (4 answers → r9..r12)
+  dataObj.r4a = sessionStorage.getItem("r9") || "0";
+  dataObj.r4b = sessionStorage.getItem("r10") || "0";
+  dataObj.r4c = sessionStorage.getItem("r11") || "0";
+  dataObj.r4d = sessionStorage.getItem("r12") || "0";
+
+  // Q5 (single → r13)
+  dataObj.r5 = sessionStorage.getItem("r13") || "0";
+
+  // Q6 (10 answers → r14..r23 → r6a..r6j)
+  for (let i = 0; i < 10; i++) {
+    dataObj["r6" + String.fromCharCode(97 + i)] = sessionStorage.getItem("r" + (14 + i)) || "0";
+  }
+
+  // Q7 (12 answers → r24..r35 → r7a..r7l)
+  for (let i = 0; i < 12; i++) {
+    dataObj["r7" + String.fromCharCode(97 + i)] = sessionStorage.getItem("r" + (24 + i)) || "0";
+  }
+
+  // Q8 (free text → r36)
+  dataObj.r8 = sessionStorage.getItem("r36") || "";
+
+  // --------------------------
+  // Send to backend
+  // --------------------------
   var responseJson = JSON.stringify(dataObj);
-  console.log("Sending:", responseJson);
+  console.log("Sending payload:", responseJson);
 
   var url = host + "saveSurveyResponseForAuthUser";
 
@@ -40,9 +76,10 @@ function saveSurveyResponse(pageName) {
     })
     .then(responseData => {
       console.log("Server replied:", responseData);
+      // Optionally redirect to finish.html or show success
     })
     .catch(error => {
       console.error("Save failed:", error);
-      alert("There has been an error processing your request. Please close the browser and retry.");
+      alert("There has been an error processing your request. Your entries were not saved. Please close the browser and retry.");
     });
 }
