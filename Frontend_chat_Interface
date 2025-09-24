@@ -1,46 +1,41 @@
-case 6: {
-  // Prefer a specific selector. If you add a class use $('input.rank-q6')
-  const inputs6 = $('input[id^="q6_"]').slice(0, 10); // adjust slice if you really have 10 or fewer
-  const allowedValues6 = new Set(['1','2','3']);
+const inputs7 = $('input[id^="q6_"]'); // your ids are q6_1..q6_12
+  const allowedValues7 = new Set(['1','2','3','4','5']);
 
-  let hasInvalid6 = false;
+  let hasInvalid7 = false;
   const filledVals = [];
 
-  inputs6.each(function() {
-    // prefer unmasked value if using inputmask:
+  inputs7.each(function() {
     let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
     raw = (raw || '').toString().trim();
 
-    if (raw === '') return; // skip empties
-
-    if (!allowedValues6.has(raw)) hasInvalid6 = true;
+    if (raw === '') return;
+    if (!allowedValues7.has(raw)) hasInvalid7 = true;
     filledVals.push(raw);
   });
 
   const uniqueFilled = new Set(filledVals);
   const hasDuplicates = uniqueFilled.size !== filledVals.length;
 
-  // Show/hide message
-  if (hasInvalid6 || hasDuplicates) $("#message").removeClass("d-none");
+  if (hasInvalid7 || hasDuplicates) $("#message").removeClass("d-none");
   else $("#message").addClass("d-none");
 
-  const uniqueValidCount = Array.from(uniqueFilled).filter(v => allowedValues6.has(v)).length;
+  const uniqueValidCount = Array.from(uniqueFilled).filter(v => allowedValues7.has(v)).length;
 
-  if (uniqueValidCount === 3 && !hasInvalid6 && !hasDuplicates) {
+  if (uniqueValidCount === 5 && !hasInvalid7 && !hasDuplicates) {
     $(".nextbutton").removeAttr("disabled").removeClass("disabled");
   } else {
     $(".nextbutton").attr("disabled", true).addClass("disabled");
   }
 
-  // Save (r14 → r23)
-  inputs6.each(function(i) {
+  // Save r24 → r35
+  inputs7.each(function(i) {
     let v = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
     v = (v || '').toString().trim();
-    if (v === '' || !allowedValues6.has(v)) v = "0";
-    sessionStorage.setItem("r" + (14 + i), v);
+    if (v === '' || !allowedValues7.has(v)) v = "0";
+    sessionStorage.setItem("r" + (24 + i), v);
   });
 
-  // helpful debug log (remove in production)
-  console.log('case6 filled:', filledVals, 'uniqueValidCount:', uniqueValidCount, 'invalid:', hasInvalid6, 'duplicates:', hasDuplicates);
+  // debug log
+  console.log('case7 filled:', filledVals, 'uniqueValidCount:', uniqueValidCount, 'invalid:', hasInvalid7, 'duplicates:', hasDuplicates);
 
   break;
