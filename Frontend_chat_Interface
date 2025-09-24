@@ -1,268 +1,46 @@
-function validateResponse(question) {
+case 6: {
+  // Prefer a specific selector. If you add a class use $('input.rank-q6')
+  const inputs6 = $('input[id^="q6_"]').slice(0, 10); // adjust slice if you really have 10 or fewer
+  const allowedValues6 = new Set(['1','2','3']);
 
-  switch (parseInt(question)) {
+  let hasInvalid6 = false;
+  const filledVals = [];
 
-    case 1:
-      if (getSelectedRadioButtonValue("q1") != null) {
-        $(".nextbutton").removeClass("disabled");
-        sessionStorage.setItem("r1", getSelectedRadioButtonValue("q1"))
-      }
-      break;
+  inputs6.each(function() {
+    // prefer unmasked value if using inputmask:
+    let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
+    raw = (raw || '').toString().trim();
 
+    if (raw === '') return; // skip empties
 
-    case 2:
-      if (getSelectedRadioButtonValue("q2a") != null && getSelectedRadioButtonValue("q2b") != null) {
-        $(".nextbutton").removeClass("disabled");
-        sessionStorage.setItem("r2", getSelectedRadioButtonValue("q2a"));
-        sessionStorage.setItem("r3", getSelectedRadioButtonValue("q2b"));
-      }
-      break;
+    if (!allowedValues6.has(raw)) hasInvalid6 = true;
+    filledVals.push(raw);
+  });
 
-    case 3:
-      if (getSelectedRadioButtonValue("q3a") != null && getSelectedRadioButtonValue("q3b") != null && getSelectedRadioButtonValue("q3c") != null && getSelectedRadioButtonValue("q3d") != null && getSelectedRadioButtonValue("q3e") != null) {
-        $(".nextbutton").removeClass("disabled");
-        sessionStorage.setItem("r4", getSelectedRadioButtonValue("q3a"));
-        sessionStorage.setItem("r5", getSelectedRadioButtonValue("q3b"));
-        sessionStorage.setItem("r6", getSelectedRadioButtonValue("q3c"));
-        sessionStorage.setItem("r7", getSelectedRadioButtonValue("q3d"));
-        sessionStorage.setItem("r8", getSelectedRadioButtonValue("q3e"));
-      }
-      break;
+  const uniqueFilled = new Set(filledVals);
+  const hasDuplicates = uniqueFilled.size !== filledVals.length;
 
-    case 4:
-      if (getSelectedRadioButtonValue("q4a") != null && getSelectedRadioButtonValue("q4b") != null && getSelectedRadioButtonValue("q4c") != null && getSelectedRadioButtonValue("q4d") != null) {
-        $(".nextbutton").removeClass("disabled");
-        sessionStorage.setItem("r9", getSelectedRadioButtonValue("q4a"));
-        sessionStorage.setItem("r10", getSelectedRadioButtonValue("q4b"));
-        sessionStorage.setItem("r11", getSelectedRadioButtonValue("q4c"));
-        sessionStorage.setItem("r12", getSelectedRadioButtonValue("q4d"));
-      }
-      break;
+  // Show/hide message
+  if (hasInvalid6 || hasDuplicates) $("#message").removeClass("d-none");
+  else $("#message").addClass("d-none");
 
-    case 5:
-      if (getSelectedRadioButtonValue("q5") != null) {
-        $(".nextbutton").removeClass("disabled");
-        sessionStorage.setItem("r13", getSelectedRadioButtonValue("q5"));
-      }
-      break;
+  const uniqueValidCount = Array.from(uniqueFilled).filter(v => allowedValues6.has(v)).length;
 
-    ///////////Orig Case 6 code below///////////
-
-    // case 6:
-    //   const inputs = $('.form-control');
-    //   const allowedValues = new Set(['','1', '2', '3']);
-    //   const numericValues = new Set();
-    //   let numericCount = 0; let totalCount = 0;
-
-    //   for (let i = 0; i < inputs.length; i++) {
-    //     const value = inputs[i].value.trim();
-    //     if (allowedValues.has(value) && value != "") {
-    //       numericValues.add(value);
-    //       numericCount++;
-    //       totalCount++;
-    //     } else {
-    //       var tmp=value;
-    //       inputs[i].value = "";
-    //       if(tmp!=""){
-    //         console.log("returning false")
-    //         //return false;
-    //       }
-    //     }
-    //   }
-    //   //console.log(numericCount, numericValues.size, totalCount)
-    //   if (numericCount === 3 && numericValues.size === 3 && totalCount === 3) {
-    //     $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-    //     $("#message").addClass("d-none");
-    //     sessionStorage.setItem("r14", inputs[0].value);
-    //     sessionStorage.setItem("r15", inputs[1].value);
-    //     sessionStorage.setItem("r16", inputs[2].value);
-    //     sessionStorage.setItem("r17", inputs[3].value);
-    //     sessionStorage.setItem("r18", inputs[4].value);
-    //     sessionStorage.setItem("r19", inputs[5].value);
-    //     sessionStorage.setItem("r20", inputs[6].value);
-    //     sessionStorage.setItem("r21", inputs[7].value);
-    //     sessionStorage.setItem("r22", inputs[8].value);
-    //     sessionStorage.setItem("r23", inputs[9].value);
-    //     return true; // Valid
-    //   } else if (numericCount >= 3 || numericValues.size >= 3 || totalCount > 3) {
-    //     $("#message").removeClass("d-none");
-    //     $(".nextbutton").attr("disabled", true).addClass("disabled");
-    //     return false; // Invalid
-    //   } else {
-    //     //$("#message").removeClass("d-none");
-    //     $(".nextbutton").class("disabled", true);
-    //   }
-    //   break;
-
-    ////////end of Orig case 6 code///////////
-
-
-
-    case 6:
-      const inputs6 = $('.form-control'); // select all 10 inputs for this case
-      const allowedValues6 = new Set(['1', '2', '3']);
-
-      let hasInvalid6 = false;
-      let enteredValues6 = [];
-
-      // Collect all non-empty input values and check validity
-      inputs6.each(function () {
-        let val = this.value.trim();
-        if (val === "") return;
-
-        // Invalid if not allowed
-        if (!allowedValues6.has(val)) {
-          hasInvalid6 = true;
-        }
-
-        enteredValues6.push(val);
-      });
-
-      // Check for duplicates in entered values
-      const uniqueValues6 = new Set();
-      for (let val of enteredValues6) {
-        if (uniqueValues6.has(val)) {
-          hasInvalid6 = true; // duplicate found
-        } else {
-          uniqueValues6.add(val);
-        }
-      }
-
-      // Show or hide warning
-      if (hasInvalid6) {
-        $("#message").removeClass("d-none");
-      } else {
-        $("#message").addClass("d-none");
-      }
-
-      // Enable Next button only if exactly 3 unique valid values and no invalids
-      let validUniqueCount6 = enteredValues6.filter(v => allowedValues6.has(v))
-        .filter((v, i, arr) => arr.indexOf(v) === i).length;
-
-      if (validUniqueCount6 === 3 && !hasInvalid6) {
-        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-      } else {
-        $(".nextbutton").attr("disabled", true).addClass("disabled");
-      }
-
-      // Save values in sessionStorage r14 → r23
-      inputs6.each(function (i) {
-        let val = this.value.trim();
-        if (!allowedValues6.has(val) || val === "") val = "0";
-        sessionStorage.setItem("r" + (14 + i), val);
-      });
-
-      break;
-
-    ///////////Orig Case 7 code below/////////// 
-    // case 7:
-    //   const inputs2 = $('.form-control');
-    //   const allowedValues2 = new Set(['', '1', '2', '3', '4', '5']);
-    //   const numericValues2 = new Set();
-    //   let numericCount2 = 0; let totalCount2 = 0;
-
-    //   for (let i = 0; i < inputs2.length; i++) {
-    //     const value2 = inputs2[i].value.trim();
-    //     if (allowedValues2.has(value2) && value2 != "") {
-    //       numericValues2.add(value2);
-    //       numericCount2++;
-    //       totalCount2++;
-    //     } else {
-    //       var tmp = value2;
-    //       inputs2[i].value = "";
-    //       //if (value2) { totalCount2++ }
-    //       if (tmp != "") {
-    //         console.log("returning false")
-    //         //return false;
-    //       }
-    //     }
-    //   }
-    //   //console.log(numericCount2, numericValues2.size, totalCount2)
-    //   //var q7emptyflag = ($("#q7text").val().length == 0) ? 1 : 0;
-    //   //var q7enteredflag = ($("#q7text").val().length == 0) ? 0 : 1;
-    //   //console.log(numericCount2, numericValues2.size, totalCount2,5-q7enteredflag)
-    //   if (numericCount2 === 5 && numericValues2.size === 5 && totalCount2 === 5) {
-    //     $(".nextbutton").removeAttr("disabled");
-    //     $("#message").addClass("d-none");
-    //     sessionStorage.setItem("r21", inputs2[0].value);
-    //     sessionStorage.setItem("r22", inputs2[1].value);
-    //     sessionStorage.setItem("r23", inputs2[2].value);
-    //     sessionStorage.setItem("r24", inputs2[3].value);
-    //     sessionStorage.setItem("r25", inputs2[4].value);
-    //     sessionStorage.setItem("r26", inputs2[5].value);
-    //     sessionStorage.setItem("r27", inputs2[6].value);
-    //     sessionStorage.setItem("r28", inputs2[7].value);
-    //     sessionStorage.setItem("r29", inputs2[8].value);
-    //     sessionStorage.setItem("r30", inputs2[9].value);
-    //     sessionStorage.setItem("r31", inputs2[10].value);
-    //     sessionStorage.setItem("r32", inputs2[11].value);
-    //     return true; // Valid
-    //   } else if (numericCount2 >= 5 || numericValues2.size >= 5 || totalCount2 > 5) {
-    //     $("#message").removeClass("d-none");
-    //     $(".nextbutton").attr("disabled", true);
-    //     return false; // Invalid
-    //   } else {
-    //     //$("#message").removeClass("d-none");
-    //     $(".nextbutton").attr("disabled", true);
-    //   }
-    //   break;
-    /////////end of Orig case 7 code///////////
-    case 7:
-      const inputs7 = $('.form-control'); // select all 12 inputs for case 7
-      const allowedValues7 = new Set(['1', '2', '3', '4', '5']);
-
-      let hasInvalid7 = false;
-      let enteredValues7 = [];
-
-      // Collect all non-empty input values and check validity
-      inputs7.each(function () {
-        let val = this.value.trim();
-        if (val === "") return;
-
-        // Invalid if not allowed
-        if (!allowedValues7.has(val)) {
-          hasInvalid7 = true;
-        }
-
-        enteredValues7.push(val);
-      });
-
-      // Check for duplicates in entered values
-      const uniqueValues7 = new Set();
-      for (let val of enteredValues7) {
-        if (uniqueValues7.has(val)) {
-          hasInvalid7 = true; // duplicate found
-        } else {
-          uniqueValues7.add(val);
-        }
-      }
-
-      // Show or hide warning
-      if (hasInvalid7) {
-        $("#message").removeClass("d-none");
-      } else {
-        $("#message").addClass("d-none");
-      }
-
-      // Enable Next button only if exactly 5 unique valid values and no invalids
-      let validUniqueCount7 = enteredValues7.filter(v => allowedValues7.has(v))
-        .filter((v, i, arr) => arr.indexOf(v) === i).length;
-
-      if (validUniqueCount7 === 5 && !hasInvalid7) {
-        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-      } else {
-        $(".nextbutton").attr("disabled", true).addClass("disabled");
-      }
-
-      // Save values in sessionStorage r24 → r35
-      inputs7.each(function (i) {
-        let val = this.value.trim();
-        if (!allowedValues7.has(val) || val === "") val = "0";
-        sessionStorage.setItem("r" + (24 + i), val);
-      });
-
-      break;
-
+  if (uniqueValidCount === 3 && !hasInvalid6 && !hasDuplicates) {
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+  } else {
+    $(".nextbutton").attr("disabled", true).addClass("disabled");
   }
 
-}
+  // Save (r14 → r23)
+  inputs6.each(function(i) {
+    let v = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
+    v = (v || '').toString().trim();
+    if (v === '' || !allowedValues6.has(v)) v = "0";
+    sessionStorage.setItem("r" + (14 + i), v);
+  });
+
+  // helpful debug log (remove in production)
+  console.log('case6 filled:', filledVals, 'uniqueValidCount:', uniqueValidCount, 'invalid:', hasInvalid6, 'duplicates:', hasDuplicates);
+
+  break;
