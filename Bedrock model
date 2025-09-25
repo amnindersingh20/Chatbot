@@ -17,3 +17,6 @@ $("#submit").on("click", function () {
   sessionStorage.setItem("r37", safeText);
   storeData();
 })
+
+
+Final status ! can be rough % gets what $
