@@ -1,55 +1,72 @@
-case 6:
-      const inputs6 = $('.form-control'); // select all 10 inputs for this case
-      const allowedValues6 = new Set(['1', '2', '3']);
+function saveSurveyResponse(pageName) {
+    var host = sessionStorage.getItem("host").split('validate')[0];
+    var ssoData = JSON.parse(sessionStorage.getItem('ssoData'));
 
-      let hasInvalid6 = false;
-      let enteredValues6 = [];
+    var dataObj = {};
+    dataObj.projectId = "Marriott_SURVEY";
+    dataObj.surveyBatchId = "2026";   // ssoData.planYear if it has the right values
+    dataObj.overwritePrevResp = false;
+    dataObj.r1 = sessionStorage.getItem("r1");
+    dataObj.r2a = sessionStorage.getItem("r2");
+    dataObj.r2b = sessionStorage.getItem("r3");
+    dataObj.r3a = sessionStorage.getItem("r4");
+    dataObj.r3b = sessionStorage.getItem("r5");
+    dataObj.r3c = sessionStorage.getItem("r6");
+    dataObj.r3d = sessionStorage.getItem("r7");
+    dataObj.r3e = sessionStorage.getItem("r8");
+    dataObj.r3f = sessionStorage.getItem("r9");
+    dataObj.r4a = sessionStorage.getItem("r10");
+    dataObj.r4b = sessionStorage.getItem("r11");
+    dataObj.r4c = sessionStorage.getItem("r12");
+    dataObj.r4d = sessionStorage.getItem("r13");
+    dataObj.r5 = sessionStorage.getItem("r14");
+    dataObj.r6a = sessionStorage.getItem("r15");
+    dataObj.r6b = sessionStorage.getItem("r16");
+    dataObj.r6c = sessionStorage.getItem("r17");
+    dataObj.r6d = sessionStorage.getItem("r18");
+    dataObj.r6e = sessionStorage.getItem("r19");
+    dataObj.r6f = sessionStorage.getItem("r20");
+    dataObj.r6g = sessionStorage.getItem("r21");
+    dataObj.r6h = sessionStorage.getItem("r22");
+    dataObj.r6i = sessionStorage.getItem("r23");
+    dataObj.r6j = sessionStorage.getItem("r24");
+    dataObj.r7a = sessionStorage.getItem("r25");
+    dataObj.r7b = sessionStorage.getItem("r26");
+    dataObj.r7c = sessionStorage.getItem("r27");
+    dataObj.r7d = sessionStorage.getItem("r28");
+    dataObj.r7e = sessionStorage.getItem("r29");
+    dataObj.r7f = sessionStorage.getItem("r30");
+    dataObj.r7g = sessionStorage.getItem("r31");
+    dataObj.r7h = sessionStorage.getItem("r32");
+    dataObj.r7i = sessionStorage.getItem("r33");
+    dataObj.r7j = sessionStorage.getItem("r34");
+    dataObj.r7k = sessionStorage.getItem("r35");
+    dataObj.r7l = sessionStorage.getItem("r36");
+    dataObj.r8 = sessionStorage.getItem("r37");
 
-      // Collect all non-empty input values and check validity
-      inputs6.each(function () {
-        let val = this.value.trim();
-        if (val === "") return;
+    var responseJson = JSON.stringify(dataObj);
+    console.log('dataObj:', responseJson);
 
-        // Invalid if not allowed
-        if (!allowedValues6.has(val)) {
-          hasInvalid6 = true;
-        }
+    var url = host + "saveSurveyResponseForAuthUser";
+    var token = sessionStorage.getItem("token");
 
-        enteredValues6.push(val);
-      });
+    const request = new Request(url, {
+        method: "POST",
+        headers: {
+            'Content-Type': 'application/json',
+            'DSI-Session-Token': ssoData.dsiSessionToken,
+            'DSI-Person-Token': token
+        },
+        body: responseJson,
+    });
 
-      // Check for duplicates in entered values
-      const uniqueValues6 = new Set();
-      for (let val of enteredValues6) {
-        if (uniqueValues6.has(val)) {
-          hasInvalid6 = true; // duplicate found
-        } else {
-          uniqueValues6.add(val);
-        }
-      }
-
-      // Show or hide warning
-      if (hasInvalid6) {
-        $("#message").removeClass("d-none");
-      } else {
-        $("#message").addClass("d-none");
-      }
-
-      // Enable Next button only if exactly 3 unique valid values and no invalids
-      let validUniqueCount6 = enteredValues6.filter(v => allowedValues6.has(v))
-        .filter((v, i, arr) => arr.indexOf(v) === i).length;
-
-      if (validUniqueCount6 === 3 && !hasInvalid6) {
-        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-      } else {
-        $(".nextbutton").attr("disabled", true).addClass("disabled");
-      }
-
-      // Save values in sessionStorage r14 → r23
-      inputs6.each(function (i) {
-        let val = this.value.trim();
-        if (!allowedValues6.has(val) || val === "") val = "0";
-        sessionStorage.setItem("r" + (14 + i), val);
-      });
-
-      break;
+    // Return fetch promise so caller can decide what to do after
+    return fetch(request)
+        .then(response => {
+            if (response.status === 200) {
+                return response.text();
+            } else {
+                throw new Error('Error saving: ' + response.status);
+            }
+        });
+}
