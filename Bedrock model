@@ -1,24 +1,12 @@
-function escapeSpecialChars(str) {
+function sanitizeInput(str) {
   if (!str) return "";
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  // Keep only letters (a-z, A-Z), numbers (0-9), and spaces
+  return str.replace(/[^a-zA-Z0-9 ]/g, "");
 }
-
-
-
 
 $("#submit").on("click", function () {
   let rawText = $("#q8text").val();
-  let safeText = escapeSpecialChars(rawText);
+  let safeText = sanitizeInput(rawText); // remove all special chars including !
   sessionStorage.setItem("r37", safeText);
   storeData();
 })
-
-
-Final status ! can be rough % gets what $
-
-Testing special characters in comments&#39; for MarriottÃ¢â‚¬â„¢s benefits and programs Survey - , !! 
