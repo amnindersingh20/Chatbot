@@ -1,3 +1,20 @@
 <div id="mpe" class="sidebar-link blue1 position-relative mt-3">
-                  <a href="/statefarmpmpf/2026.html" class="stretched-link">Visit the Personalized Medical Plan Finder</a>
-                </div>
+  <a id="mpe-link" href="#" class="stretched-link">
+    Visit the Personalized Medical Plan Finder
+  </a>
+</div>
+
+<script>
+  // You can fetch environment dynamically (e.g., from config, global variable, etc.)
+  const ENV = "qa"; // change to "qc" or "prod"
+
+  const link = document.getElementById("mpe-link");
+
+  const envUrls = {
+    qa: "/statefarmpmpf/qa/2026.html",
+    qc: "/statefarmpmpf/qc/2026.html",
+    prod: "/statefarmpmpf/2026.html",
+  };
+
+  link.href = envUrls[ENV];
+</script>
