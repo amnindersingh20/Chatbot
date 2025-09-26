@@ -1,3 +1,23 @@
+<h2 class="accordion-header">
+										<button class=" accordion-button custom-accordion collapsed lebel-text"
+											type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne"
+											aria-expanded="false" aria-controls="collapseOne">
+											Medical plan information
+											<img src="img/Accordian_OFF.png" class="accordion-icon">
+										</button>
+									</h2>
+
+<h2 class="accordion-header">
+										<button class="accordion-button custom-accordion collapsed lebel-text"
+											type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo"
+											aria-expanded="false" aria-controls="collapseTwo">
+											What happens if you don’t enroll? <img src="img/Accordian_OFF.png"
+												class="accordion-icon">
+										</button>
+									</h2>
+
+
+
 document.querySelectorAll('.custom-accordion').forEach(button => {
   button.addEventListener('click', () => {
     const icon = button.querySelector('.accordion-icon');
