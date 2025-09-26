@@ -1,13 +1,44 @@
-document.querySelectorAll('.accordion-collapse').forEach(collapseEl => {
-  collapseEl.addEventListener('shown.bs.collapse', () => {
-    const button = collapseEl.previousElementSibling.querySelector('.accordion-button');
-    const icon = button.querySelector('.accordion-icon');
-    icon.src = 'img/Accordian_ON.png';
-  });
+<f-tabs >
+								<f-tab-item class="baclgou boders-lab">
+									<span slot="name"><strong>Beginning [Date TBD]</strong></span>
+								</f-tab-item>
+								<f-tab-item class="boders-lab">
+									<span slot="name"><strong>November 11–20</strong></span>
+								</f-tab-item>
+								<f-tab-item class="boders-lab">
+									<span slot="name"><strong>November 12–26</strong></span>
+								</f-tab-item>
+								<f-tab-item class="boders-lab">
+									<span slot="name"><strong>By November 26</strong></span>
+								</f-tab-item>
 
-  collapseEl.addEventListener('hidden.bs.collapse', () => {
-    const button = collapseEl.previousElementSibling.querySelector('.accordion-button');
-    const icon = button.querySelector('.accordion-icon');
-    icon.src = 'img/Accordian_OFF.png';
-  });
-});
+								<f-tab-panel><!--one-->
+									<h3>Learn about 2026 benefits.</h3>
+									<p class="p-0"> The My State Farm Benefits Resource website offers resources that are designed to support you physically, financially, and socially in the coming year. Tap the <u>“Return to the My State Farm Benefits Resource website”</u> button to get started.</p>
+								</f-tab-panel>
+								<f-tab-panel><!--two-->
+									<h3>Attend the State Farm Annual Enrollment Benefits Fair.</h3>
+									<p>Learn about your Total Rewards benefits package at the <a class="aeportal">State
+											Farm Annual Enrollment Benefits Fair</a>. The Benefits Fair is only
+										accessible through your State Farm-issued device. Live presentations run through
+										November 20, 2025. Presentations will be recorded and can be viewed on demand
+										throughout the year.</p>
+
+								</f-tab-panel>
+								<f-tab-panel><!--three-->
+									<h3>Enroll in your benefits.</h3>
+									<p>Choose the coverage that is best for you and your family. Tap the “Begin the enrollment process” button to get started.
+									</p>
+									
+								</f-tab-panel>
+								<f-tab-panel><!--four-->
+									<h3>Look for your email confirmation.</h3>
+									<p><strong>Important!</strong> Your Annual Enrollment choices are confirmed when you
+										reach the confirmation page. You will be sent an email confirmation to your
+										preferred email address on file showing detailed information on coverage and
+										costs for the plan(s) you enrolled in. Review and retain a copy of this email.
+										Contact the State Farm Benefits Center at <strong>1-866-935-4015</strong> if you do not receive a confirmation email. <strong>Remember, no changes will be accepted after
+												November 26.</strong></p>
+								</f-tab-panel>
+
+							</f-tabs>
