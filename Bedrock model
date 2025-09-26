@@ -1,27 +1,7 @@
-<div id="mpe" class="sidebar-link blue1 position-relative mt-3">
-  <a id="mpe-link" href="#" class="stretched-link">
-    Visit the Personalized Medical Plan Finder
-  </a>
-</div>
-
-<script>
-  const host = window.location.hostname.toLowerCase();
-  let ENV = "prod"; // default
-
-  if (host.startsWith("qa.")) {
-    ENV = "qa";
-  } else if (host.startsWith("qc.")) {
-    ENV = "qc";
-  } else if (host.startsWith("dsi.")) {
-    ENV = "dsi";
-  }
-
-  const envUrls = {
-    qa: "/statefarmpmpf/qa/2026.html",
-    qc: "/statefarmpmpf/qc/2026.html",
-    dsi: "/statefarmpmpf/dsi/2026.html",
-    prod: "/statefarmpmpf/2026.html"
-  };
-
-  document.getElementById("mpe-link").href = envUrls[ENV];
-</script>
+document.querySelectorAll('.custom-accordion').forEach(button => {
+  button.addEventListener('click', () => {
+    const icon = button.querySelector('.accordion-icon');
+    const isCollapsed = button.classList.contains('collapsed');
+    icon.src = isCollapsed ? 'img/Accordian_OFF.png' : 'img/Accordian_ON.png';
+  });
+});
