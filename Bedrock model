@@ -5,16 +5,23 @@
 </div>
 
 <script>
-  // You can fetch environment dynamically (e.g., from config, global variable, etc.)
-  const ENV = "qa"; // change to "qc" or "prod"
+  const host = window.location.hostname.toLowerCase();
+  let ENV = "prod"; // default
 
-  const link = document.getElementById("mpe-link");
+  if (host.startsWith("qa.")) {
+    ENV = "qa";
+  } else if (host.startsWith("qc.")) {
+    ENV = "qc";
+  } else if (host.startsWith("dsi.")) {
+    ENV = "dsi";
+  }
 
   const envUrls = {
     qa: "/statefarmpmpf/qa/2026.html",
     qc: "/statefarmpmpf/qc/2026.html",
-    prod: "/statefarmpmpf/2026.html",
+    dsi: "/statefarmpmpf/dsi/2026.html",
+    prod: "/statefarmpmpf/2026.html"
   };
 
-  link.href = envUrls[ENV];
+  document.getElementById("mpe-link").href = envUrls[ENV];
 </script>
