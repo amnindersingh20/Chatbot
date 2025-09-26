@@ -1,27 +1,13 @@
-<h2 class="accordion-header">
-										<button class=" accordion-button custom-accordion collapsed lebel-text"
-											type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne"
-											aria-expanded="false" aria-controls="collapseOne">
-											Medical plan information
-											<img src="img/Accordian_OFF.png" class="accordion-icon">
-										</button>
-									</h2>
-
-<h2 class="accordion-header">
-										<button class="accordion-button custom-accordion collapsed lebel-text"
-											type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo"
-											aria-expanded="false" aria-controls="collapseTwo">
-											What happens if you don’t enroll? <img src="img/Accordian_OFF.png"
-												class="accordion-icon">
-										</button>
-									</h2>
-
-
-
-document.querySelectorAll('.custom-accordion').forEach(button => {
-  button.addEventListener('click', () => {
+document.querySelectorAll('.accordion-collapse').forEach(collapseEl => {
+  collapseEl.addEventListener('shown.bs.collapse', () => {
+    const button = collapseEl.previousElementSibling.querySelector('.accordion-button');
     const icon = button.querySelector('.accordion-icon');
-    const isCollapsed = button.classList.contains('collapsed');
-    icon.src = isCollapsed ? 'img/Accordian_OFF.png' : 'img/Accordian_ON.png';
+    icon.src = 'img/Accordian_ON.png';
+  });
+
+  collapseEl.addEventListener('hidden.bs.collapse', () => {
+    const button = collapseEl.previousElementSibling.querySelector('.accordion-button');
+    const icon = button.querySelector('.accordion-icon');
+    icon.src = 'img/Accordian_OFF.png';
   });
 });
