@@ -1,14 +1,14 @@
 $(document).ready(function () {
-  // Hide all text/box sections initially
-  $("#q2text, #q2box").hide();
+  // Hide all follow-up sections when page loads
+  $("#q2a, #q2abox, #q2b, #q2bbox, #q2c, #q2cbox").hide();
 
-  // Generic handler for all question groups
+  // Handle radio selection for all questions
   $("input[type=radio]").on("change", function () {
     let name = $(this).attr("name"); // q2a, q2b, q2c
     let value = $(this).val();
 
-    // Build selectors dynamically
-    let textDiv = $("#" + name + "text");
+    // Map to matching divs
+    let textDiv = $("#" + name);
     let boxDiv = $("#" + name + "box");
 
     if (value === "4" || value === "5") {
