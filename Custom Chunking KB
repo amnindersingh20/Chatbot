@@ -1,58 +1,45 @@
-$(function() {
-  // list of follow-up text + box ids (edit if your ids differ)
-  var followups = ['q2a','q2abox','q2b','q2bbox','q2c','q2cbox'];
+case 6:
+      const inputs6 = $('input[id^="q6_"]').slice(0, 10); // adjust slice if you really have 10 or fewer
+      const allowedValues6 = new Set(['1', '2', '3']);
 
-  // 1) Hide everything immediately on load
-  followups.forEach(function(id){
-    var $el = $('#' + id);
-    if ($el.length === 0) {
-      console.warn('Follow-up element not found: #' + id);
-      return;
-    }
-    // preferred hide
-    $el.hide();
-    // fallback: add inline style with !important if still visible (handles strong CSS overrides)
-    if ($el.is(':visible')) {
-      var existing = $el.attr('style') || '';
-      $el.attr('style', existing + ';display:none !important;');
-    }
-  });
+      let hasInvalid6 = false;
+      const filledVals = [];
 
-  // 2) Change handler (for all radios whose name starts with "q2")
-  $('input[type=radio][name^="q2"]').on('change', function() {
-    var name = $(this).attr('name'); // e.g. "q2a"
-    var val = $(this).val();
+      inputs6.each(function () {
+        // prefer unmasked value if using inputmask:
+        let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
+        raw = (raw || '').toString().trim();
 
-    var $textDiv = $('#' + name);        // follow-up <h2> wrapper (e.g. #q2a)
-    var $boxDiv  = $('#' + name + 'box'); // textarea container (e.g. #q2abox)
+        if (raw === '') return; // skip empties
 
-    if ($textDiv.length === 0 && $boxDiv.length === 0) {
-      console.warn('No matching follow-up elements for', name);
-      return;
-    }
+        if (!allowedValues6.has(raw)) hasInvalid6 = true;
+        filledVals.push(raw);
+      });
 
-    if (val === '4' || val === '5') {
-      // show and remove any 'display:none !important' inline if present
-      if ($textDiv.length) {
-        $textDiv.show().attr('style', ($textDiv.attr('style') || '').replace(/display\s*:\s*none\s*!important;?/gi,''));
+      const uniqueFilled = new Set(filledVals);
+      const hasDuplicates = uniqueFilled.size !== filledVals.length;
+
+      // Show/hide message
+      if (hasInvalid6 || hasDuplicates) $("#message").removeClass("d-none");
+      else $("#message").addClass("d-none");
+
+      const uniqueValidCount = Array.from(uniqueFilled).filter(v => allowedValues6.has(v)).length;
+
+      if (uniqueValidCount === 3 && !hasInvalid6 && !hasDuplicates) {
+        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+      } else {
+        $(".nextbutton").attr("disabled", true).addClass("disabled");
       }
-      if ($boxDiv.length) {
-        $boxDiv.show().attr('style', ($boxDiv.attr('style') || '').replace(/display\s*:\s*none\s*!important;?/gi,''));
-      }
-    } else {
-      if ($textDiv.length) {
-        $textDiv.hide();
-        if ($textDiv.is(':visible')) $textDiv.attr('style', ($textDiv.attr('style') || '') + ';display:none !important;');
-      }
-      if ($boxDiv.length) {
-        $boxDiv.hide();
-        if ($boxDiv.is(':visible')) $boxDiv.attr('style', ($boxDiv.attr('style') || '') + ';display:none !important;');
-      }
-    }
-  });
 
-  // 3) Trigger change on any pre-checked radios so the state is correct when the page loads
-  $('input[type=radio][name^="q2"]:checked').each(function() {
-    $(this).trigger('change');
-  });
-});
+      // Save (r14 → r23)
+      inputs6.each(function (i) {
+        let v = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
+        v = (v || '').toString().trim();
+        if (v === '' || !allowedValues6.has(v)) v = "0";
+        sessionStorage.setItem("r" + (15 + i), v);
+      });
+
+      // helpful debug log (remove in production)
+      console.log('case6 filled:', filledVals, 'uniqueValidCount:', uniqueValidCount, 'invalid:', hasInvalid6, 'duplicates:', hasDuplicates);
+
+      break;
