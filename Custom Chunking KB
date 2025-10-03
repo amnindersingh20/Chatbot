@@ -1,45 +1,58 @@
-case 6:
-      const inputs6 = $('input[id^="q6_"]').slice(0, 10); // adjust slice if you really have 10 or fewer
-      const allowedValues6 = new Set(['1', '2', '3']);
+case 6: {
+  const inputs6 = $('input[id^="q6_"]').slice(0, 10); // 10 input boxes
+  const allowedValues6 = new Set(['1','2','3','4','5','6','7','8','9','10']);
 
-      let hasInvalid6 = false;
-      const filledVals = [];
+  let hasInvalid6 = false;
+  const filledVals = [];
 
-      inputs6.each(function () {
-        // prefer unmasked value if using inputmask:
-        let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
-        raw = (raw || '').toString().trim();
+  inputs6.each(function () {
+    // prefer unmasked value if using inputmask:
+    let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
+    raw = (raw || '').toString().trim();
 
-        if (raw === '') return; // skip empties
+    // no empty values allowed
+    if (raw === '') {
+      hasInvalid6 = true;
+      return;
+    }
 
-        if (!allowedValues6.has(raw)) hasInvalid6 = true;
-        filledVals.push(raw);
-      });
+    // check range 1–10
+    if (!allowedValues6.has(raw)) hasInvalid6 = true;
 
-      const uniqueFilled = new Set(filledVals);
-      const hasDuplicates = uniqueFilled.size !== filledVals.length;
+    filledVals.push(raw);
+  });
 
-      // Show/hide message
-      if (hasInvalid6 || hasDuplicates) $("#message").removeClass("d-none");
-      else $("#message").addClass("d-none");
+  // duplicates check
+  const uniqueFilled = new Set(filledVals);
+  const hasDuplicates = uniqueFilled.size !== filledVals.length;
 
-      const uniqueValidCount = Array.from(uniqueFilled).filter(v => allowedValues6.has(v)).length;
+  // Show/hide validation message
+  if (hasInvalid6 || hasDuplicates) {
+    $("#message").removeClass("d-none");
+  } else {
+    $("#message").addClass("d-none");
+  }
 
-      if (uniqueValidCount === 3 && !hasInvalid6 && !hasDuplicates) {
-        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-      } else {
-        $(".nextbutton").attr("disabled", true).addClass("disabled");
-      }
+  // enable Next button only when:
+  //  - all 10 boxes are filled
+  //  - all values are 1–10
+  //  - no duplicates
+  if (!hasInvalid6 && !hasDuplicates && filledVals.length === inputs6.length) {
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+  } else {
+    $(".nextbutton").attr("disabled", true).addClass("disabled");
+  }
 
-      // Save (r14 → r23)
-      inputs6.each(function (i) {
-        let v = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
-        v = (v || '').toString().trim();
-        if (v === '' || !allowedValues6.has(v)) v = "0";
-        sessionStorage.setItem("r" + (15 + i), v);
-      });
+  // Save to sessionStorage (r15 → r24)
+  inputs6.each(function (i) {
+    let v = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
+    v = (v || '').toString().trim();
+    if (v === '' || !allowedValues6.has(v)) v = "0";
+    sessionStorage.setItem("r" + (15 + i), v);
+  });
 
-      // helpful debug log (remove in production)
-      console.log('case6 filled:', filledVals, 'uniqueValidCount:', uniqueValidCount, 'invalid:', hasInvalid6, 'duplicates:', hasDuplicates);
+  // helpful debug log
+  console.log('case6 filled:', filledVals, 'invalid:', hasInvalid6, 'duplicates:', hasDuplicates);
 
-      break;
+  break;
+}
