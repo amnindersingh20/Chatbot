@@ -1,15 +1,14 @@
 $(document).ready(function () {
-  // Hide all follow-up sections when page loads
+  // Hide follow-up question + box for all sections at page load
   $("#q2a, #q2abox, #q2b, #q2bbox, #q2c, #q2cbox").hide();
 
-  // Handle radio selection for all questions
+  // On radio button change
   $("input[type=radio]").on("change", function () {
     let name = $(this).attr("name"); // q2a, q2b, q2c
     let value = $(this).val();
 
-    // Map to matching divs
-    let textDiv = $("#" + name);
-    let boxDiv = $("#" + name + "box");
+    let textDiv = $("#" + name);       // follow-up <h2>
+    let boxDiv = $("#" + name + "box"); // follow-up textarea
 
     if (value === "4" || value === "5") {
       textDiv.show();
