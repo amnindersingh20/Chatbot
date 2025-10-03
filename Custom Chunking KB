@@ -1,43 +1,34 @@
 case 6: {
-  const inputs6 = $('input[id^="q6_"]').slice(0, 10); // 10 input boxes
-  const allowedValues6 = new Set(['1','2','3','4','5','6','7','8','9','10']);
+  const inputs6 = $('input[id^="q6_"]').slice(0, 10); // your 10 input boxes
+  const maxValue = inputs6.length; // dynamically determine max value allowed
+  const allowedValues6 = new Set(Array.from({length: maxValue}, (_, i) => (i+1).toString()));
 
   let hasInvalid6 = false;
   const filledVals = [];
 
   inputs6.each(function () {
-    // prefer unmasked value if using inputmask:
     let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
     raw = (raw || '').toString().trim();
 
-    // no empty values allowed
-    if (raw === '') {
-      hasInvalid6 = true;
-      return;
-    }
+    if (raw === '') return; // skip empty boxes for message, but counted later
 
-    // check range 1–10
-    if (!allowedValues6.has(raw)) hasInvalid6 = true;
-
+    if (!allowedValues6.has(raw)) hasInvalid6 = true; // mark invalid if out of allowed range
     filledVals.push(raw);
   });
 
-  // duplicates check
+  // duplicates check among non-empty values
   const uniqueFilled = new Set(filledVals);
   const hasDuplicates = uniqueFilled.size !== filledVals.length;
 
-  // Show/hide validation message
-  if (hasInvalid6 || hasDuplicates) {
+  // Show/hide message ONLY if user typed something AND invalid/duplicate
+  if (filledVals.length > 0 && (hasInvalid6 || hasDuplicates)) {
     $("#message").removeClass("d-none");
   } else {
     $("#message").addClass("d-none");
   }
 
-  // enable Next button only when:
-  //  - all 10 boxes are filled
-  //  - all values are 1–10
-  //  - no duplicates
-  if (!hasInvalid6 && !hasDuplicates && filledVals.length === inputs6.length) {
+  // Enable Next button only when all inputs are filled, valid, and unique
+  if (filledVals.length === inputs6.length && !hasInvalid6 && !hasDuplicates) {
     $(".nextbutton").removeAttr("disabled").removeClass("disabled");
   } else {
     $(".nextbutton").attr("disabled", true).addClass("disabled");
@@ -51,7 +42,13 @@ case 6: {
     sessionStorage.setItem("r" + (15 + i), v);
   });
 
-  // helpful debug log
+  // Restrict input to maxValue
+  inputs6.on('input', function() {
+    let val = this.value.replace(/\D/g, ''); // remove non-numeric
+    if (parseInt(val) > maxValue) val = maxValue.toString();
+    this.value = val;
+  });
+
   console.log('case6 filled:', filledVals, 'invalid:', hasInvalid6, 'duplicates:', hasDuplicates);
 
   break;
