@@ -1,48 +1,31 @@
 case 5:
-      const inputs6 = $('input[id^="q5_"]').inputmask({
-        mask: "9",
-        placeholder: "",
-        definitions: { '9': { validator: "[1-3]" } }
-      }); // adjust slice if you really have 10 or fewer
-      const allowedValues6 = new Set(['1', '2', '3']);
+  const inputs6 = $('input[id^="q5_"]');
+  const checkedBoxes = inputs6.filter(':checked');
 
-      let hasInvalid6 = false;
-      const filledVals = [];
+  // Show/hide message if not exactly 3 selected
+  if (checkedBoxes.length !== 3) {
+    $("#message").removeClass("d-none");
+    $(".nextbutton").attr("disabled", true).addClass("disabled");
+  } else {
+    $("#message").addClass("d-none");
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+  }
 
-      inputs6.each(function () {
-        // prefer unmasked value if using inputmask:
-        let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
-        raw = (raw || '').toString().trim();
+  // Store each checkbox's value in sessionStorage
+  inputs6.each(function (i) {
+    const id = "r" + (16 + i); // same numbering as before
+    if ($(this).is(":checked")) {
+      // store its value (e.g., "DLZ", "MGS", etc.)
+      sessionStorage.setItem(id, $(this).val());
+    } else {
+      // store 0 if not checked
+      sessionStorage.setItem(id, "0");
+    }
+  });
 
-        if (raw === '') return; // skip empties
-
-        if (!allowedValues6.has(raw)) hasInvalid6 = true;
-        filledVals.push(raw);
-      });
-
-      const uniqueFilled = new Set(filledVals);
-      const hasDuplicates = uniqueFilled.size !== filledVals.length;
-
-      // Show/hide message
-      if (hasInvalid6 || hasDuplicates) $("#message").removeClass("d-none");
-      else $("#message").addClass("d-none");
-
-      const uniqueValidCount = Array.from(uniqueFilled).filter(v => allowedValues6.has(v)).length;
-
-      if (uniqueValidCount === 3 && !hasInvalid6 && !hasDuplicates) {
-        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-      } else {
-        $(".nextbutton").attr("disabled", true).addClass("disabled");
-      }
-
-      inputs6.each(function (i) {
-        let v = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
-        v = (v || '').toString().trim();
-        if (v === '' || !allowedValues6.has(v)) v = "0";
-        sessionStorage.setItem("r" + (16 + i), v);
-      });
-
-      // helpful debug log (remove in production)
-      console.log('case6 filled:', filledVals, 'uniqueValidCount:', uniqueValidCount, 'invalid:', hasInvalid6, 'duplicates:', hasDuplicates);
-
-      break;
+  // helpful debug log (remove in production)
+  console.log(
+    "Checked boxes:",
+    checkedBoxes.map(function () { return $(this).val(); }).get()
+  );
+  break;
