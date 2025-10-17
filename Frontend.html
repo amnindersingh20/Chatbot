@@ -1,37 +1,248 @@
-case 5:
-  const inputs6 = $('input[id^="q5_"]');
-  const checkedBoxes = inputs6.filter(':checked');
-  const checkedCount = checkedBoxes.length;
+<!DOCTYPE html>
+<html lang="en">
 
-  // Show message only if user selects MORE THAN 3 checkboxes
-  if (checkedCount > 3) {
-    $("#message").removeClass("d-none"); // show error
-  } else {
-    $("#message").addClass("d-none"); // hide error
-  }
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="robots" content="noindex, nofollow">
+	<meta http-equiv="X-UA-Compatible" content="ie=edge">
+	<title>Marriot Survey</title>
+	<link rel="stylesheet" href="css/bootstrap.min.css">
+	<link rel="stylesheet" href="css/aos.css">
+	<link rel="stylesheet" href="css/styles.css">
+	<link rel="stylesheet" href="css/sweetalert2.css">
+	<link rel="shortcut icon" type="image/x-icon" href="img/favicon.ico"/>
+	<script src="js/gtm-head.js"></script>
+	<script src="js/jquery-3.7.1.min.js"></script>
+	<script src="js/jquery.inputmask.min.js"></script>
+	<script src="js/custom.js"></script>
+	<script src="js/sweetalert2.js"></script>
+</head>
 
-  // Enable Next button only when EXACTLY 3 checkboxes are selected
-  if (checkedCount === 3) {
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-  } else {
-    $(".nextbutton").attr("disabled", true).addClass("disabled");
-  }
+<body>
+  <!--TRACKING DO NOT REMOVE-->
+  <noscript>
+    <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
+            style="display:none;visibility:hidden">
+    </iframe>
+  </noscript>
+  <!-- End Google Tag Manager (noscript) -->
 
-  // Store values in sessionStorage
-  inputs6.each(function (i) {
-    const key = "r" + (16 + i); // keep same index structure
-    if ($(this).is(":checked")) {
-      sessionStorage.setItem(key, $(this).val()); // store the value of checked checkbox
-    } else {
-      sessionStorage.setItem(key, "0"); // unchecked = 0
-    }
-  });
+	<div class="container-lg px-5 mb-5 pb-5">
+		<div class="hero-container pt-4">
+			<div class="d-flex flex-column flex-lg-row justify-content-evenly">
+				<div class="col-12 order-last order-lg-first">
+					<h2 class="text-start_1">Q6.</h2>
+					<hr class="coral-line">
+					<h1 class="d-inline-block mt-0 text-start">
+						Your priorities help shape our benefits and programs—please select the top <i>five</i> that are most meaningful to you.
+					</h1>
+				</div>
+			</div>
+		</div>
+        <div id="message" class="text-danger text-center fw-bold mx-auto pb-4 d-none">Please adjust your inputs. Rank your top 5 items only (by entering a 1, 2, 3, 4 or 5).</div>
 
-  // Debug (optional — remove in production)
-  console.log(
-    "Checked boxes:",
-    checkedBoxes.map(function () { return $(this).val(); }).get(),
-    "| Count:", checkedCount
-  );
+		<div class="row">
+			<div class="border border-2 border-dark px-5 pb-5 mt-5">
+			<div class="col-12 col-lg-11 d-flex flex-column flex-lg-row mt-5">
+			<!-- <div class="col-12 col-lg-12"> -->
+				<div class="d-flex flex-column justify-content-start px-4 ms-2 pb-4 mb-0 mb-lg-5 align-items-start form-check-inline col-12 col-lg-5">
+					<div class="d-flex flex-row align-items-center mb-3">
+						<input type="text" name="q6" id="q6_1" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="11">
+						<label for="q6_1" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Life insurance</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_2" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="12">
+						<label for="q6_2" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Disability insurance</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_3" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="13">
+						<label for="q6_3" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Employee Stock Purchase Plan</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_4" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="14">
+						<label for="q6_4" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Retirement Savings Plan</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_5" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="15">
+						<label for="q6_5" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Financial Webinars and Planning Tools</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_6" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="16">
+						<label for="q6_6" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Paid Time Off</label>
+					</div>
+					<div class="d-flex flex-row align-items-center mt-3 mb-0">
+						<input type="text" name="q6" id="q6_7" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="17">
+						<label for="q6_7" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Discounts on Hotel Stays</label>
+					</div>
+					
+			
+					
+				</div>
+				<div class="d-flex flex-column justify-content-start px-4 ms-2 pb-5 mt-2 mt-lg-0 mb-0 align-items-start form-check-inline pe-0 pe-lg-5 col-12 col-lg-7">
+					<div class="d-flex flex-row align-items-center mt-0 mb-3">
+						<input type="text" name="q6" id="q6_8" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="18">
+						<label for="q6_8" class="form-check-label labelLight text-start fw-normal pe-5 fs-6 lh-125">Weight Management Support</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_9" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="19">
+						<label for="q6_9" class="form-check-label labelLight text-start fw-normal pe-5 fs-6 lh-125">Diabetes Support</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_10" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="20">
+						<label for="q6_10" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Mental Wellbeing Tools (e.g., counseling sessions, stress management resources, and app-based therapy)</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_11" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="21">
+						<label for="q6_11" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Tuition Reimbursement</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_12" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="22">
+						<label for="q6_12" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Commuter Benefits</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_13" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="23">
+						<label for="q6_13" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Family Building Resources (e.g., adoption assistance, fertility coverage, and other family planning tools)</label>
+					</div>
+					<div class="d-flex flex-row align-items-center my-3">
+						<input type="text" name="q6" id="q6_14" inputmode="numeric" data-inputmask="'alias': 'numeric', 'groupSeparator': '', 'digits': 0, 'digitsOptional': false, 'placeholder': ''" class="form-control text-center d-inline-block ms-3 me-2 rounded-0" maxlength="1" autocomplete="off" selectedvalue="24">
+						<label for="q6_14" class="form-check-label labelLight text-start fw-normal fs-6 lh-125">Child and Elder Care Resources</label>
+					</div>
+					
+				</div>
+				</div>
+				<!-- <div class="border border-2 border-dark px-5 pb-5 mt-5">
 
-  break;
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_1">
+						<label for="rank_1">mHUB</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_2">
+						<label for="rank_2">DLZ</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_3">
+						<label for="rank_3">MGS</label>
+					</div>
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_1">
+						<label for="rank_1">Email</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_2">
+						<label for="rank_2">Digital/printed flyers</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_3">
+						<label for="rank_3">Mail sent to home address</label>
+					</div>
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_3">
+						<label for="rank_3">Text message notifications </label>
+					</div>
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_1">
+						<label for="rank_1">Mobile app</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_2">
+						<label for="rank_2">Webinars hosted by the Benefits team or vendors</label>
+					</div>
+
+					<div class="rank-option mt-3 mb-3">
+						<input type="text" class="rank-input" maxlength="1" id="rank_3">
+						<label for="rank_3">Manager/supervisor-led discussions</label>
+					</div>
+
+				</div> -->
+			</div>
+
+			<div class="col-12 col-lg-12 pe-3 pe-lg-0 mt-3">
+				<a href="q7.html" class="btn btn-primary disabled nextbutton">Next Question</a>
+			</div>
+
+			<!-- <div class="col-12 col-lg-12 pe-3 pe-lg-0 mt-5">
+				<div class="progress" role="progressbar" aria-label="progress bar" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">
+					<div class="progress-bar" style="width: 25%"></div>
+				</div>
+			</div> -->
+
+
+			<div class="survey-progress my-3 mx-2 d-flex align-items-center">
+  <!-- Info button -->
+  <button type="button" class="btn bg-transparent p-0 me-3" id="info" aria-label="instructions">
+    <img src="img/Info_Btn.jpg" alt="Click for instructions" style="width:36px; height:auto; display:block;">
+  </button>
+
+  <!-- Progress bar (flex-grow so it fills available space) -->
+  <!-- <div class="flex-grow-1 me-3 mt-3">
+    <div class="progress" role="progressbar" aria-label="progress bar">
+      <div class="progress-bar bg-primary" style="width: 75%;" aria-valuenow="75" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+	<div class="progress-labels d-flex gap-1 justify-content-between align-items-center mt-2 small fw-bold text-uppercase" style="letter-spacing: 1px;">
+    <span class="per me-3" style="min-width:36px; text-align:left;">0%</span>
+    <span class="flex-grow-1 text-center d-none d-sm-inline" style="min-width:160px;">Survey Completion Percentage</span>
+    <span class="per ms-3" style="min-width:36px; text-align:right;">100%</span>
+  </div>
+  </div> -->
+  <div class="progress-container flex-grow-1">
+          <div class="progress" role="progressbar" aria-label="progress bar">
+            <div class="progress-bar bg-primary" id="surveyProgressBar" style="width: 75%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+          <div class="progress-labels d-flex gap-1 justify-content-between align-items-center mt-2 small fw-bold text-uppercase">
+            <span class="per" id="progressLeft">0%</span>
+            <span class="text-center flex-grow-1" id="progressCenter">Survey Completion Percentage</span>
+            <span class="per" id="progressRight">100%</span>
+          </div>
+        </div>
+
+  <!-- Percent / label group -->
+  
+</div>
+			<!-- <div class="survey-progress my-4">
+
+			<div class="progress bar">
+				<div class="progress-bar bg-primary" role="progressbar" style="width: 50%;" aria-valuenow="50"
+					aria-valuemin="0" aria-valuemax="100"></div>
+			</div>
+			<div class="d-flex justify-content-between align-items-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
+				<span class="per">0%</span>
+				<span class="flex-grow-1 text-center per">Survey Completion Percentage</span>
+				<span class="per">100%</span>
+			</div>
+		</div> -->
+		</div>
+	</div>
+
+	<!-- Footer -->
+	<div id="footer-placeholder" class="mt-auto"></div>
+	 
+    <script src="js/sExtendUtil.js"></script>
+    <script src="js/saveSurveyResponse_Mariott.js"></script>
+
+	<script>
+
+		if (location.hostname.substring(0, 9) != "localhost" && location.hostname.substring(0, 9) != "127.0.0.1" && location.hostname.substring(0, 3) != "qa.") {
+            $.getScript("js/sValidator.js", function (data, textStatus, jqxhr) { });
+        }
+
+
+		
+		$(function() {
+			$("#footer-placeholder").load("footer.html");
+		});
+
+		sessionStorage.setItem("page", 6);
+			if (sessionStorage.getItem("q6")) {
+				$(".nextbutton").removeAttr("disabled");
+			}
+			// $(".form-control").inputmask();
+	</script>
+</body>
+</html>
