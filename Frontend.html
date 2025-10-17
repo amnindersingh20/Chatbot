@@ -17,14 +17,37 @@
   <script src="js/jquery.inputmask.min.js"></script>
   <script src="js/custom.js"></script>
   <script src="js/sweetalert2.js"></script>
+
+  <style>
+    /* ✅ Alignment Fixes */
+    .form-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .form-check-input {
+      margin-top: 0.3rem;
+      flex-shrink: 0;
+    }
+
+    .form-check-label {
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    /* Optional: give uniform spacing between rows */
+    .form-check + .form-check {
+      margin-top: 0.75rem;
+    }
+  </style>
 </head>
 
 <body>
   <!--TRACKING DO NOT REMOVE-->
   <noscript>
     <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
-            style="display:none;visibility:hidden">
-    </iframe>
+            style="display:none;visibility:hidden"></iframe>
   </noscript>
   <!-- End Google Tag Manager (noscript) -->
 
@@ -49,65 +72,84 @@
       <div class="border border-2 border-dark px-5 pb-5 mt-5">
         <div class="col-12 col-lg-11 d-flex flex-column flex-lg-row mt-5">
 
+          <!-- Left Column -->
+          <div class="d-flex flex-column justify-content-start px-4 ms-2 pb-4 mb-0 mb-lg-5 align-items-start col-12 col-lg-5">
 
-          <div class="d-flex flex-column justify-content-start px-4 ms-2 pb-4 mb-0 mb-lg-5 align-items-start form-check-inline col-12 col-lg-5">
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_1" value="1" class="form-check-input me-2">
+            <div class="form-check">
+              <input type="checkbox" id="q6_1" class="form-check-input" value="1">
               <label for="q6_1" class="form-check-label">Life insurance</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_2" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_2" class="form-check-input" value="1">
               <label for="q6_2" class="form-check-label">Disability insurance</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_3" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_3" class="form-check-input" value="1">
               <label for="q6_3" class="form-check-label">Employee Stock Purchase Plan</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_4" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_4" class="form-check-input" value="1">
               <label for="q6_4" class="form-check-label">Retirement Savings Plan</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_5" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_5" class="form-check-input" value="1">
               <label for="q6_5" class="form-check-label">Financial Webinars and Planning Tools</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_6" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_6" class="form-check-input" value="1">
               <label for="q6_6" class="form-check-label">Paid Time Off</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_7" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_7" class="form-check-input" value="1">
               <label for="q6_7" class="form-check-label">Discounts on Hotel Stays</label>
             </div>
           </div>
 
-          <div class="d-flex flex-column justify-content-start px-4 ms-2 pb-5 mt-2 mt-lg-0 mb-0 align-items-start form-check-inline pe-0 pe-lg-5 col-12 col-lg-7">
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_8" value="1" class="form-check-input me-2">
+          <!-- Right Column -->
+          <div class="d-flex flex-column justify-content-start px-4 ms-2 pb-5 mt-2 mt-lg-0 mb-0 align-items-start col-12 col-lg-7">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_8" class="form-check-input" value="1">
               <label for="q6_8" class="form-check-label">Weight Management Support</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_9" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_9" class="form-check-input" value="1">
               <label for="q6_9" class="form-check-label">Diabetes Support</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_10" value="1" class="form-check-input me-2">
-              <label for="q6_10" class="form-check-label">Mental Wellbeing Tools (e.g., counseling sessions, stress management resources, and app-based therapy)</label>
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_10" class="form-check-input" value="1">
+              <label for="q6_10" class="form-check-label">
+                Mental Wellbeing Tools (e.g., counseling sessions, stress management resources, and app-based therapy)
+              </label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_11" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_11" class="form-check-input" value="1">
               <label for="q6_11" class="form-check-label">Tuition Reimbursement</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_12" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_12" class="form-check-input" value="1">
               <label for="q6_12" class="form-check-label">Commuter Benefits</label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_13" value="1" class="form-check-input me-2">
-              <label for="q6_13" class="form-check-label">Family Building Resources (e.g., adoption assistance, fertility coverage, and other family planning tools)</label>
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_13" class="form-check-input" value="1">
+              <label for="q6_13" class="form-check-label">
+                Family Building Resources (e.g., adoption assistance, fertility coverage, and other family planning tools)
+              </label>
             </div>
-            <div class="form-check d-flex flex-row align-items-center my-3">
-              <input type="checkbox" id="q6_14" value="1" class="form-check-input me-2">
+
+            <div class="form-check">
+              <input type="checkbox" id="q6_14" class="form-check-input" value="1">
               <label for="q6_14" class="form-check-label">Child and Elder Care Resources</label>
             </div>
           </div>
@@ -153,10 +195,9 @@
     });
 
     sessionStorage.setItem("page", 6);
-			if (sessionStorage.getItem("q6")) {
-				$(".nextbutton").removeAttr("disabled");
-			}
-
+    if (sessionStorage.getItem("q6")) {
+      $(".nextbutton").removeAttr("disabled");
+    }
   </script>
 </body>
 </html>
