@@ -1,137 +1,44 @@
-<!DOCTYPE html>
-<html lang="en">
+case 5:
+      const inputs6 = $('input[id^="q5_"]'); // adjust slice if you really have 10 or fewer
+      const allowedValues6 = new Set(['1', '2', '3']);
 
-<head>
-	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<meta name="robots" content="noindex, nofollow" />
-	<meta http-equiv="X-UA-Compatible" content="ie=edge" />
-	<title>Marriot Survey</title>
+      let hasInvalid6 = false;
+      const filledVals = [];
 
-	<link rel="stylesheet" href="css/bootstrap.min.css" />
-	<link rel="stylesheet" href="css/aos.css" />
-	<link rel="stylesheet" href="css/styles.css" />
-	<link rel="stylesheet" href="css/sweetalert2.css" />
-	<link rel="shortcut icon" type="image/x-icon" href="img/favicon.ico" />
-	<script src="js/gtm-head.js"></script>
-	<script src="js/jquery-3.7.1.min.js"></script>
-	<script src="js/custom.js"></script>
-	<script src="js/sweetalert2.js"></script>
+      inputs6.each(function () {
+        // prefer unmasked value if using inputmask:
+        let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
+        raw = (raw || '').toString().trim();
 
+        if (raw === '') return; // skip empties
 
-</head>
+        if (!allowedValues6.has(raw)) hasInvalid6 = true;
+        filledVals.push(raw);
+      });
 
-<body>
-	<!--TRACKING DO NOT REMOVE-->
-	<noscript>
-		<iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
-			style="display:none;visibility:hidden"></iframe>
-	</noscript>
-	<!-- End Google Tag Manager (noscript) -->
+      const uniqueFilled = new Set(filledVals);
+      const hasDuplicates = uniqueFilled.size !== filledVals.length;
 
-	<div class="container-lg px-0 mb-5 pb-5">
-		<div class="hero-container pt-4">
-			<div class="d-flex flex-column flex-lg-row justify-content-evenly">
-				<div class="col-12 order-last order-lg-first">
-					<h1 class="text-start">Q8.</h1>
-					<h1 class="d-inline-block mt-0 text-start">
-						What aspects of Marriott’s benefits and programs have been most helpful to you, and what
-						improvements or additions would make them even more valuable? <small>(Limit 500
-							characters)</small>
-					</h1>
-				</div>
-			</div>
-		</div>
+      // Show/hide message
+      if (hasInvalid6 || hasDuplicates) $("#message").removeClass("d-none");
+      else $("#message").addClass("d-none");
 
-		<div class="row">
-			<div class="col-12">
-				<!-- box matching previous border -->
-				<div class="feedback-box">
-					<!-- textarea: border removed so the outer box is the visible border -->
-					<textarea id="q8text" rows="8" maxlength="500" aria-label="Feedback"></textarea>
-					<small id="charCount" class="form-text text-muted">0 / 500 characters</small>
-					<p class="text-start col-12 col-lg-11 mt-2 rp"><strong>Note:</strong> Your responses will be completely confidential. <br>No individual identifying information will be shared with Marriott.</p>
-			<h3 class="pt-4 rp">Please click on the <i>Submit Survey</i> button to finalize your survey.</h3>
-				</div>
-			</div>
-		</div>
+      const uniqueValidCount = Array.from(uniqueFilled).filter(v => allowedValues6.has(v)).length;
 
-		<div class="row mt-3">
-			<div class="col-12 pe-3 pe-lg-0">
-				<a href="finish.html" id="submit" class="btn btn-primary">Submit Survey</a>
-			</div>
-		</div>
+      if (uniqueValidCount === 3 && !hasInvalid6 && !hasDuplicates) {
+        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+      } else {
+        $(".nextbutton").attr("disabled", true).addClass("disabled");
+      }
 
-		<!-- <div class="row mt-5">
-      <div class="col-12">
-        <div class="progress" role="progressbar" aria-label="progress bar" aria-valuenow="25" aria-valuemin="0"
-          aria-valuemax="100">
-          <div class="progress-bar" style="width: 100%"></div>
-        </div>
-      </div>
-    </div> -->
+      inputs6.each(function (i) {
+        let v = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
+        v = (v || '').toString().trim();
+        if (v === '' || !allowedValues6.has(v)) v = "0";
+        sessionStorage.setItem("r" + (16 + i), v);
+      });
 
+      // helpful debug log (remove in production)
+      console.log('case6 filled:', filledVals, 'uniqueValidCount:', uniqueValidCount, 'invalid:', hasInvalid6, 'duplicates:', hasDuplicates);
 
-
-	<div class="survey-progress my-3 mx-2 d-flex align-items-center">
-  <!-- Info button -->
-  <button type="button" class="btn bg-transparent p-0 me-3" id="info" aria-label="instructions">
-    <img src="img/Info_Btn.jpg" alt="Click for instructions" style="width:36px; height:auto; display:block;">
-  </button>
-
-  <!-- Progress bar (flex-grow so it fills available space) -->
-  <div class="flex-grow-1 me-3 mt-3">
-    <div class="progress" role="progressbar" aria-label="progress bar">
-      <div class="progress-bar bg-primary" style="width: 100%;" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100"></div>
-    </div>
-	<div class="d-flex align-items-center small fw-bold text-uppercase" style="letter-spacing: 1px;">
-    <span class="per me-3" style="min-width:36px; text-align:left;">0%</span>
-    <span class="flex-grow-1 text-center d-none d-sm-inline" style="min-width:160px;">Survey Completion Percentage</span>
-    <span class="per ms-3" style="min-width:36px; text-align:right;">100%</span>
-  </div>
-  </div>
-
-  <!-- Percent / label group -->
-  
-</div>
-		<!-- <div class="survey-progress my-4">
-
-			<div class="progress bar">
-				<div class="progress-bar bg-primary" role="progressbar" style="width: 100%;" aria-valuenow="100"
-					aria-valuemin="0" aria-valuemax="100"></div>
-			</div>
-			<div class="d-flex justify-content-between align-items-center mt-1 small fw-bold text-uppercase" style="letter-spacing: 1px;">
-				<span class="per">0%</span>
-				<span class="flex-grow-1 text-center per">Survey Completion Percentage</span>
-				<span class="per">100%</span>
-			</div>
-			
-		</div> -->
-	</div>
-
-	<div id="footer-placeholder" class="mt-auto"></div>
-	 
-    <script src="js/sExtendUtil.js"></script>
-    <script src="js/saveSurveyResponse_Mariott.js"></script>
-
-	<script>
-
-		if (location.hostname.substring(0, 9) != "localhost" && location.hostname.substring(0, 9) != "127.0.0.1" && location.hostname.substring(0, 3) != "qa.") {
-            $.getScript("js/sValidator.js", function (data, textStatus, jqxhr) { });
-        }
-
-		sessionStorage.setItem("page", 1);
-
-		$(function () {
-			$("#footer-placeholder").load("footer.html");
-
-			// live character counter
-			$("#q8text").on("input", function () {
-				const len = $(this).val().length;
-				$("#charCount").text(len + " / 500 characters");
-			});
-		});
-	</script>
-</body>
-
-</html>
+      break;
