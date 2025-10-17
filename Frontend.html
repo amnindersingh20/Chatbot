@@ -1,31 +1,37 @@
 case 5:
   const inputs6 = $('input[id^="q5_"]');
   const checkedBoxes = inputs6.filter(':checked');
+  const checkedCount = checkedBoxes.length;
 
-  // Show/hide message if not exactly 3 selected
-  if (checkedBoxes.length !== 3) {
-    $("#message").removeClass("d-none");
-    $(".nextbutton").attr("disabled", true).addClass("disabled");
+  // Show message only if user selects MORE THAN 3 checkboxes
+  if (checkedCount > 3) {
+    $("#message").removeClass("d-none"); // show error
   } else {
-    $("#message").addClass("d-none");
-    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+    $("#message").addClass("d-none"); // hide error
   }
 
-  // Store each checkbox's value in sessionStorage
+  // Enable Next button only when EXACTLY 3 checkboxes are selected
+  if (checkedCount === 3) {
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+  } else {
+    $(".nextbutton").attr("disabled", true).addClass("disabled");
+  }
+
+  // Store values in sessionStorage
   inputs6.each(function (i) {
-    const id = "r" + (16 + i); // same numbering as before
+    const key = "r" + (16 + i); // keep same index structure
     if ($(this).is(":checked")) {
-      // store its value (e.g., "DLZ", "MGS", etc.)
-      sessionStorage.setItem(id, $(this).val());
+      sessionStorage.setItem(key, $(this).val()); // store the value of checked checkbox
     } else {
-      // store 0 if not checked
-      sessionStorage.setItem(id, "0");
+      sessionStorage.setItem(key, "0"); // unchecked = 0
     }
   });
 
-  // helpful debug log (remove in production)
+  // Debug (optional — remove in production)
   console.log(
     "Checked boxes:",
-    checkedBoxes.map(function () { return $(this).val(); }).get()
+    checkedBoxes.map(function () { return $(this).val(); }).get(),
+    "| Count:", checkedCount
   );
+
   break;
