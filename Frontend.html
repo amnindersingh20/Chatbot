@@ -1,51 +1,37 @@
 case 6:
-      const inputs7 = $('input[id^="q6_"]').inputmask({
-        mask: "9",
-        placeholder: "",
-        definitions: { '9': { validator: "[1-5]" } }
-      });;
-      const allowedValues7 = new Set(['1', '2', '3', '4', '5']);
+  const inputs7 = $('input[id^="q6_"]');
+  const checkedBoxes7 = inputs7.filter(':checked');
+  const checkedCount7 = checkedBoxes7.length;
 
-      let hasInvalid7 = false;
-      const filledVals1 = [];
+  // Show message only if user selects MORE THAN 5 checkboxes
+  if (checkedCount7 > 5) {
+    $("#message").removeClass("d-none"); // show warning
+  } else {
+    $("#message").addClass("d-none"); // hide warning
+  }
 
-      inputs7.each(function () {
-        // If using Inputmask, get unmasked value; otherwise use .value
-        let raw = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
-        raw = (raw || '').toString().trim();
+  // Enable Next button only when EXACTLY 5 boxes are selected
+  if (checkedCount7 === 5) {
+    $(".nextbutton").removeAttr("disabled").removeClass("disabled");
+  } else {
+    $(".nextbutton").attr("disabled", true).addClass("disabled");
+  }
 
-        if (raw === '') return; // skip empty inputs
+  // Save each checkbox's state to sessionStorage
+  inputs7.each(function (i) {
+    const key = "r" + (27 + i); // adjust starting index per your numbering pattern
+    if ($(this).is(":checked")) {
+      sessionStorage.setItem(key, $(this).val());
+    } else {
+      sessionStorage.setItem(key, "0");
+    }
+  });
 
-        if (!allowedValues7.has(raw)) hasInvalid7 = true;
-        filledVals1.push(raw);
-      });
+  // Debug log — remove in production
+  console.log(
+    "case6 checked:",
+    checkedBoxes7.map(function () { return $(this).val(); }).get(),
+    "| Count:", checkedCount7
+  );
 
-      const uniqueFilled1 = new Set(filledVals1);
-      const hasDuplicates1 = uniqueFilled1.size !== filledVals1.length;
-
-      // Show or hide warning
-      if (hasInvalid7 || hasDuplicates1) $("#message").removeClass("d-none");
-      else $("#message").addClass("d-none");
-
-      // Count unique valid ranks (1..5)
-      const uniqueValidCount1 = Array.from(uniqueFilled1).filter(v => allowedValues7.has(v)).length;
-
-      // Enable Next only when exactly 5 unique valid ranks, and no invalids/duplicates
-      if (uniqueValidCount1 === 5 && !hasInvalid7 && !hasDuplicates1) {
-        $(".nextbutton").removeAttr("disabled").removeClass("disabled");
-      } else {
-        $(".nextbutton").attr("disabled", true).addClass("disabled");
-      }
-
-      // Save values to sessionStorage r25 → r36 (use "0" for empty/invalid)
-      inputs7.each(function (i) {
-        let v = (typeof $(this).inputmask === 'function') ? $(this).inputmask('unmaskedvalue') : this.value;
-        v = (v || '').toString().trim();
-        if (v === '' || !allowedValues7.has(v)) v = "0";
-        sessionStorage.setItem("r" + (27 + i), v);
-      });
-
-      // Debug log (remove once confirmed)
-      console.log('case7 filled:', filledVals1, 'uniqueValidCount:', uniqueValidCount1, 'invalid:', hasInvalid7, 'duplicates:', hasDuplicates1);
-
-      break;
+  break;
