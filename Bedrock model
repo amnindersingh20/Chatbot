@@ -7,10 +7,8 @@
     $.getScript("js/sValidator.js");
   }
 
-  // Track current page
   sessionStorage.setItem("page", 4);
 
-  // Enable Next if already answered
   if (sessionStorage.getItem("q4")) {
     $(".nextbutton").removeClass("disabled");
   }
@@ -20,10 +18,8 @@
   });
 
   $(document).ready(function () {
-    // ✅ Hide all textareas on page load
     $("#q4_1a, #q4_1abox, #q4_3a, #q4_3abox").addClass("d-none");
 
-    // ✅ Restore previous radio selection if available
     const savedValue = sessionStorage.getItem("q4");
     if (savedValue) {
       $("input[name=q4][value=" + savedValue + "]").prop("checked", true);
@@ -35,19 +31,16 @@
       }
     }
 
-    // ✅ Restore textarea content from sessionStorage
     ["q4atext", "q4btext"].forEach(id => {
       const savedText = sessionStorage.getItem(id);
       if (savedText) $("#" + id).val(savedText);
     });
 
-    // ✅ Save textarea input live
     $("textarea").on("input", function () {
       const id = $(this).attr("id");
       sessionStorage.setItem(id, $(this).val());
     });
 
-    // ✅ Handle radio button changes
     $("input[name=q4]").on("change", function () {
       const value = $(this).val();
       sessionStorage.setItem("q4", value);
@@ -56,29 +49,23 @@
       $("#q4_1a, #q4_1abox, #q4_3a, #q4_3abox").addClass("d-none");
 
       if (value === "1") {
-        // Show text area for "Not Enough"
         $("#q4_1a, #q4_1abox").removeClass("d-none");
-
-        // Clear and remove session data for the other textarea
         $("#q4btext").val("");
         sessionStorage.removeItem("q4btext");
       } 
       else if (value === "3") {
-        // Show text area for "Too Much"
         $("#q4_3a, #q4_3abox").removeClass("d-none");
-
-        // Clear and remove session data for the other textarea
         $("#q4atext").val("");
         sessionStorage.removeItem("q4atext");
       } 
-      else {
-        // If "Just Right" → hide and clear both
+      else if (value === "2") {
+        // Just Right → hide all, clear textareas AND r15
         $("#q4atext, #q4btext").val("");
         sessionStorage.removeItem("q4atext");
         sessionStorage.removeItem("q4btext");
+        sessionStorage.removeItem("r15"); // Clear r15 if user selects 2
       }
 
-      // Enable Next button after any valid selection
       $(".nextbutton").removeClass("disabled");
     });
   });
