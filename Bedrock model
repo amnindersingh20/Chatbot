@@ -2,141 +2,201 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="robots" content="noindex, nofollow" />
-    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-    <title>Marriot Survey</title>
-
-    <link rel="stylesheet" href="css/bootstrap.min.css" />
-    <link rel="stylesheet" href="css/aos.css" />
-    <link rel="stylesheet" href="css/styles.css" />
-    <link rel="stylesheet" href="css/sweetalert2.css" />
-    <link rel="shortcut icon" type="image/x-icon" href="img/favicon.ico" />
-    <script src="js/gtm-head.js"></script>
-    <script src="js/jquery-3.7.1.min.js"></script>
-    <script src="js/custom.js"></script>
-    <script src="js/sweetalert2.js"></script>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="robots" content="noindex, nofollow">
+	<meta http-equiv="X-UA-Compatible" content="ie=edge">
+	<title>Marriot Survey</title>
+	<link rel="stylesheet" href="css/bootstrap.min.css">
+	<link rel="stylesheet" href="css/aos.css">
+	<link rel="stylesheet" href="css/styles.css">
+	<link rel="stylesheet" href="css/sweetalert2.css">
+	<link rel="shortcut icon" type="image/x-icon" href="img/favicon.ico" />
+	<script src="js/gtm-head.js"></script>
+	<script src="js/jquery-3.7.1.min.js"></script>
+	<script src="js/jquery.inputmask.min.js"></script>
+	<script src="js/custom.js"></script>
+	<script src="js/sweetalert2.js"></script>
 </head>
 
 <body>
-    <!--TRACKING DO NOT REMOVE-->
-    <noscript>
-        <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
-            style="display:none;visibility:hidden"></iframe>
-    </noscript>
-    <!-- End Google Tag Manager (noscript) -->
+	<!--TRACKING DO NOT REMOVE-->
+	<noscript>
+		<iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NZRXXZW" height="0" width="0"
+			style="display:none;visibility:hidden"></iframe>
+	</noscript>
+	<!-- End Google Tag Manager (noscript) -->
 
-    <div class="container-lg px-5 mb-5 pb-5">
-        <div class="hero-container pt-4">
-            <div class="d-flex flex-column flex-lg-row justify-content-evenly">
-                <div class="col-12 order-last order-lg-first">
-                    <!-- <h1 class="text-start">Q8.</h1> -->
-					 <h2 class="text-start_1">Q7.</h2>
-                     <hr class="coral-line">
-                    <h1 class="d-inline-block mt-0 text-start">
-                        Please share why the top benefits or programs you selected in the previous question are meaningful and how they positively support you and your family. (Limit 500 characters)</small>
-                    </h1>
-                </div>
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="col-12">
-                <div class="feedback-box">
-                    <textarea id="q7text" class="col-12 col-lg-11 border border-2 p-2 " rows="6" maxlength="500" style="border-color: #2B2E34 !important" aria-label="Feedback"></textarea>
-                    <small id="charCount" class="form-text text-muted">0 / 500 characters</small>
-                    <!-- <p class="text-start col-12 col-lg-11 mt-2 rp"><strong>Note:</strong> Your responses will be completely confidential. No individual identifying information will be shared with Marriott.</p>
-                    <h3 class="pt-4 rp">Please click on the <i>Submit Survey</i> button to finalize your survey.</h3> -->
-                </div>
-            </div>
-        </div>
-
-        <div class="row mt-3">
-			<div class="d-flex justify-content-between align-items-center mb-5 mt-3">
-                <a href="q6.html" class="btn btn-primary">Back</a>
-				<a href="q8.html" class="btn btn-primary">Next Question</a>
+	<div class="container-lg px-5 mb-5 pb-5">
+		<div class="hero-container pt-4">
+			<div class="d-flex flex-column flex-lg-row justify-content-evenly">
+				<div class="col-12 order-last order-lg-first">
+					<h2 class="text-start_1">Q5.</h2>
+					<hr class="coral-line">
+					<h1 class="d-inline-block mt-0 text-start">
+						What are your preferred ways to receive information about Marriott benefits throughout the
+						year? Please select your top <i>three</i> of the following channels.
+					</h1>
+				</div>
 			</div>
-            <!-- <div class="col-12 pe-3 pe-lg-0">
-                //Changed from <a> to <button>//
-            <button id="submit" class="btn btn-primary">Submit Survey</button>
-            </div> -->
-        </div>
+		</div>
 
-        <div class="survey-progress my-3 mx-2 d-flex align-items-center">
-            <button type="button" class="btn bg-transparent p-0 me-3" id="info" aria-label="instructions">
-                <img src="img/Info_Btn.jpg" alt="Click for instructions" style="width:36px; height:auto; display:block;">
-            </button>
+		<div id="message" class="text-danger text-center fw-bold mx-auto pb-4 d-none">
+			Please adjust your inputs. Select your top 3 channels only.
+		</div>
 
-            <!-- <div class="flex-grow-1 me-3 mt-3">
-                <div class="progress" role="progressbar" aria-label="progress bar">
-                    <div class="progress-bar bg-primary" style="width: 90%;" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100"></div>
-                </div>
-                <div class="progress-labels d-flex gap-1 justify-content-between align-items-center mt-2 small fw-bold text-uppercase" style="letter-spacing: 1px;">
-                    <span class="per me-3" style="min-width:36px; text-align:left;">0%</span>
-                    <span class="flex-grow-1 text-center d-none d-sm-inline" style="min-width:160px;">Survey Completion Percentage</span>
-                    <span class="per ms-3" style="min-width:36px; text-align:right;">100%</span>
-                </div>
-            </div> -->
-            <div class="progress-container flex-grow-1">
-          <div class="progress" role="progressbar" aria-label="progress bar">
-            <div class="progress-bar bg-primary" id="surveyProgressBar" style="width: 87.5%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
-          </div>
-          <div class="progress-labels d-flex gap-1 justify-content-between align-items-center mt-2 small fw-bold text-uppercase">
-            <span class="per" id="progressLeft">0%</span>
-            <span class="text-center flex-grow-1" id="progressCenter">Survey Completion Percentage</span>
-            <span class="per" id="progressRight">100%</span>
-          </div>
-        </div>
-        </div>
-    </div>
+		<div class="row">
+			<div class="border border-2 border-dark px-5 pb-5 mt-5">
+				<div class="col-12 col-lg-11 d-flex flex-column flex-lg-row mt-5">
 
-    <div id="footer-placeholder" class="mt-auto"></div>
+					<!-- LEFT COLUMN -->
+					<div class="d-flex flex-column justify-content-start px-4 ms-2 pb-4 mb-0 mb-lg-5 align-items-start col-12 col-lg-5">
 
-    <script src="js/sExtendUtil.js"></script>
-    <script src="js/saveSurveyResponse_Mariott.js"></script>
+						<div class="form-check d-flex flex-row align-items-center mb-3">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_1" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_1">DLZ</label>
+						</div>
 
-    <script>
-        if (location.hostname.substring(0, 9) != "localhost" &&
-            location.hostname.substring(0, 9) != "127.0.0.1" &&
-            location.hostname.substring(0, 3) != "qa.") {
-            $.getScript("js/sValidator.js");
-        }
+						<div class="form-check d-flex flex-row align-items-center my-3">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_2" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_2">MGS</label>
+						</div>
 
-        // sessionStorage.setItem("page", 7);
-		// 	if (sessionStorage.getItem("q7")) {
-		// 		$(".nextbutton").removeAttr("disabled");
-		// 	}
+						<div class="form-check d-flex flex-row align-items-center my-3">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_3" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_3">mHUB</label>
+						</div>
 
-        $(function () {
-            $("#footer-placeholder").load("footer.html");
+						<div class="form-check d-flex flex-row align-items-center my-3">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_4" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_4">Email</label>
+						</div>
 
-            // live character counter
-            $("#q7text").on("input", function () {
-                const len = $(this).val().length;
-                $("#charCount").text(len + " / 500 characters");
-            });
+						<div class="form-check d-flex flex-row align-items-center mt-3 mb-0">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_5" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_5">Heart of House Flyers</label>
+						</div>
 
-            // submit button handler
-            // $("#submit").on("click", function (e) {
-            //     e.preventDefault();
-            //     $(this).prop("disabled", true).text("Submitting...");
+					</div>
 
-            //     saveSurveyResponse()
-            //         .then(() => {
-            //             window.location.href = "finish.html";
-            //         })
-            //         .catch(err => {
-            //             Swal.fire({
-            //                 icon: "error",
-            //                 title: "Error",
-            //                 text: "We couldn’t save your survey. Please try again.",
-            //             });
-            //             console.error(err);
-            //             $("#submit").prop("disabled", false).text("Submit Survey");
-            //         });
-            // });
-        });
-    </script>
+					<!-- RIGHT COLUMN -->
+					<div class="d-flex flex-column justify-content-start px-4 ms-2 pb-5 mt-2 mt-lg-0 mb-0 align-items-start col-12 col-lg-7">
+
+						<div class="form-check d-flex flex-row align-items-center mt-0 mb-3">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_6" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_6">
+								Mail sent to home address
+							</label>
+						</div>
+
+						<div class="form-check d-flex flex-row align-items-center my-3">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_7" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_7">
+								Text message notifications
+							</label>
+						</div>
+
+						<div class="form-check d-flex flex-row align-items-center my-3">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_8" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_8">Webinars</label>
+						</div>
+
+						<div class="form-check d-flex flex-row align-items-center my-3">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_9" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_9">
+								Manager/supervisor-led discussions
+							</label>
+						</div>
+
+						<div class="form-check d-flex flex-row align-items-center my-3">
+							<input class="form-check-input ms-3 me-2" type="checkbox" name="q5" id="q5_10" value="1">
+							<label class="form-check-label  text-start fw-normal fs-6 lh-125" for="q5_10">Other</label>
+						</div>
+
+					</div>
+				</div>
+			</div>
+
+			<!-- TEXTAREA for "Other" -->
+			<div class="row" id="q5abox">
+				<div class="col-12 col-lg-12 mt-5">
+					<div class="feedback-box">
+						<textarea id="q5text" rows="8" maxlength="500" aria-label="Feedback"></textarea>
+						<small id="charCount" class="form-text text-muted">0 / 500 characters</small>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- NEXT BUTTON -->
+		<div class="d-flex justify-content-between align-items-center mb-5 mt-3">
+			<a href="q4.html" class="btn btn-primary">Back</a>
+			<a href="q6.html" class="btn btn-primary disabled nextbutton">Next Question</a>
+		</div>
+
+		<!-- PROGRESS BAR -->
+		<div class="survey-progress my-3 mx-2 d-flex align-items-center">
+			<button type="button" class="btn bg-transparent p-0 me-3" id="info" aria-label="instructions">
+				<img src="img/Info_Btn.jpg" alt="Click for instructions" style="width:36px; height:auto; display:block;">
+			</button>
+
+			<div class="progress-container flex-grow-1">
+				<div class="progress" role="progressbar" aria-label="progress bar">
+					<div class="progress-bar bg-primary" id="surveyProgressBar" style="width: 62.5%;" aria-valuenow="62.5"
+						aria-valuemin="0" aria-valuemax="100"></div>
+				</div>
+				<div class="progress-labels d-flex gap-1 justify-content-between align-items-center mt-2 small fw-bold text-uppercase">
+					<span class="per" id="progressLeft">0%</span>
+					<span class="text-center flex-grow-1" id="progressCenter">Survey Completion Percentage</span>
+					<span class="per" id="progressRight">100%</span>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- FOOTER -->
+	<div id="footer-placeholder" class="mt-auto"></div>
+
+	<script src="js/sExtendUtil.js"></script>
+	<script src="js/saveSurveyResponse_Mariott.js"></script>
+
+	<script>
+		if (location.hostname.substring(0, 9) != "localhost" &&
+			location.hostname.substring(0, 9) != "127.0.0.1" &&
+			location.hostname.substring(0, 3) != "qa.") {
+			$.getScript("js/sValidator.js", function () { });
+		}
+
+		$(function () {
+			$("#footer-placeholder").load("footer.html");
+		});
+
+		$(document).ready(function () {
+			// Hide "Other" textbox initially
+			$("#q5abox").addClass("d-none");
+
+			// Show when "Other" checkbox is checked
+			$("#q5_10").on("change", function () {
+				if ($(this).is(":checked")) {
+					$("#q5abox").removeClass("d-none");
+				} else {
+					$("#q5abox").addClass("d-none");
+				}
+			});
+
+			// Hide again if "Other" is unchecked and no other inputs affect it
+			$("input[name='q5']").not("#q5_10").on("change", function () {
+				if (!$("#q5_10").is(":checked")) {
+					$("#q5abox").addClass("d-none");
+				}
+			});
+		});
+
+		sessionStorage.setItem("page", 5);
+		if (sessionStorage.getItem("q5")) {
+			$(".nextbutton").removeAttr("disabled");
+		}
+	</script>
 </body>
+
 </html>
