@@ -18,31 +18,44 @@
     // 1️⃣ Hide all text areas at load
     $("#q2a, #q2abox, #q2b, #q2bbox, #q2c, #q2cbox").addClass("d-none");
 
-    // 2️⃣ Radio change listener for user clicks
+    // 2️⃣ Handle radio changes (user clicks)
     $("input[type=radio]").on("change", function () {
-      const name = $(this).attr("name");
+      const name = $(this).attr("name"); // e.g. q2a
       const value = $(this).val();
-
       const textDiv = $("#" + name);
       const boxDiv = $("#" + name + "box");
+      const textarea = $("#" + name + "text");
 
       if (value === "4" || value === "5") {
+        // Show textarea when 4/5 selected
         textDiv.removeClass("d-none");
         boxDiv.removeClass("d-none");
       } else {
+        // Hide textarea when 1–3 selected
         textDiv.addClass("d-none");
         boxDiv.addClass("d-none");
+
+        // 🚨 Clear textarea value in UI and in sessionStorage
+        if (textarea.length) {
+          textarea.val("");
+          textarea.removeClass("enteredTextField").addClass("emptyTextField");
+
+          // Also clear saved value
+          const map = { q2a: "r6", q2b: "r7", q2c: "r8" };
+          const key = map[name];
+          if (key) sessionStorage.removeItem(key);
+        }
       }
     });
 
-    // 3️⃣ Now restore previous answers from sessionStorage (must be defined in custom.js)
+    // 3️⃣ Restore saved responses (from your custom.js)
     if (typeof restoreResponses === "function") {
       restoreResponses();
     }
 
-    // 4️⃣ 🔥 Force the UI to refresh visibility based on restored radios
+    // 4️⃣ Force update of visibility based on restored radios
     $("input[type='radio']:checked").each(function () {
-      $(this).trigger("change");   // simulate a click
+      $(this).trigger("change"); // ensures correct textarea shows/hides
     });
   });
 </script>
