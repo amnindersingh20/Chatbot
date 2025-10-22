@@ -1,4 +1,48 @@
-// After restoring all radios, re-trigger the "change" event for any that are checked
-$('input[type="radio"]:checked').each(function() {
-  $(this).trigger("change");
-});
+<script>
+  if (location.hostname.substring(0, 9) != "localhost" &&
+      location.hostname.substring(0, 9) != "127.0.0.1" &&
+      location.hostname.substring(0, 3) != "qa.") {
+    $.getScript("js/sValidator.js");
+  }
+
+  $(function () {
+    $("#footer-placeholder").load("footer.html");
+  });
+
+  sessionStorage.setItem("page", 2);
+  if (sessionStorage.getItem("q2a")) {
+    $(".nextbutton").removeClass("disabled");
+  }
+
+  $(document).ready(function () {
+    // 1️⃣ Hide all text areas at load
+    $("#q2a, #q2abox, #q2b, #q2bbox, #q2c, #q2cbox").addClass("d-none");
+
+    // 2️⃣ Radio change listener for user clicks
+    $("input[type=radio]").on("change", function () {
+      const name = $(this).attr("name");
+      const value = $(this).val();
+
+      const textDiv = $("#" + name);
+      const boxDiv = $("#" + name + "box");
+
+      if (value === "4" || value === "5") {
+        textDiv.removeClass("d-none");
+        boxDiv.removeClass("d-none");
+      } else {
+        textDiv.addClass("d-none");
+        boxDiv.addClass("d-none");
+      }
+    });
+
+    // 3️⃣ Now restore previous answers from sessionStorage (must be defined in custom.js)
+    if (typeof restoreResponses === "function") {
+      restoreResponses();
+    }
+
+    // 4️⃣ 🔥 Force the UI to refresh visibility based on restored radios
+    $("input[type='radio']:checked").each(function () {
+      $(this).trigger("change");   // simulate a click
+    });
+  });
+</script>
