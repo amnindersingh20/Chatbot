@@ -1,58 +1,91 @@
 function restoreResponses() {
-  console.log("Restoring saved responses...");
+  // Map radio group names to the sessionStorage key that holds their chosen value
+  // Update these mappings to match your HTML radio "name" attributes -> stored r# keys
+  const radioMapping = {
+    "q1a": "r1",
+    "q1b": "r2",
+    "q2a": "r3",
+    "q2b": "r4",
+    "q2c": "r5",
+    "q3a": "r9",
+    "q3b": "r10",
+    "q3c": "r11",
+    "q3d": "r12",
+    "q3e": "r13",
+    "q4": "r14"
+    // add any additional radio group mappings here
+  };
 
-  // Restore all radio buttons
-  $('input[type="radio"]').each(function () {
-    const name = $(this).attr("name");
-    const val = $(this).val();
+  // Map text input / textarea IDs to sessionStorage keys (you already had these)
+  const textMapping = {
+    "q2atext": "r6",
+    "q2btext": "r7",
+    "q2ctext": "r8",
+    "q4text": "r15",
+    "q5text": "r26",
+    "q7text": "r41",
+    "q8text": "r42"
+  };
 
-    // Find stored value for this question
-    // e.g. r1, r2, r3... are tied to q1a, q1b, etc.
-    for (let i = 1; i <= 50; i++) { // safe upper bound
-      const stored = sessionStorage.getItem("r" + i);
-      if (stored !== null && stored === val) {
-        $(this).prop("checked", true);
+  // Restore radios by matching group name -> stored value
+  Object.keys(radioMapping).forEach(function (groupName) {
+    const key = radioMapping[groupName];
+    const storedVal = sessionStorage.getItem(key);
+    if (storedVal !== null) {
+      // check the radio input with matching name and value
+      const $radio = $('input[type="radio"][name="' + groupName + '"][value="' + storedVal + '"]');
+      if ($radio.length) {
+        $radio.prop("checked", true);
       }
     }
   });
 
-  // Restore all checkboxes
-  $('input[type="checkbox"]').each(function () {
-    const val = $(this).val();
-
-    for (let i = 1; i <= 50; i++) {
-      const stored = sessionStorage.getItem("r" + i);
-      if (stored !== null && stored === val) {
-        $(this).prop("checked", true);
+  // Restore text inputs / textareas
+  Object.keys(textMapping).forEach(function (id) {
+    const key = textMapping[id];
+    const stored = sessionStorage.getItem(key);
+    if (stored !== null && $("#" + id).length) {
+      $("#" + id).val(stored);
+      if (stored !== "") {
+        $("#" + id).addClass("enteredTextField").removeClass("emptyTextField");
+      } else {
+        $("#" + id).addClass("emptyTextField").removeClass("enteredTextField");
+      }
+      // If you have a char counter element common to many inputs, update it if needed:
+      if (id === "q8text") {
+        $(".charsremaining").text(500 - stored.length + (500 - stored.length == 1 ? " character" : " characters") + " remaining");
       }
     }
   });
 
-  // Restore textareas / inputs with class form-control
-  $('.form-control').each(function () {
-    const id = $(this).attr("id");
-
-    // Map IDs to their sessionStorage key
-    const mapping = {
-      "q2atext": "r6",
-      "q2btext": "r7",
-      "q2ctext": "r8",
-      "q4text": "r15",
-      "q5text": "r26",
-      "q7text": "r41",
-      "q8text": "r42"
-    };
-
-    const key = mapping[id];
-    if (key && sessionStorage.getItem(key)) {
-      $(this).val(sessionStorage.getItem(key));
-    }
-
-    // Restore visual state classes
-    if ($(this).val() !== "") {
-      $(this).addClass("enteredTextField").removeClass("emptyTextField");
+  // Restore checkboxes for q5_ (case 5) and q6_ (case 6)
+  // You previously stored these as sequential r keys:
+  // case 5: r16 ... r(16 + n - 1) where n = number of q5_ inputs
+  // case 6: r27 ... r(27 + n - 1) for q6_ inputs
+  $('input[type="checkbox"][id^="q5_"]').each(function (i) {
+    const key = "r" + (16 + i);
+    const stored = sessionStorage.getItem(key);
+    // stored will be the checkbox value if it was checked, "0" if not
+    if (stored && stored !== "0") {
+      // check only the checkbox that has that value
+      if ($(this).val() === stored) $(this).prop("checked", true);
+    } else {
+      // ensure unchecked if stored was "0" or null
+      $(this).prop("checked", false);
     }
   });
 
-  console.log("Response restoration complete");
-}
+  $('input[type="checkbox"][id^="q6_"]').each(function (i) {
+    const key = "r" + (27 + i);
+    const stored = sessionStorage.getItem(key);
+    if (stored && stored !== "0") {
+      if ($(this).val() === stored) $(this).prop("checked", true);
+    } else {
+      $(this).prop("checked", false);
+    }
+  });
+
+  // After restoring, re-run any UI updates and validation for the current page
+  const curPage = sessionStorage.getItem("page");
+  if (curPage) validateResponse(parseInt(curPage, 10));
+} We
