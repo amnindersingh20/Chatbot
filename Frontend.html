@@ -1,38 +1,6 @@
-// Try to map radio group names like "q1a" -> r1, "q1b" -> r2, etc.
-function findSessionKeyByQuestionName(name) {
-  // Extract digits (question number)
-  const qNum = name.match(/\d+/);
-  if (!qNum) return null;
+$(document).ready(function () {
+  // ... all your existing event bindings ...
 
-  // Try to find all session keys starting with this question number
-  for (let i = 1; i <= 50; i++) {
-    const val = sessionStorage.getItem("r" + i);
-    if (val && name.includes(qNum[0])) {
-      // crude but practical: return first matching rN that stored something
-      return "r" + i;
-    }
-  }
-  return null;
-}
-
-// Map checkboxes dynamically by order (like your r16–r26 pattern)
-function findSessionKeyByCheckboxIndex(index) {
-  const base = 16; // adjust if your checkbox section starts elsewhere
-  return "r" + (base + index);
-}
-
-// Map text fields dynamically based on ID (e.g. q2atext → r6)
-function findSessionKeyByTextId(id) {
-  // Extract the numeric part from the text ID
-  const qNum = id.match(/\d+/);
-  if (!qNum) return null;
-
-  // Find a stored r# whose value matches something the user typed
-  for (let i = 1; i <= 50; i++) {
-    const val = sessionStorage.getItem("r" + i);
-    if (val && val !== "0" && id.includes(qNum[0])) {
-      return "r" + i;
-    }
-  }
-  return null;
-}
+  restorePreviousResponses();   // ← add this line
+  validateResponse(sessionStorage.getItem("page")); // optional: re-enable "Next" button
+});
