@@ -1,36 +1,28 @@
 <script>
 $(document).ready(function () {
+    // Load footer
     $("#footer-placeholder").load("footer.html");
 
     // Hide "Other" textarea initially
     $("#q5abox").addClass("d-none");
 
-    // Restore previous selection if user navigates back
-    const otherChecked = sessionStorage.getItem("q5_other_checked") === "true";
-    const otherText = sessionStorage.getItem("q5_other_text") || "";
-
-    if (otherChecked) {
-        $("#q5_10").prop("checked", true);
+    // Restore textarea if Other is already checked
+    if ($("#q5_10").is(":checked")) {
         $("#q5abox").removeClass("d-none");
-        $("#q5text").val(otherText);
-        $("#charCount").text(otherText.length + " / 500 characters");
     }
 
-    // Handle "Other" checkbox changes
+    // Handle "Other" checkbox change
     $("#q5_10").on("change", function () {
         if ($(this).is(":checked")) {
             $("#q5abox").removeClass("d-none");
-            sessionStorage.setItem("q5_other_checked", "true");
         } else {
             $("#q5abox").addClass("d-none");
             $("#q5text").val("");
             $("#charCount").text("0 / 500 characters");
-            sessionStorage.removeItem("q5_other_text");
-            sessionStorage.setItem("q5_other_checked", "false");
         }
     });
 
-    // Clear "Other" if any other checkbox is clicked
+    // If any other checkbox is clicked, uncheck "Other" and hide textarea
     $("input[name='q5']").not("#q5_10").on("change", function () {
         if ($("#q5_10").is(":checked")) {
             $("#q5_10").prop("checked", false).trigger("change");
@@ -41,7 +33,6 @@ $(document).ready(function () {
     $("#q5text").on("input", function () {
         const len = $(this).val().length;
         $("#charCount").text(len + " / 500 characters");
-        sessionStorage.setItem("q5_other_text", $(this).val());
     });
 });
 </script>
