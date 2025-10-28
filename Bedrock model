@@ -1,6 +1,52 @@
-case 4:
-      if (getSelectedRadioButtonValue("q4") != null) {
-        $(".nextbutton").removeClass("disabled");
-        sessionStorage.setItem("r14", getSelectedRadioButtonValue("q4"));
-      }
-      break;
+var AWS = require("aws-sdk");
+var s3 = new AWS.S3();
+var crypto = require('crypto');
+
+module.exports = {
+    signInfn: function(data) {
+        var API_DATA = data;
+        
+        return new Promise(function(res, rej) {
+            s3.getObject({
+                Bucket: "dsi-qa-searchcrawlerlogin",
+                Key: "multiuserlogin/secret.json"
+            }, function(err, data) {
+                if (err) console.log(err, err.stack);
+                else{
+                    var secretObj = JSON.parse(data.Body.toString("utf-8"));
+                    let found = secretObj.some(el => el.user === API_DATA.user);
+                    const re = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+                    if (!(re.test(API_DATA.user) &&
+                        (API_DATA.user.indexOf("@alight.com", API_DATA.user.length - "@alight.com".length) !== -1))) {
+                        rej({
+                            "Status": 0,
+                            "message": "Invalid Email !! Please enter a valid Alight email address"
+                        });
+                    }if (!found) {
+                        rej({
+                            "Status": 0,
+                            "message": "User doesn't exits!"
+                        });
+                    }else {
+                        var hashedPassword = crypto.createHash('md5').update(API_DATA.pass).digest('hex');
+                        for(let i = 0; secretObj.length > i; i++) {
+                            if (secretObj[i].user === API_DATA.user) {
+                                if (secretObj[i].pass === hashedPassword) {
+                                    res({
+                                        "Status": 1,
+                                        "message": "login successful",
+                                    });
+                                }else {
+                                    rej({
+                                        "Status": 0,
+                                        "message": "User Email & Password doesn't match"
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } 
+            });
+        });
+    }
+};
