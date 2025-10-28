@@ -3,50 +3,60 @@ var s3 = new AWS.S3();
 var crypto = require('crypto');
 
 module.exports = {
-    signInfn: function(data) {
+    addUserfn: function(data) {
         var API_DATA = data;
-        
         return new Promise(function(res, rej) {
             s3.getObject({
                 Bucket: "dsi-qa-searchcrawlerlogin",
                 Key: "multiuserlogin/secret.json"
             }, function(err, data) {
                 if (err) console.log(err, err.stack);
-                else{
+                else {
                     var secretObj = JSON.parse(data.Body.toString("utf-8"));
                     let found = secretObj.some(el => el.user === API_DATA.user);
                     const re = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
-                    if (!(re.test(API_DATA.user) &&
+                    if (found) {
+                        rej({
+                            "Status": 0,
+                            "message": "user already exits!"
+                        });
+                    }if (!(re.test(API_DATA.user) &&
                         (API_DATA.user.indexOf("@alight.com", API_DATA.user.length - "@alight.com".length) !== -1))) {
                         rej({
                             "Status": 0,
                             "message": "Invalid Email !! Please enter a valid Alight email address"
                         });
-                    }if (!found) {
+                    }else if (API_DATA.pass.length < 6) {
                         rej({
                             "Status": 0,
-                            "message": "User doesn't exits!"
+                            "message": "password lenght can not be less than 6 characters"
                         });
                     }else {
                         var hashedPassword = crypto.createHash('md5').update(API_DATA.pass).digest('hex');
-                        for(let i = 0; secretObj.length > i; i++) {
-                            if (secretObj[i].user === API_DATA.user) {
-                                if (secretObj[i].pass === hashedPassword) {
-                                    res({
-                                        "Status": 1,
-                                        "message": "login successful",
-                                    });
-                                }else {
-                                    rej({
-                                        "Status": 0,
-                                        "message": "User Email & Password doesn't match"
-                                    });
-                                }
-                            }
-                        }
+                        var tempObj = {
+                            user: API_DATA.user.toLowerCase(),
+                            pass: hashedPassword
+                        };
+                        secretObj.push(tempObj);
+                        secretObj = JSON.stringify(secretObj);
+                        var params = {
+                            Body: secretObj, 
+                            Bucket: "dsi-qa-searchcrawlerlogin", 
+                            Key: "multiuserlogin/secret.json"
+                        };
+                        s3.putObject(params, function(err, data) {
+                            if (err) console.log(err, err.stack); 
+                            else{                           
+                                res({
+                                    "Status": 1,
+                                    "message": "user added successfully"
+                                });
+                            }           
+                        });
                     }
-                } 
+                }
             });
+            
         });
     }
 };
