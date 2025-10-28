@@ -1,1 +1,79 @@
-7260bcf677030a7db17651e7d2252d40
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Add User | Alight Login Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white shadow-2xl rounded-2xl p-8 w-full max-w-md">
+    <h1 class="text-2xl font-semibold text-gray-800 text-center mb-6">
+      Add New User
+    </h1>
+
+    <form id="userForm" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+        <input type="email" id="user" name="user" required
+          placeholder="user@alight.com"
+          class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none" />
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+        <input type="password" id="pass" name="pass" required minlength="6"
+          placeholder="••••••"
+          class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none" />
+      </div>
+
+      <button type="submit"
+        class="w-full bg-indigo-600 text-white rounded-lg py-2 font-medium hover:bg-indigo-700 transition">
+        Add User
+      </button>
+    </form>
+
+    <div id="message" class="mt-4 text-center text-sm font-medium"></div>
+  </div>
+
+  <script>
+    const API_URL = "https://api.example.com/dev/addUser"; // 🔁 Replace with your actual API Gateway URL
+
+    const form = document.getElementById("userForm");
+    const msg = document.getElementById("message");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      msg.textContent = "Processing...";
+      msg.className = "mt-4 text-center text-gray-500";
+
+      const user = document.getElementById("user").value.trim();
+      const pass = document.getElementById("pass").value;
+
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user, pass }),
+        });
+
+        const data = await res.json();
+
+        if (data.Status === 1) {
+          msg.textContent = data.message;
+          msg.className = "mt-4 text-center text-green-600";
+          form.reset();
+        } else {
+          msg.textContent = data.message || "Something went wrong!";
+          msg.className = "mt-4 text-center text-red-600";
+        }
+      } catch (error) {
+        msg.textContent = "Error: Unable to connect to the server.";
+        msg.className = "mt-4 text-center text-red-600";
+        console.error(error);
+      }
+    });
+  </script>
+</body>
+</html>
